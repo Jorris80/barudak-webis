@@ -1268,7 +1268,19 @@ function tangkapPetaBasemap(tampilTitik){
       if(adaBlok) peta.removeLayer(grupBlok);
       if(adaTitik) peta.removeLayer(grupTitik);
       var selesai = false;
+
+      // perbesar sementara kontainer peta agar canvas tangkapan beresolusi tinggi
+      // (di HP kontainer kecil → label jadi relatif besar setelah di-scale ke PDF)
+      var elPeta = peta.getContainer();
+      var gayaAsli = { w: elPeta.style.width, h: elPeta.style.height, pos: elPeta.style.position };
+      var TARGET_W = 1100, TARGET_H = 760;
+      elPeta.style.width = TARGET_W + 'px';
+      elPeta.style.height = TARGET_H + 'px';
+      peta.invalidateSize({ animate:false });
+
       function pulih(){
+        elPeta.style.width = gayaAsli.w; elPeta.style.height = gayaAsli.h; elPeta.style.position = gayaAsli.pos;
+        try{ peta.invalidateSize({ animate:false }); }catch(e){}
         if(adaBlok) grupBlok.addTo(peta); if(adaTitik) grupTitik.addTo(peta);
         try{ peta.setView(viewAsli.c, viewAsli.z, { animate:false }); }catch(e){}
       }
@@ -1276,7 +1288,7 @@ function tangkapPetaBasemap(tampilTitik){
       // fit ke batas blok yang tampil agar blok mengisi bingkai
       var latlngs = [];
       blokTampil().forEach(function(b){ parseKoord(b.Koordinat).forEach(function(r){ r.forEach(function(p){ latlngs.push(p); }); }); });
-      try{ if(latlngs.length) peta.fitBounds(latlngs, { padding:[24,24] }); }catch(e){}
+      try{ if(latlngs.length) peta.fitBounds(latlngs, { padding:[30,30] }); }catch(e){}
 
       var batas = setTimeout(function(){ if(selesai) return; selesai=true; pulih(); rej(new Error('Timeout.')); }, 12000);
 
@@ -1307,15 +1319,22 @@ function tangkapPetaBasemap(tampilTitik){
                 });
               });
 
-              if(tampilTitik) gambarTitikKanvas(ctx, P, 8);
+              // ukuran font/marker proporsional terhadap canvas & kerapatan blok
+              var dimMin = Math.min(canvas.width, canvas.height);
+              var nBlok = blokTampil().length || 1;
+              var fLabel = Math.max(7, Math.min(13, Math.round(dimMin/42) - Math.floor(nBlok/12)));
+              var rTitik = Math.max(4, Math.round(dimMin/60));
+
+              if(tampilTitik) gambarTitikKanvas(ctx, P, rTitik);
 
               // label ID blok
-              ctx.font="bold 12px 'Plus Jakarta Sans', sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
+              ctx.font="bold "+fLabel+"px 'Plus Jakarta Sans', sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
+              var padX = Math.max(2, Math.round(fLabel*0.35)), h2 = Math.round(fLabel*0.8);
               blokTampil().forEach(function(b){
                 var r=ringPertama(b.Koordinat); if(!r.length) return;
                 var la=0,ln=0; r.forEach(function(p){ la+=p[0]; ln+=p[1]; }); la/=r.length; ln/=r.length;
                 var pt=P(la,ln), t=String(b.ID), w=ctx.measureText(t).width;
-                ctx.fillStyle='rgba(255,255,255,.85)'; ctx.fillRect(pt.x-w/2-4, pt.y-9, w+8, 18);
+                ctx.fillStyle='rgba(255,255,255,.85)'; ctx.fillRect(pt.x-w/2-padX, pt.y-h2, w+padX*2, h2*2);
                 ctx.fillStyle='#123B22'; ctx.fillText(t, pt.x, pt.y+1);
               });
 
@@ -1337,7 +1356,7 @@ function tangkapPetaBasemap(tampilTitik){
             }catch(e){ pulih(); rej(e); }
           });
         }catch(e){ if(!selesai){ selesai=true; clearTimeout(batas); pulih(); } rej(e); }
-      }, 550);
+      }, 700);
     }).catch(rej);
   });
 }
