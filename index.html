@@ -480,7 +480,7 @@
  * ===================================================================*/
 var S = { blocks:[], harvests:[], issues:[], schedules:[], equipments:[], layers:[], logs:[], settings:{} };
 var halAktif = 'dasbor';
-var peta = null, lapisanOSM = null, lapisanSat = null, grupBlok = null, grupTitik = null, penandaSaya = null;
+var peta = null, lapisanOSM = null, lapisanSat = null, grupBlok = null, grupTitik = null, grupLabel = null, penandaSaya = null;
 var kontrolLayer = null, lapisanKustom = {}, lapisanSementara = {};
 var charts = {};
 var imporFitur = [], imporProps = [];
@@ -524,7 +524,7 @@ function kanonik_(val, opsi){
  *    isi API_URL dengan URL Web App /exec, lalu callApi memakai fetch.
  *  - Bila dibuka sebagai file lokal tanpa API_URL: mode demo.
  * ============================================================ */
-var API_URL = 'https://script.google.com/macros/s/AKfycby20slQCbhCl7sEMjsOosERXwohYfaT4WjoSoiO5M_XD2PtWva2MjmwvJQRQxf-X70T/exec'; // ← ISI dengan URL Web App /exec bila di-host statis (lihat OFFLINE-PWA.md)
+var API_URL = 'https://script.google.com/macros/s/AKfycbzekl1FmzIr1T-Gsq4ysEl3bE4CIV2148i9ffNOus4hbHUsp7KLLPDzbrvqp3SFFLlx/exec'; // ← ISI dengan URL Web App /exec bila di-host statis (lihat OFFLINE-PWA.md)
 
 var ADA_GAS = (typeof google !== 'undefined' && google.script && google.script.run);
 var MODE_API = !ADA_GAS && !!API_URL;         // host statis → fetch ke GAS
@@ -1263,20 +1263,22 @@ function hitungTitik(proj, tampilTitik){
 /** Tangkap peta ke canvas dengan basemap. Sebelum menangkap, peta di-fit ke
  *  batas blok yang tampil (fokus ke blok) lalu hasilnya di-crop ke area blok.
  *  Poligon/marker/label digambar sendiri. Timeout mencegah proses menggantung. */
-function tangkapPetaBasemap(tampilTitik){
+function tangkapPetaBasemap(tampilTitik, tampilLabel){
   return new Promise(function(res, rej){
     if(!peta) return rej(new Error('Peta belum siap.'));
     pastikanLeafletImage().then(function(){
       if(!window.leafletImage) return rej(new Error('Pustaka leaflet-image gagal dimuat.'));
 
-      var adaBlok = peta.hasLayer(grupBlok), adaTitik = peta.hasLayer(grupTitik);
+      var adaBlok = peta.hasLayer(grupBlok), adaTitik = peta.hasLayer(grupTitik), adaLabel = peta.hasLayer(grupLabel);
       var viewAsli = { c: peta.getCenter(), z: peta.getZoom() };
       if(adaBlok) peta.removeLayer(grupBlok);
       if(adaTitik) peta.removeLayer(grupTitik);
+      if(adaLabel) peta.removeLayer(grupLabel);
       var selesai = false;
 
       function pulih(){
         if(adaBlok) grupBlok.addTo(peta); if(adaTitik) grupTitik.addTo(peta);
+        if(adaLabel) grupLabel.addTo(peta);
         try{ peta.setView(viewAsli.c, viewAsli.z, { animate:false }); }catch(e){}
       }
 
@@ -1316,11 +1318,13 @@ function tangkapPetaBasemap(tampilTitik){
 
               // kumpulkan posisi label & titik (digambar oleh jsPDF dalam mm)
               var labels = [];
-              blokTampil().forEach(function(b){
-                var r=ringPertama(b.Koordinat); if(!r.length) return;
-                var la=0,ln=0; r.forEach(function(p){ la+=p[0]; ln+=p[1]; }); la/=r.length; ln/=r.length;
-                var pt=P(la,ln); labels.push({ id:String(b.ID), x:pt.x, y:pt.y });
-              });
+              if(tampilLabel){
+                blokTampil().forEach(function(b){
+                  var r=ringPertama(b.Koordinat); if(!r.length) return;
+                  var la=0,ln=0; r.forEach(function(p){ la+=p[0]; ln+=p[1]; }); la/=r.length; ln/=r.length;
+                  var pt=P(la,ln); labels.push({ id:String(b.ID), x:pt.x, y:pt.y });
+                });
+              }
               var titik = hitungTitik(P, tampilTitik);
 
               // crop ke area blok (+ padding)
@@ -1350,10 +1354,12 @@ function tangkapPetaBasemap(tampilTitik){
 }
 /** True bila overlay "Titik & Alat" sedang aktif di peta. */
 function titikTampilDiPeta(){ return !!(peta && grupTitik && peta.hasLayer(grupTitik)); }
+/** True bila overlay "Label Blok" sedang aktif di peta. */
+function labelTampilDiPeta(){ return !!(peta && grupLabel && peta.hasLayer(grupLabel)); }
 
 /** Render poligon blok (sesuai tema & filter) ke canvas — latar putih (tanpa basemap).
  *  Marker digambar hanya bila tampilTitik true. */
-function gambarPetaKeCanvas(lebar, tinggi, tampilTitik){
+function gambarPetaKeCanvas(lebar, tinggi, tampilTitik, tampilLabel){
   var blok = blokTampil().map(function(b){ return { b:b, rings:parseKoord(b.Koordinat) }; })
     .filter(function(x){ return x.rings.length; });
   var cv = document.createElement('canvas'); cv.width = lebar; cv.height = tinggi;
@@ -1385,10 +1391,12 @@ function gambarPetaKeCanvas(lebar, tinggi, tampilTitik){
 
   // kumpulkan posisi label & titik (digambar oleh jsPDF dalam mm)
   var labels = [];
-  blok.forEach(function(x){
-    var r0 = x.rings[0], cx=0, cy=0; r0.forEach(function(p){ var q=px(p); cx+=q[0]; cy+=q[1]; });
-    labels.push({ id:x.b.ID, x:cx/r0.length, y:cy/r0.length });
-  });
+  if(tampilLabel){
+    blok.forEach(function(x){
+      var r0 = x.rings[0], cx=0, cy=0; r0.forEach(function(p){ var q=px(p); cx+=q[0]; cy+=q[1]; });
+      labels.push({ id:x.b.ID, x:cx/r0.length, y:cy/r0.length });
+    });
+  }
   var titik = hitungTitik(function(lat,lng){ var q=px([lat,lng]); return { x:q[0], y:q[1] }; }, tampilTitik);
 
   return { canvas:cv, kosong:false, labels:labels, titik:titik };
@@ -1399,15 +1407,21 @@ function eksporPetaPDF(){
   var basemap = (document.getElementById('petaLapisan')||{}).value || 'osm';
   var pakaiBasemap = basemap !== 'kosong';
   var tampilTitik = titikTampilDiPeta();
+  var tampilLabel = labelTampilDiPeta();
   toast('Menyiapkan PDF…');
   tampilLoader(true, 'Menyusun layout PDF…');
 
+  function vektorPutih(){
+    var r = gambarPetaKeCanvas(205*4, 176*4, tampilTitik, tampilLabel);
+    return { canvas:r.canvas, labels:r.labels, titik:r.titik, basemap:false };
+  }
+
   // Siapkan gambar peta: dengan basemap (leaflet-image) atau vektor putih.
   var siapGambar = pakaiBasemap
-    ? tangkapPetaBasemap(tampilTitik).then(function(r){ return { canvas:r.canvas, basemap:true }; })
-        .catch(function(){ toast('Basemap tak bisa ditangkap — memakai latar putih.', true);
-          return { canvas:gambarPetaKeCanvas(205*4, 176*4, tampilTitik).canvas, basemap:false }; })
-    : Promise.resolve({ canvas:gambarPetaKeCanvas(205*4, 176*4, tampilTitik).canvas, basemap:false });
+    ? tangkapPetaBasemap(tampilTitik, tampilLabel)
+        .then(function(r){ return { canvas:r.canvas, labels:r.labels, titik:r.titik, basemap:true }; })
+        .catch(function(){ toast('Basemap tak bisa ditangkap — memakai latar putih.', true); return vektorPutih(); })
+    : Promise.resolve(vektorPutih());
 
   Promise.all([ pastikanJsPDF(), siapGambar ]).then(function(hasil){
     var gambar = hasil[1];
@@ -1681,9 +1695,10 @@ function pastikanPeta(){
     { maxZoom:19, attribution:'© Esri' });
   lapisanOSM.addTo(peta);
   grupBlok = L.layerGroup().addTo(peta);
+  grupLabel = L.layerGroup().addTo(peta);
   grupTitik = L.layerGroup().addTo(peta);
   kontrolLayer = L.control.layers(null,
-    { '🌴 Batas Blok': grupBlok, '📍 Titik & Alat': grupTitik },
+    { '🌴 Batas Blok': grupBlok, '🏷️ Label Blok': grupLabel, '📍 Titik & Alat': grupTitik },
     { collapsed: true, position: 'topright' }).addTo(peta);
   return true;
 }
@@ -1697,7 +1712,7 @@ function gantiLapisan(){
 }
 function gambarPeta(){
   if(!pastikanPeta()) return;
-  grupBlok.clearLayers(); grupTitik.clearLayers();
+  grupBlok.clearLayers(); grupTitik.clearLayers(); grupLabel.clearLayers();
   var batas = [];
   var blokTerlihat = blokTampil();
   var setId = {}; blokTerlihat.forEach(function(b){ setId[b.ID]=1; });
@@ -1717,9 +1732,9 @@ function gambarPeta(){
       '<br><a href="#" onclick="event.preventDefault();formBlok(\''+b.ID+'\')">✏️ Edit blok</a>');
     pg.addTo(grupBlok);
     rings.forEach(function(r){ r.forEach(function(c){ batas.push(c); }); });
-    // label ID blok di tengah bidang terbesar
+    // label ID blok di tengah bidang terbesar (grup terpisah → bisa di-hide)
     var pusat = pg.getBounds().getCenter();
-    L.marker(pusat, { icon: L.divIcon({ className:'', html:'<div style="background:rgba(255,255,255,.85);border-radius:6px;padding:1px 6px;font:700 11px \'Plus Jakarta Sans\';color:#123B22;white-space:nowrap">'+esc(b.ID)+'</div>', iconAnchor:[14,8] }) }).addTo(grupBlok);
+    L.marker(pusat, { icon: L.divIcon({ className:'', html:'<div style="background:rgba(255,255,255,.85);border-radius:6px;padding:1px 6px;font:700 11px \'Plus Jakarta Sans\';color:#123B22;white-space:nowrap">'+esc(b.ID)+'</div>', iconAnchor:[14,8] }) }).addTo(grupLabel);
   });
 
   var adaFilter = !!(document.getElementById('petaFilPerusahaan').value || document.getElementById('petaFilEstate').value || document.getElementById('petaFilDivisi').value);
