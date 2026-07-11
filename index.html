@@ -580,10 +580,13 @@ function simpanCache(){
     }));
   }catch(e){ /* kuota penuh: abaikan */ }
 }
-/* Terapkan judul/logo merek ke layar login dari cache (sebelum data dimuat). */
+/* Terapkan judul/logo merek dari cache ke layar login DAN header,
+ * agar saat loading awal tidak menampilkan judul default. */
 function terapkanMerekLogin(){
   var m; try{ m = JSON.parse(localStorage.getItem('sg_merek')||'null'); }catch(e){ m=null; }
   if(!m) return;
+
+  // --- layar login ---
   var jEl=document.getElementById('loginJudul'), sEl=document.querySelector('#layarLogin .login-sub'), eEl=document.getElementById('loginEmoji');
   if(jEl && m.judul) jEl.textContent = m.judul;
   if(sEl) sEl.textContent = m.sub || 'Masuk untuk melanjutkan';
@@ -591,6 +594,18 @@ function terapkanMerekLogin(){
     if(m.ikon==='logo' && m.logo){ eEl.innerHTML = '<img src="'+m.logo+'" style="width:56px;height:56px;border-radius:14px;object-fit:cover" onerror="this.replaceWith(document.createTextNode(\''+(m.emoji||'🌴')+'\'))">'; }
     else if(m.ikon==='sembunyi'){ eEl.style.display='none'; }
     else if(m.emoji){ eEl.textContent = m.emoji; }
+  }
+
+  // --- header aplikasi (tampil selama "Memuat data kebun…") ---
+  var hJ=document.getElementById('hdJudul'), hS=document.getElementById('hdSub');
+  var hLogo=document.getElementById('hdLogo'), hEmoji=document.getElementById('hdEmoji');
+  if(hJ && m.judul) hJ.textContent = m.judul;
+  if(hS) hS.textContent = m.sub || '';
+  if(m.judul) document.title = m.judul;
+  if(hLogo && hEmoji){
+    if(m.ikon==='logo' && m.logo){ hLogo.src=m.logo; hLogo.style.display='block'; hEmoji.style.display='none'; }
+    else if(m.ikon==='sembunyi'){ hLogo.style.display='none'; hEmoji.style.display='none'; }
+    else { hLogo.style.display='none'; hEmoji.style.display='block'; if(m.emoji) hEmoji.textContent=m.emoji; }
   }
 }
 function bacaCache(){
@@ -1235,23 +1250,14 @@ function daftarTitikTampil(){
     alat: S.equipments.filter(function(e){ return e.Latitude && e.Longitude && (!f||set[e.IDBlok]); })
   };
 }
-/* Gambar marker bernomor (M1.. merah, A1.. biru) ke canvas.
- * proj(lat,lng) → {x,y} dalam piksel canvas. */
-function gambarTitikKanvas(ctx, proj, r){
-  var d = daftarTitikTampil();
-  function tanda(lat,lng,fill,label){
-    var p = proj(Number(lat),Number(lng)); if(!p) return;
-    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2);
-    ctx.fillStyle=fill; ctx.globalAlpha=1; ctx.fill();
-    ctx.lineWidth=Math.max(1.5, r*0.4); ctx.strokeStyle='#fff'; ctx.stroke();
-    // label kode di samping kanan marker
-    ctx.font='bold '+Math.round(r*1.7)+"px sans-serif"; ctx.textAlign='left'; ctx.textBaseline='middle';
-    var tw=ctx.measureText(label).width;
-    ctx.fillStyle='rgba(255,255,255,.92)'; ctx.fillRect(p.x+r+1, p.y-r*1.05, tw+4, r*2.1);
-    ctx.fillStyle=fill; ctx.fillText(label, p.x+r+3, p.y);
-  }
-  d.masalah.forEach(function(i,idx){ tanda(i.Latitude,i.Longitude,'#C62828','M'+(idx+1)); });
-  d.alat.forEach(function(e,idx){ tanda(e.Latitude,e.Longitude,'#1565C0','A'+(idx+1)); });
+/* Hitung posisi titik masalah/alat pada canvas via proj(lat,lng)→{x,y}.
+ * Mengembalikan [{x,y,code,color,data}] dengan penomoran M1../A1.. */
+function hitungTitik(proj, tampilTitik){
+  if(!tampilTitik) return [];
+  var d = daftarTitikTampil(), arr = [];
+  d.masalah.forEach(function(i,idx){ var p=proj(Number(i.Latitude),Number(i.Longitude)); if(p) arr.push({ x:p.x, y:p.y, code:'M'+(idx+1), color:[198,40,40] }); });
+  d.alat.forEach(function(e,idx){ var p=proj(Number(e.Latitude),Number(e.Longitude)); if(p) arr.push({ x:p.x, y:p.y, code:'A'+(idx+1), color:[21,101,192] }); });
+  return arr;
 }
 
 /** Tangkap peta ke canvas dengan basemap. Sebelum menangkap, peta di-fit ke
@@ -1269,18 +1275,7 @@ function tangkapPetaBasemap(tampilTitik){
       if(adaTitik) peta.removeLayer(grupTitik);
       var selesai = false;
 
-      // perbesar sementara kontainer peta agar canvas tangkapan beresolusi tinggi
-      // (di HP kontainer kecil → label jadi relatif besar setelah di-scale ke PDF)
-      var elPeta = peta.getContainer();
-      var gayaAsli = { w: elPeta.style.width, h: elPeta.style.height, pos: elPeta.style.position };
-      var TARGET_W = 1100, TARGET_H = 760;
-      elPeta.style.width = TARGET_W + 'px';
-      elPeta.style.height = TARGET_H + 'px';
-      peta.invalidateSize({ animate:false });
-
       function pulih(){
-        elPeta.style.width = gayaAsli.w; elPeta.style.height = gayaAsli.h; elPeta.style.position = gayaAsli.pos;
-        try{ peta.invalidateSize({ animate:false }); }catch(e){}
         if(adaBlok) grupBlok.addTo(peta); if(adaTitik) grupTitik.addTo(peta);
         try{ peta.setView(viewAsli.c, viewAsli.z, { animate:false }); }catch(e){}
       }
@@ -1288,7 +1283,7 @@ function tangkapPetaBasemap(tampilTitik){
       // fit ke batas blok yang tampil agar blok mengisi bingkai
       var latlngs = [];
       blokTampil().forEach(function(b){ parseKoord(b.Koordinat).forEach(function(r){ r.forEach(function(p){ latlngs.push(p); }); }); });
-      try{ if(latlngs.length) peta.fitBounds(latlngs, { padding:[30,30] }); }catch(e){}
+      try{ if(latlngs.length) peta.fitBounds(latlngs, { padding:[24,24] }); }catch(e){}
 
       var batas = setTimeout(function(){ if(selesai) return; selesai=true; pulih(); rej(new Error('Timeout.')); }, 12000);
 
@@ -1319,27 +1314,17 @@ function tangkapPetaBasemap(tampilTitik){
                 });
               });
 
-              // ukuran font/marker proporsional terhadap canvas & kerapatan blok
-              var dimMin = Math.min(canvas.width, canvas.height);
-              var nBlok = blokTampil().length || 1;
-              var fLabel = Math.max(7, Math.min(13, Math.round(dimMin/42) - Math.floor(nBlok/12)));
-              var rTitik = Math.max(4, Math.round(dimMin/60));
-
-              if(tampilTitik) gambarTitikKanvas(ctx, P, rTitik);
-
-              // label ID blok
-              ctx.font="bold "+fLabel+"px 'Plus Jakarta Sans', sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
-              var padX = Math.max(2, Math.round(fLabel*0.35)), h2 = Math.round(fLabel*0.8);
+              // kumpulkan posisi label & titik (digambar oleh jsPDF dalam mm)
+              var labels = [];
               blokTampil().forEach(function(b){
                 var r=ringPertama(b.Koordinat); if(!r.length) return;
                 var la=0,ln=0; r.forEach(function(p){ la+=p[0]; ln+=p[1]; }); la/=r.length; ln/=r.length;
-                var pt=P(la,ln), t=String(b.ID), w=ctx.measureText(t).width;
-                ctx.fillStyle='rgba(255,255,255,.85)'; ctx.fillRect(pt.x-w/2-padX, pt.y-h2, w+padX*2, h2*2);
-                ctx.fillStyle='#123B22'; ctx.fillText(t, pt.x, pt.y+1);
+                var pt=P(la,ln); labels.push({ id:String(b.ID), x:pt.x, y:pt.y });
               });
+              var titik = hitungTitik(P, tampilTitik);
 
               // crop ke area blok (+ padding)
-              var out = canvas;
+              var out = canvas, offX=0, offY=0;
               if(bx1>bx0 && by1>by0){
                 var pad = Math.max(24, 0.06*Math.max(bx1-bx0, by1-by0));
                 var x0=Math.max(0,Math.floor(bx0-pad)), y0=Math.max(0,Math.floor(by0-pad));
@@ -1348,11 +1333,14 @@ function tangkapPetaBasemap(tampilTitik){
                 if(cw>40 && ch>40){
                   var crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
                   crop.getContext('2d').drawImage(canvas, x0,y0,cw,ch, 0,0,cw,ch);
-                  out = crop;
+                  out = crop; offX=x0; offY=y0;
                 }
               }
+              // geser koordinat label/titik mengikuti crop
+              labels.forEach(function(l){ l.x-=offX; l.y-=offY; });
+              titik.forEach(function(t){ t.x-=offX; t.y-=offY; });
               pulih();
-              res({ canvas:out });
+              res({ canvas:out, labels:labels, titik:titik });
             }catch(e){ pulih(); rej(e); }
           });
         }catch(e){ if(!selesai){ selesai=true; clearTimeout(batas); pulih(); } rej(e); }
@@ -1393,20 +1381,17 @@ function gambarPetaKeCanvas(lebar, tinggi, tampilTitik){
       r.forEach(function(p,i){ var q=px(p); if(i===0)ctx.moveTo(q[0],q[1]); else ctx.lineTo(q[0],q[1]); });
       ctx.closePath(); ctx.globalAlpha=.75; ctx.fill(); ctx.globalAlpha=1; ctx.stroke();
     });
-    // label ID di centroid ring pertama
-    var r0 = x.rings[0], cx=0, cy=0; r0.forEach(function(p){ var q=px(p); cx+=q[0]; cy+=q[1]; });
-    cx/=r0.length; cy/=r0.length;
-    ctx.fillStyle='#111'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
-    ctx.fillText(x.b.ID, cx, cy);
   });
 
-  // marker masalah & alat (bernomor) — hanya bila overlay titik aktif
-  if(tampilTitik){
-    var rMk = Math.max(7, Math.round(Math.min(lebar,tinggi)/70));
-    gambarTitikKanvas(ctx, function(lat,lng){ var q=px([lat,lng]); return { x:q[0], y:q[1] }; }, rMk);
-  }
+  // kumpulkan posisi label & titik (digambar oleh jsPDF dalam mm)
+  var labels = [];
+  blok.forEach(function(x){
+    var r0 = x.rings[0], cx=0, cy=0; r0.forEach(function(p){ var q=px(p); cx+=q[0]; cy+=q[1]; });
+    labels.push({ id:x.b.ID, x:cx/r0.length, y:cy/r0.length });
+  });
+  var titik = hitungTitik(function(lat,lng){ var q=px([lat,lng]); return { x:q[0], y:q[1] }; }, tampilTitik);
 
-  return { canvas:cv, kosong:false };
+  return { canvas:cv, kosong:false, labels:labels, titik:titik };
 }
 function eksporPetaPDF(){
   if(!blokTampil().length) return toast('Tidak ada blok untuk diekspor pada filter ini.', true);
@@ -1458,6 +1443,36 @@ function eksporPetaPDF(){
     doc.setFillColor(255,255,255); doc.rect(petaX, petaY, petaW, petaH, 'F');
     doc.addImage(gambar.canvas.toDataURL('image/png'), 'PNG', dx, dy, dw, dh);
     doc.setDrawColor(200); doc.rect(petaX, petaY, petaW, petaH);
+
+    // ---- label blok & marker digambar oleh jsPDF (mm) → ukuran konsisten HP/desktop ----
+    var sx = dw / gambar.canvas.width, sy = dh / gambar.canvas.height;
+    function keMm(pt){ return { x: dx + pt.x*sx, y: dy + pt.y*sy }; }
+    // font label mengecil bila blok banyak agar tidak tumpang tindih
+    var nB = (gambar.labels||[]).length || 1;
+    var fLabel = nB>120 ? 3.6 : (nB>60 ? 4.4 : (nB>25 ? 5.2 : 6));
+    doc.setFont(undefined,'bold');
+    (gambar.labels||[]).forEach(function(l){
+      var p = keMm(l); if(p.x<petaX-2||p.x>petaX+petaW+2||p.y<petaY-2||p.y>petaY+petaH+2) return;
+      doc.setFontSize(fLabel);
+      var tw = doc.getTextWidth(l.id), pad=0.5, hh=fLabel*0.42;
+      doc.setFillColor(255,255,255); doc.setDrawColor(255,255,255);
+      doc.rect(p.x-tw/2-pad, p.y-hh, tw+pad*2, hh*2, 'F');
+      doc.setTextColor(18,59,34);
+      doc.text(l.id, p.x, p.y+hh*0.55, { align:'center' });
+    });
+    // marker titik + kode
+    (gambar.titik||[]).forEach(function(t){
+      var p = keMm(t); if(p.x<petaX-2||p.x>petaX+petaW+2||p.y<petaY-2||p.y>petaY+petaH+2) return;
+      doc.setFillColor(t.color[0],t.color[1],t.color[2]);
+      doc.setDrawColor(255,255,255); doc.setLineWidth(0.4);
+      doc.circle(p.x, p.y, 1.5, 'FD');
+      doc.setFontSize(5); doc.setFont(undefined,'bold');
+      var kw=doc.getTextWidth(t.code);
+      doc.setFillColor(255,255,255); doc.rect(p.x+1.8, p.y-1.4, kw+1, 2.6, 'F');
+      doc.setTextColor(t.color[0],t.color[1],t.color[2]);
+      doc.text(t.code, p.x+2.3, p.y+0.7);
+    });
+    doc.setFont(undefined,'normal'); doc.setTextColor(30); doc.setLineWidth(0.2);
 
     // legenda
     doc.setFontSize(11); doc.setFont(undefined,'bold');
@@ -2269,11 +2284,18 @@ function renderJadwal(){
   document.getElementById('daftarJadwal').innerHTML = html || '<div class="kosong"><span class="ic">🗓️</span>Tidak ada jadwal pada filter ini.</div>';
 }
 function formJadwal(){
+  var baku = ['Pemupukan NPK','Pemupukan Urea','Pengendalian Gulma','Pruning Pelepah','Kastrasi & Sensus'];
+  var pernah = {};
+  (S.schedules||[]).forEach(function(s){ var j=String(s.JenisKegiatan||'').trim(); if(j && baku.indexOf(j)<0) pernah[j]=1; });
+  var opsi = baku.concat(Object.keys(pernah).sort())
+    .map(function(j){ return '<option>'+esc(j)+'</option>'; }).join('');
   bukaLembar('<h3>Tambah Jadwal Perawatan</h3>'+
     filterUnitFormHTML('fj')+
     '<label>Blok *</label><select id="fjBlok" onchange="refreshMiniBlok(\'fj\')"></select>'+
     '<div id="fjMap" class="miniMapBlok"></div>'+
-    '<label>Jenis Kegiatan</label><select id="fjJenis"><option>Pemupukan NPK</option><option>Pemupukan Urea</option><option>Pengendalian Gulma</option><option>Pruning Pelepah</option><option>Kastrasi & Sensus</option></select>'+
+    '<label>Jenis Kegiatan</label><select id="fjJenis" onchange="toggleJenisLain()">'+opsi+
+      '<option value="__lain">Lainnya (ketik sendiri)…</option></select>'+
+    '<input id="fjJenisLain" placeholder="Ketik jenis kegiatan, mis: Panen Raya / Perbaikan Jalan" style="display:none;margin-top:8px">'+
     '<div class="grid2">'+
     '<div><label>Tanggal</label><input id="fjTgl" type="date" value="'+hariISO(new Date())+'"></div>'+
     '<div><label>Pelaksana</label><input id="fjPelaksana" placeholder="cth: Tim Pupuk 1"></div>'+
@@ -2284,10 +2306,25 @@ function formJadwal(){
   isiCascade('fjFP','fjFE','fjFD'); isiBlokFormSelect('fj');
   setTimeout(function(){ initMiniBlok('fj'); }, 250);
 }
+/* Tampilkan input manual bila "Lainnya" dipilih di jenis kegiatan. */
+function toggleJenisLain(){
+  var sel = document.getElementById('fjJenis');
+  var inp = document.getElementById('fjJenisLain');
+  if(!sel || !inp) return;
+  var lain = sel.value === '__lain';
+  inp.style.display = lain ? 'block' : 'none';
+  if(lain) inp.focus();
+}
 function simpanJadwal(){
+  var sel = document.getElementById('fjJenis');
+  var jenis = sel.value;
+  if(jenis === '__lain'){
+    jenis = (document.getElementById('fjJenisLain').value||'').trim();
+    if(!jenis) return toast('Isi jenis kegiatan terlebih dahulu.', true);
+  }
   kirim('addSchedule', {
     IDBlok: document.getElementById('fjBlok').value,
-    JenisKegiatan: document.getElementById('fjJenis').value,
+    JenisKegiatan: jenis,
     Tanggal: document.getElementById('fjTgl').value,
     Pelaksana: document.getElementById('fjPelaksana').value.trim(),
     Catatan: document.getElementById('fjCatatan').value.trim()
