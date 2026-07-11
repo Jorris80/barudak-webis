@@ -175,6 +175,17 @@
   #statusOffline{display:none;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
     background:#FFF3E0;color:#8a5000;font-size:12.5px;font-weight:600;padding:7px 12px;border-bottom:1px solid #f0d9b5}
   #statusOffline button{background:var(--hijau-700);color:#fff;border-radius:8px;padding:4px 12px;font-size:12px;font-weight:700}
+
+  /* Kontrol layer Leaflet: netralkan gaya input global agar checkbox tidak
+     melebar jadi satu baris sendiri (menyebabkan centang tampak salah baris). */
+  .leaflet-control-layers label{display:flex;align-items:center;gap:8px;margin:2px 0;font-size:13px;
+    font-weight:600;color:var(--tinta);text-transform:none;letter-spacing:normal;cursor:pointer}
+  .leaflet-control-layers label span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .leaflet-control-layers input[type=checkbox],
+  .leaflet-control-layers input[type=radio]{width:16px!important;height:16px!important;min-width:16px;
+    flex:0 0 auto;padding:0!important;margin:0!important;border-radius:4px;border:1.5px solid var(--garis);
+    display:inline-block!important;accent-color:var(--hijau-700)}
+  .leaflet-control-layers-list{padding:4px 6px}
   .putar{width:40px;height:40px;border:4px solid var(--hijau-100);border-top-color:var(--hijau-700);
     border-radius:50%;animation:putar .8s linear infinite}
   @keyframes putar{to{transform:rotate(360deg)}}
@@ -524,7 +535,7 @@ function kanonik_(val, opsi){
  *    isi API_URL dengan URL Web App /exec, lalu callApi memakai fetch.
  *  - Bila dibuka sebagai file lokal tanpa API_URL: mode demo.
  * ============================================================ */
-var API_URL = 'https://script.google.com/macros/s/AKfycbzekl1FmzIr1T-Gsq4ysEl3bE4CIV2148i9ffNOus4hbHUsp7KLLPDzbrvqp3SFFLlx/exec'; // ← ISI dengan URL Web App /exec bila di-host statis (lihat OFFLINE-PWA.md)
+var API_URL = 'https://script.google.com/macros/s/AKfycbzVPslAhyENNzT8fxzMi4GH8OYFMOUrHrlVOHX7uC65a2p0lgZSSe5JkeqgN-qQfrsj/exec'; // ← ISI dengan URL Web App /exec bila di-host statis (lihat OFFLINE-PWA.md)
 
 var ADA_GAS = (typeof google !== 'undefined' && google.script && google.script.run);
 var MODE_API = !ADA_GAS && !!API_URL;         // host statis → fetch ke GAS
