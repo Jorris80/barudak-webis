@@ -453,8 +453,83 @@
       <button onclick="bukaHalaman('alat')"><span class="ic">🚜</span>Alat Berat</button>
       <button onclick="bukaHalaman('laporan')"><span class="ic">📄</span>Laporan</button>
       <button onclick="bukaHalaman('log')"><span class="ic">📋</span>Log Aktivitas</button>
+      <button onclick="bukaHalaman('lacak')"><span class="ic">🛰️</span>Lacak GPS</button>
       <button class="adminOnly" onclick="bukaHalaman('pengaturan')"><span class="ic">⚙️</span>Pengaturan</button>
       <button class="adminOnly" id="menuPengguna" onclick="bukaHalaman('pengguna')"><span class="ic">👥</span>Pengguna</button>
+    </div>
+  </section>
+
+  <!-- ================= LACAK GPS LIVE ================= -->
+  <section class="halaman" id="hal-lacak">
+    <h2 class="judul">Lacak GPS Live <small id="ringkasLacak"></small></h2>
+
+    <!-- Berbagi lokasi perangkat ini -->
+    <div class="kartu">
+      <b style="font-size:14px">📡 Bagikan Lokasi Perangkat Ini</b>
+      <p style="font-size:12.5px;color:var(--abu);margin-top:4px">Aktifkan agar posisi Anda tampil di peta live bagi tim. Bisa dimatikan kapan saja.</p>
+      <label>Saya adalah</label>
+      <select id="lcTipe" onchange="ubahTipeLacak()">
+        <option value="orang">👤 Personel (manager / asisten / staf)</option>
+        <option value="kendaraan">🚜 Kendaraan / Alat Berat</option>
+      </select>
+      <div id="lcBoxAlat" style="display:none">
+        <label>Kendaraan / Alat yang dibawa</label>
+        <select id="lcAlat"><option value="">— pilih —</option></select>
+      </div>
+      <label>Nama Tampilan</label><input id="lcNama" placeholder="cth: Asisten Divisi 1">
+      <label>Interval Kirim</label>
+      <select id="lcInterval">
+        <option value="15">Setiap 15 detik (paling akurat, boros baterai)</option>
+        <option value="30" selected>Setiap 30 detik (disarankan)</option>
+        <option value="60">Setiap 1 menit (hemat baterai)</option>
+        <option value="300">Setiap 5 menit (paling hemat)</option>
+      </select>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-utama" style="flex:1" id="btnMulaiLacak" onclick="mulaiBagikanLokasi()">▶️ Mulai Bagikan</button>
+        <button class="btn btn-bahaya" id="btnStopLacak" style="display:none;flex:1" onclick="hentikanBagikanLokasi()">⏹ Berhenti</button>
+      </div>
+      <div id="lcStatus" style="margin-top:10px;font-size:12.5px"></div>
+    </div>
+
+    <!-- Peta live -->
+    <div class="kartu">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <b style="font-size:14px">🗺️ Peta Live</b>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sekunder btn-kecil" onclick="segarkanLive(true)">⟳ Segarkan</button>
+          <button class="btn btn-sekunder btn-kecil" id="btnAutoLive" onclick="toggleAutoLive()">⏱ Auto: ON</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <select id="lkPer" onchange="isiCascade('lkPer','lkEst','lkDiv');gambarBlokLacak();"><option value="">Semua Perusahaan</option></select>
+        <select id="lkEst" onchange="isiCascade('lkPer','lkEst','lkDiv');gambarBlokLacak();"><option value="">Semua Estate</option></select>
+        <select id="lkDiv" onchange="gambarBlokLacak()"><option value="">Semua Divisi</option></select>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin:0 0 8px;text-transform:none;letter-spacing:normal;font-size:13px">
+        <input type="checkbox" id="lkLabel" style="width:auto;flex:0 0 auto" checked onchange="gambarBlokLacak()"> 🏷️ Tampilkan label blok
+      </label>
+      <div id="petaLacak" style="height:320px;border-radius:12px"></div>
+      <p style="font-size:11.5px;color:var(--abu);margin-top:6px">🟢 daring (≤10 menit) · ⚪ terakhir terlihat lebih lama. Ketuk penanda untuk detail.</p>
+    </div>
+
+    <!-- Daftar perangkat -->
+    <div class="kartu">
+      <b style="font-size:14px">📋 Perangkat Terlacak</b>
+      <div id="daftarLacak" style="margin-top:8px"></div>
+    </div>
+
+    <!-- Riwayat jejak -->
+    <div class="kartu">
+      <b style="font-size:14px">🛤️ Riwayat Jejak (Rute Harian)</b>
+      <div class="grid2" style="margin-top:6px">
+        <div><label>Perangkat</label><select id="jkDevice"><option value="">— pilih —</option></select></div>
+        <div><label>Tanggal</label><input type="date" id="jkTanggal"></div>
+      </div>
+      <button class="btn btn-utama btn-blok" style="margin-top:12px" onclick="tampilkanJejak()">🔍 Tampilkan Rute</button>
+      <div id="jkInfo" style="margin-top:10px;font-size:12.5px;color:var(--abu)"></div>
+      <div class="adminOnly" style="margin-top:12px;border-top:1px solid var(--garis);padding-top:10px">
+        <button class="btn btn-sekunder btn-kecil" onclick="bersihkanJejak()">🧹 Bersihkan jejak >14 hari</button>
+      </div>
     </div>
   </section>
 
@@ -489,9 +564,9 @@
 /* =====================================================================
  *  STATE & API
  * ===================================================================*/
-var S = { blocks:[], harvests:[], issues:[], schedules:[], equipments:[], layers:[], logs:[], settings:{} };
+var S = { blocks:[], harvests:[], issues:[], schedules:[], equipments:[], layers:[], positions:[], logs:[], settings:{} };
 var halAktif = 'dasbor';
-var peta = null, lapisanOSM = null, lapisanSat = null, grupBlok = null, grupTitik = null, grupLabel = null, penandaSaya = null;
+var peta = null, lapisanOSM = null, lapisanSat = null, grupBlok = null, grupTitik = null, grupLabel = null, grupLiveUtama = null, penandaSaya = null;
 var kontrolLayer = null, lapisanKustom = {}, lapisanSementara = {};
 var charts = {};
 var imporFitur = [], imporProps = [];
@@ -535,7 +610,7 @@ function kanonik_(val, opsi){
  *    isi API_URL dengan URL Web App /exec, lalu callApi memakai fetch.
  *  - Bila dibuka sebagai file lokal tanpa API_URL: mode demo.
  * ============================================================ */
-var API_URL = 'https://script.google.com/macros/s/AKfycbzVPslAhyENNzT8fxzMi4GH8OYFMOUrHrlVOHX7uC65a2p0lgZSSe5JkeqgN-qQfrsj/exec'; // ← ISI dengan URL Web App /exec bila di-host statis (lihat OFFLINE-PWA.md)
+var API_URL = 'https://script.google.com/macros/s/AKfycbxnk9lAVB_eDAzZq7Kv2tx9J_9n-L7IJ_YxPW_DSIAxG_i2eN7y0tsF_McKZpJqJ2nh/exec'; // ← ISI dengan URL Web App /exec bila di-host statis (lihat OFFLINE-PWA.md)
 
 var ADA_GAS = (typeof google !== 'undefined' && google.script && google.script.run);
 var MODE_API = !ADA_GAS && !!API_URL;         // host statis → fetch ke GAS
@@ -553,7 +628,7 @@ if(MODE_API && 'serviceWorker' in navigator){
 }
 
 /* ==================== LAPISAN OFFLINE ==================== */
-var AKSI_BACA = { getAllData:1, me:1, listUsers:1 };
+var AKSI_BACA = { getAllData:1, me:1, listUsers:1, getLivePositions:1, getTrack:1 };
 var AKSI_ANTRE = { // aksi tulis yang boleh diantre saat offline & diterapkan lokal
   saveBlock:1, deleteBlock:1, addHarvest:1, deleteHarvest:1,
   addIssue:1, updateIssue:1, deleteIssue:1, resolveIssue:1,
@@ -776,6 +851,8 @@ function dataDemo(){
     schedules:[{ID:'JDW-DEMO-1',IDBlok:'A03',JenisKegiatan:'Pemupukan NPK',Tanggal:'2026-05-20',Status:'Menunggu',Pelaksana:'Tim Pupuk 1',Catatan:'TERLAMBAT'}],
     equipments:[{ID:'EQP-DEMO-1',Nama:'Traktor JD-5075E',Jenis:'Traktor Pengangkut',Status:'Aktif',Operator:'Op. Rahmat',IDBlok:'A01',Latitude:0.5320,Longitude:101.4522}],
     layers:[{ID:'LYR-CONTOH',Nama:'Contoh: OpenTopoMap (template)',Tipe:'xyz',URL:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',Param:'',Bounds:'',MinZoom:0,MaxZoom:17,Opacity:1,Aktif:false,Urutan:1}],
+    positions:[{DeviceID:'demo-1',Nama:'Asisten Divisi 1',Tipe:'orang',Username:'admin',IDAlat:'',Latitude:0.5315,Longitude:101.4530,Akurasi:8,Kecepatan:'',Arah:'',Waktu:'2026-07-12 08:00:00',umurDetik:120,daring:true},
+              {DeviceID:'demo-2',Nama:'Traktor JD-5075E',Tipe:'kendaraan',Username:'editor',IDAlat:'EQP-DEMO-1',Latitude:0.5298,Longitude:101.4562,Akurasi:12,Kecepatan:14,Arah:90,Waktu:'2026-07-12 07:55:00',umurDetik:420,daring:true}],
     logs:[{ID:'LOG-1',Waktu:'—',Operator:'Sistem',Aksi:'Mode Demo',IDBlok:'-',Detail:'Data contoh, perubahan tidak tersimpan'}],
     settings:{ judulAplikasi:'SawitGIS Mandiri (Demo)', subjudul:'Pratinjau lokal — hubungkan ke Apps Script untuk data asli', emoji:'🌴', footer:'Mode demo', petaLat:'0.5310', petaLng:'101.4560', petaZoom:'15', ikonHeader:'emoji', headerAwal:'tampil' },
     sesi:{ username:'admin', nama:'Demo Admin', peran:'admin' },
@@ -792,6 +869,13 @@ function apiDemo(action, params){
     }
     if(action === 'uploadMedia'){ res({ id:'demo', tipe:params.mime&&params.mime.indexOf('video')===0?'video':'foto', nama:params.nama||'', view:'#', thumb:'' }); return; }
     if(action === 'listUsers'){ res([{Username:'admin',Nama:'Demo Admin',Peran:'admin',Aktif:true}]); return; }
+    if(action === 'getLivePositions'){ if(!apiDemo._d) apiDemo._d = dataDemo(); res(apiDemo._d.positions); return; }
+    if(action === 'getTrack'){ res({ deviceId:params.deviceId, tanggal:params.tanggal, titik:[
+      {lat:0.5300,lng:101.4520,waktu:params.tanggal+' 07:00:00'},
+      {lat:0.5308,lng:101.4540,waktu:params.tanggal+' 07:20:00'},
+      {lat:0.5315,lng:101.4560,waktu:params.tanggal+' 07:40:00'}
+    ]}); return; }
+    if(action === 'pushPosition' || action === 'stopSharing'){ res({ ok:true, demo:true }); return; }
     setTimeout(function(){ toast('Mode demo: perubahan tidak tersimpan ke server.', true); }, 400);
     res({ demo:true });
   });
@@ -1573,7 +1657,7 @@ function bukaHalaman(nama){
   if(el) el.classList.add('aktif');
   document.querySelectorAll('#navBawah button').forEach(function(b){
     b.classList.toggle('aktif', b.dataset.hal === nama ||
-      (b.dataset.hal==='lainnya' && ['lainnya','masalah','jadwal','alat','laporan','log','pengaturan','pengguna'].indexOf(nama)>=0));
+      (b.dataset.hal==='lainnya' && ['lainnya','masalah','jadwal','alat','laporan','log','pengaturan','pengguna','lacak'].indexOf(nama)>=0));
   });
   // FAB per halaman (hanya untuk yang boleh edit)
   var fabPeta = { blok:'＋', panen:'＋', masalah:'＋', jadwal:'＋', alat:'＋' };
@@ -1582,6 +1666,11 @@ function bukaHalaman(nama){
   window.scrollTo(0,0);
   if(nama === 'peta') setTimeout(function(){ if(pastikanPeta()){ peta.invalidateSize(); gambarPeta(); } }, 80);
   if(nama === 'pengguna') renderPengguna();
+  if(nama === 'lacak'){
+    isiOpsiLacak();
+    setTimeout(function(){ if(pastikanPetaLacak()){ petaLacak.invalidateSize(); } segarkanLive(false); }, 120);
+  }
+  aturAutoLive();
 }
 function aksiFab(){
   if(halAktif==='blok') formBlok();
@@ -1708,8 +1797,9 @@ function pastikanPeta(){
   grupBlok = L.layerGroup().addTo(peta);
   grupLabel = L.layerGroup().addTo(peta);
   grupTitik = L.layerGroup().addTo(peta);
+  grupLiveUtama = L.layerGroup();
   kontrolLayer = L.control.layers(null,
-    { '🌴 Batas Blok': grupBlok, '🏷️ Label Blok': grupLabel, '📍 Titik & Alat': grupTitik },
+    { '🌴 Batas Blok': grupBlok, '🏷️ Label Blok': grupLabel, '📍 Titik & Alat': grupTitik, '🛰️ Posisi Live': grupLiveUtama },
     { collapsed: true, position: 'topright' }).addTo(peta);
   return true;
 }
@@ -1724,6 +1814,7 @@ function gantiLapisan(){
 function gambarPeta(){
   if(!pastikanPeta()) return;
   grupBlok.clearLayers(); grupTitik.clearLayers(); grupLabel.clearLayers();
+  if(grupLiveUtama) grupLiveUtama.clearLayers();
   var batas = [];
   var blokTerlihat = blokTampil();
   var setId = {}; blokTerlihat.forEach(function(b){ setId[b.ID]=1; });
@@ -1762,6 +1853,21 @@ function gambarPeta(){
     L.circleMarker([Number(e.Latitude), Number(e.Longitude)], { radius:7, color:'#1565C0', fillColor:'#1565C0', fillOpacity:.85, weight:2 })
       .bindPopup('<b>🚜 '+esc(e.Nama)+'</b><br>'+esc(e.Jenis)+'<br>Status: '+esc(e.Status)+'<br>Operator: '+esc(e.Operator))
       .addTo(grupTitik);
+  });
+
+  // posisi live (dari modul Lacak GPS) — overlay terpisah, bisa di-toggle
+  (S.positions||[]).forEach(function(d){
+    if(!d.Latitude || !d.Longitude) return;
+    var ikon = d.Tipe==='kendaraan' ? '🚜' : '👤';
+    var warna = d.daring ? (d.Tipe==='kendaraan' ? '#1565C0' : '#2E7D46') : '#9E9E9E';
+    L.marker([Number(d.Latitude), Number(d.Longitude)], {
+      icon: L.divIcon({ className:'', iconAnchor:[15,15], html:
+        '<div style="width:30px;height:30px;border-radius:50%;background:'+warna+';border:3px solid #fff;'+
+        'box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:14px">'+ikon+'</div>' })
+    }).bindPopup('<b>'+ikon+' '+esc(d.Nama)+'</b><br>'+
+      (d.daring?'<b style="color:#2E7D46">Daring</b>':'Terakhir terlihat')+' · '+esc(usiaTeks(d.umurDetik))+'<br>'+
+      esc(d.Waktu||''))
+      .addTo(grupLiveUtama);
   });
 
   renderLayerKustom();
@@ -2372,8 +2478,11 @@ function renderAlat(){
   var html = '';
   data.forEach(function(e){
     var chipS = e.Status==='Aktif'?'hijau':(e.Status==='Perlu Perbaikan'?'merah':'abu');
-    html += '<div class="item"><div class="kepala"><div><b>🚜 '+esc(e.Nama)+'</b>'+
-      '<div class="meta">'+esc(e.Jenis)+' · '+esc(namaBlok(e.IDBlok))+' · Op. '+esc(e.Operator||'-')+'</div></div>'+
+    html += '<div class="item"><div class="kepala"><div style="display:flex;align-items:center;gap:10px">'+
+      (e.Foto ? '<img src="'+esc(e.Foto)+'" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:1px solid var(--garis)">'
+              : '<div style="width:40px;height:40px;border-radius:8px;background:var(--hijau-50);display:flex;align-items:center;justify-content:center;font-size:20px">🚜</div>')+
+      '<div><b>'+esc(e.Nama)+'</b>'+
+      '<div class="meta">'+esc(e.Jenis)+' · '+esc(namaBlok(e.IDBlok))+' · Op. '+esc(e.Operator||'-')+'</div></div></div>'+
       '<div class="kanan"><span class="chip '+chipS+'">'+esc(e.Status)+'</span></div></div>'+
       '<div class="aksi-baris"><button class="btn btn-sekunder btn-kecil" onclick="formAlat(\''+esc(e.ID)+'\')">✏️ Edit</button>'+
       '<button class="btn btn-bahaya btn-kecil" onclick="hapusAlat(\''+esc(e.ID)+'\')">Hapus</button></div></div>';
@@ -2383,6 +2492,13 @@ function renderAlat(){
 function formAlat(id){
   var e = id ? S.equipments.find(function(x){ return String(x.ID)===String(id); }) : null;
   bukaLembar('<h3>'+(e?'Edit Alat Berat':'Tambah Alat Berat')+'</h3>'+
+    '<label>Foto Unit</label>'+
+    '<div style="display:flex;align-items:center;gap:12px">'+
+      '<div id="faFotoPrev">'+fotoPrevHTML(e?e.Foto:'', '🚜')+'</div>'+
+      '<div style="flex:1">'+
+        '<input type="file" id="faFotoFile" accept="image/*" onchange="pilihFotoProfil(\'fa\')" style="font-size:12.5px">'+
+        '<button class="btn btn-sekunder btn-kecil" style="margin-top:6px" onclick="hapusFotoProfil(\'fa\',\'🚜\')">🗑 Hapus Foto</button>'+
+      '</div></div>'+
     '<label>Nama Unit *</label><input id="faNama" value="'+esc(e?e.Nama:'')+'" placeholder="cth: Traktor JD-5075E">'+
     '<label>Jenis</label><select id="faJenis">'+
       ['Traktor Pengangkut','Alat Semprot Semimekanis','Ekskavator Mini','Truk Angkut TBS'].map(function(t){ return '<option'+(e&&e.Jenis===t?' selected':'')+'>'+t+'</option>'; }).join('')+'</select>'+
@@ -2404,6 +2520,7 @@ function formAlat(id){
   isiCascade('faFP','faFE','faFD');
   var elB=document.getElementById('faBlok');
   elB.innerHTML='<option value="">—</option>'+S.blocks.map(function(b){ return '<option value="'+esc(b.ID)+'"'+(e&&e.IDBlok===b.ID?' selected':'')+'>'+esc(b.ID)+' — '+esc(b.Nama)+'</option>'; }).join('');
+  FOTO_BUF.fa = (e && e.Foto) ? e.Foto : '';
   setTimeout(initPickerAlat, 250);
 }
 function simpanAlat(existingId){
@@ -2415,7 +2532,8 @@ function simpanAlat(existingId){
     Operator: document.getElementById('faOperator').value.trim(),
     IDBlok: document.getElementById('faBlok').value,
     Latitude: document.getElementById('faLat').value,
-    Longitude: document.getElementById('faLng').value
+    Longitude: document.getElementById('faLng').value,
+    Foto: FOTO_BUF.fa || ''
   }, 'Data alat tersimpan ✓');
 }
 function hapusAlat(id){
@@ -3186,6 +3304,13 @@ function formPengguna(username){
   var users = document.getElementById('daftarPengguna')._users || [];
   var u = username ? users.find(function(x){ return String(x.Username)===String(username); }) : null;
   bukaLembar('<h3>'+(u?'Edit Pengguna':'Tambah Pengguna')+'</h3>'+
+    '<label>Foto Profil</label>'+
+    '<div style="display:flex;align-items:center;gap:12px">'+
+      '<div id="puFotoPrev">'+fotoPrevHTML(u?u.Foto:'', '👤')+'</div>'+
+      '<div style="flex:1">'+
+        '<input type="file" id="puFotoFile" accept="image/*" onchange="pilihFotoProfil(\'pu\')" style="font-size:12.5px">'+
+        '<button class="btn btn-sekunder btn-kecil" style="margin-top:6px" onclick="hapusFotoProfil(\'pu\',\'👤\')">🗑 Hapus Foto</button>'+
+      '</div></div>'+
     '<label>Username *</label><input id="puUser" value="'+esc(u?u.Username:'')+'" '+(u?'readonly style="background:#eee"':'placeholder="huruf kecil/angka"')+'>'+
     '<label>Nama Lengkap</label><input id="puNama" value="'+esc(u?u.Nama:'')+'" placeholder="cth: Budi Mandor">'+
     '<label>Peran</label><select id="puPeran">'+
@@ -3193,13 +3318,40 @@ function formPengguna(username){
     '<label>Kata Sandi '+(u?'(kosongkan bila tak diubah)':'*')+'</label><input id="puPass" type="password" placeholder="••••••••" autocomplete="new-password">'+
     '<label style="display:flex;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="puAktif" style="width:auto" '+(!u||String(u.Aktif)!=='false'?'checked':'')+'> Akun aktif</label>'+
     '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="simpanPengguna(\''+(u?esc(u.Username):'')+'\')">💾 Simpan</button>');
+  FOTO_BUF.pu = (u && u.Foto) ? u.Foto : '';
 }
+
+/* ---- Foto profil (pengguna & alat): kompres ≤256px lalu simpan sbg data URL ---- */
+var FOTO_BUF = { pu:'', fa:'' };
+function fotoPrevHTML(src, emoji){
+  return src
+    ? '<img src="'+esc(src)+'" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--garis)">'
+    : '<div style="width:64px;height:64px;border-radius:50%;background:var(--hijau-50);display:flex;align-items:center;justify-content:center;font-size:28px">'+emoji+'</div>';
+}
+function pilihFotoProfil(pfx){
+  var f = document.getElementById(pfx+'FotoFile').files[0];
+  if(!f) return;
+  if(!/^image\//.test(f.type)) return toast('File harus berupa gambar.', true);
+  kompresGambar(f, 256, 0.8).then(function(dataUrl){
+    FOTO_BUF[pfx] = dataUrl;
+    document.getElementById(pfx+'FotoPrev').innerHTML = fotoPrevHTML(dataUrl, pfx==='pu'?'👤':'🚜');
+    toast('Foto siap disimpan ✓');
+  }).catch(function(){ toast('Gagal memproses gambar.', true); });
+}
+function hapusFotoProfil(pfx, emoji){
+  FOTO_BUF[pfx] = '';
+  var fi = document.getElementById(pfx+'FotoFile'); if(fi) fi.value='';
+  document.getElementById(pfx+'FotoPrev').innerHTML = fotoPrevHTML('', emoji);
+  toast('Foto dihapus (simpan untuk menerapkan).');
+}
+
 function simpanPengguna(existing){
   var p = {
     Username: existing || document.getElementById('puUser').value.trim().toLowerCase(),
     Nama: document.getElementById('puNama').value.trim(),
     Peran: document.getElementById('puPeran').value,
     Aktif: document.getElementById('puAktif').checked,
+    Foto: FOTO_BUF.pu || '',
     password: document.getElementById('puPass').value
   };
   if(!p.Username) return toast('Username wajib diisi.', true);
@@ -3213,6 +3365,323 @@ function hapusPengguna(username){
   tampilLoader(true, 'Menghapus…');
   callApi('deleteUser', { username:username }).then(function(){
     tampilLoader(false); toast('Pengguna dihapus ✓'); renderPengguna();
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ==================== PELACAKAN GPS LIVE ==================== */
+var petaLacak = null, grupLive = null, grupJejak = null;
+var watchId = null, timerKirim = null, timerAuto = null;
+var autoLive = true;
+var posisiTerakhir = null;
+var LIVE = []; // hasil getLivePositions
+
+/* ID perangkat persisten (agar satu HP = satu titik, tidak dobel). */
+function deviceId(){
+  var id;
+  try{ id = localStorage.getItem('sg_device'); }catch(e){}
+  if(!id){
+    id = 'dev-' + Math.random().toString(36).slice(2,10) + '-' + Date.now().toString(36);
+    try{ localStorage.setItem('sg_device', id); }catch(e){}
+  }
+  return id;
+}
+function sedangBerbagi(){ return watchId !== null; }
+
+function ubahTipeLacak(){
+  var t = document.getElementById('lcTipe').value;
+  document.getElementById('lcBoxAlat').style.display = (t==='kendaraan') ? 'block' : 'none';
+}
+function isiOpsiLacak(){
+  var elA = document.getElementById('lcAlat');
+  if(elA){
+    var cur = elA.value;
+    elA.innerHTML = '<option value="">— pilih —</option>' + (S.equipments||[]).map(function(e){
+      return '<option value="'+esc(e.ID)+'"'+(cur===e.ID?' selected':'')+'>'+esc(e.Nama)+' ('+esc(e.Jenis||'-')+')</option>';
+    }).join('');
+  }
+  var elN = document.getElementById('lcNama');
+  if(elN && !elN.value && SESI) elN.value = SESI.nama || SESI.username;
+  var elT = document.getElementById('jkTanggal');
+  if(elT && !elT.value) elT.value = hariISO(new Date());
+  isiCascade('lkPer','lkEst','lkDiv');
+}
+
+/* ---------- Mulai / hentikan berbagi lokasi ---------- */
+function mulaiBagikanLokasi(){
+  if(!navigator.geolocation) return toast('Perangkat tidak mendukung GPS.', true);
+  var tipe = document.getElementById('lcTipe').value;
+  var idAlat = document.getElementById('lcAlat').value;
+  var nama = document.getElementById('lcNama').value.trim();
+  if(tipe==='kendaraan' && !idAlat) return toast('Pilih kendaraan/alat yang dibawa.', true);
+  if(!nama) return toast('Isi nama tampilan.', true);
+
+  var jeda = Number(document.getElementById('lcInterval').value||30) * 1000;
+
+  watchId = navigator.geolocation.watchPosition(function(pos){
+    posisiTerakhir = {
+      Latitude: pos.coords.latitude, Longitude: pos.coords.longitude,
+      Akurasi: pos.coords.accuracy ? Math.round(pos.coords.accuracy) : '',
+      Kecepatan: (pos.coords.speed!=null && !isNaN(pos.coords.speed)) ? Math.round(pos.coords.speed*3.6) : '', // m/s → km/j
+      Arah: (pos.coords.heading!=null && !isNaN(pos.coords.heading)) ? Math.round(pos.coords.heading) : ''
+    };
+    statusLacak('📍 GPS aktif — akurasi ±'+(posisiTerakhir.Akurasi||'?')+' m', false);
+  }, function(err){
+    statusLacak('⚠️ GPS gagal: '+(err && err.message ? err.message : 'izin ditolak')+'. Buka lewat URL /exec atau situs PWA, bukan iframe.', true);
+  }, { enableHighAccuracy:true, maximumAge:5000, timeout:20000 });
+
+  kirimPosisiSekarang(); // kirim segera bila sudah ada fix
+  timerKirim = setInterval(kirimPosisiSekarang, jeda);
+
+  document.getElementById('btnMulaiLacak').style.display='none';
+  document.getElementById('btnStopLacak').style.display='block';
+  statusLacak('🔄 Menunggu sinyal GPS…', false);
+  toast('Berbagi lokasi dimulai. Biarkan aplikasi terbuka agar terus mengirim.');
+}
+function kirimPosisiSekarang(){
+  if(!posisiTerakhir) return;
+  var tipe = document.getElementById('lcTipe').value;
+  var p = {
+    DeviceID: deviceId(),
+    Tipe: tipe,
+    Nama: document.getElementById('lcNama').value.trim(),
+    IDAlat: tipe==='kendaraan' ? document.getElementById('lcAlat').value : '',
+    Latitude: posisiTerakhir.Latitude, Longitude: posisiTerakhir.Longitude,
+    Akurasi: posisiTerakhir.Akurasi, Kecepatan: posisiTerakhir.Kecepatan, Arah: posisiTerakhir.Arah,
+    Baterai: bateraiPersen()
+  };
+  callApi('pushPosition', p).then(function(){
+    statusLacak('✅ Terkirim '+new Date().toLocaleTimeString('id-ID')+' · akurasi ±'+(p.Akurasi||'?')+' m', false);
+    if(halAktif==='lacak') segarkanLive(false);
+  }).catch(function(e){
+    // offline: posisi tidak diantre (data lokasi basi tak berguna), cukup beri tahu
+    statusLacak('📴 Offline — posisi akan terkirim lagi saat sinyal kembali.', true);
+  });
+}
+function bateraiPersen(){
+  try{ if(navigator.getBattery) return ''; }catch(e){}
+  return '';
+}
+function hentikanBagikanLokasi(){
+  if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; }
+  if(timerKirim){ clearInterval(timerKirim); timerKirim=null; }
+  callApi('stopSharing', { DeviceID: deviceId() }).catch(function(){});
+  document.getElementById('btnMulaiLacak').style.display='block';
+  document.getElementById('btnStopLacak').style.display='none';
+  statusLacak('⏹ Berbagi lokasi dihentikan.', false);
+  toast('Berbagi lokasi dihentikan.');
+  segarkanLive(false);
+}
+function statusLacak(teks, galat){
+  var el = document.getElementById('lcStatus'); if(!el) return;
+  el.innerHTML = '<span style="color:'+(galat?'var(--merah)':'var(--hijau-700)')+';font-weight:600">'+esc(teks)+'</span>';
+}
+
+/* ---------- Peta live ---------- */
+var grupBlokLacak = null, grupLabelLacak = null;
+function pastikanPetaLacak(){
+  if(petaLacak) return true;
+  if(typeof L === 'undefined') return false;
+  var el = document.getElementById('petaLacak'); if(!el) return false;
+  var st = S.settings||{};
+  petaLacak = L.map('petaLacak').setView([Number(st.petaLat)||0.531, Number(st.petaLng)||101.456], Number(st.petaZoom)||14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(petaLacak);
+  grupBlokLacak = L.layerGroup().addTo(petaLacak);
+  grupLabelLacak = L.layerGroup().addTo(petaLacak);
+  grupJejak = L.layerGroup().addTo(petaLacak);
+  grupLive = L.layerGroup().addTo(petaLacak);
+  gambarBlokLacak();
+  setTimeout(function(){ petaLacak.invalidateSize(); }, 200);
+  return true;
+}
+/* Gambar batas blok di peta Lacak mengikuti filter unit + toggle label. */
+function gambarBlokLacak(){
+  if(!petaLacak || !grupBlokLacak) return;
+  grupBlokLacak.clearLayers(); grupLabelLacak.clearLayers();
+  var fP=(document.getElementById('lkPer')||{}).value||'', fE=(document.getElementById('lkEst')||{}).value||'', fD=(document.getElementById('lkDiv')||{}).value||'';
+  var pakaiLabel = (document.getElementById('lkLabel')||{}).checked;
+  var batas=[];
+  S.blocks.filter(function(b){ return lolosUnit(b.ID,fP,fE,fD); }).forEach(function(b){
+    var rings = parseKoord(b.Koordinat); if(!rings.length) return;
+    var ll = (rings.length===1)?rings[0]:rings.map(function(r){return [r];});
+    var pg = L.polygon(ll,{ color:'#2E7D46', weight:1.2, fillColor:'#2E7D46', fillOpacity:.08 }).bindTooltip(b.ID);
+    pg.addTo(grupBlokLacak);
+    rings.forEach(function(r){ r.forEach(function(c){ batas.push(c); }); });
+    if(pakaiLabel){
+      var pusat = pg.getBounds().getCenter();
+      L.marker(pusat, { icon: L.divIcon({ className:'', iconAnchor:[14,8], html:
+        '<div style="background:rgba(255,255,255,.85);border-radius:6px;padding:1px 6px;font:700 11px \'Plus Jakarta Sans\';color:#123B22;white-space:nowrap">'+esc(b.ID)+'</div>' }) })
+        .addTo(grupLabelLacak);
+    }
+  });
+  // bila filter dipersempit, fokus ke area blok tersebut
+  if(batas.length && (fP||fE||fD)){ try{ petaLacak.fitBounds(batas, { padding:[24,24] }); }catch(e){} }
+}
+function segarkanLive(manual){
+  callApi('getLivePositions', {}).then(function(list){
+    LIVE = list||[];
+    gambarLive();
+    renderDaftarLacak();
+    isiOpsiJejak();
+    document.getElementById('ringkasLacak').textContent =
+      LIVE.filter(function(x){return x.daring;}).length + ' daring / ' + LIVE.length + ' perangkat';
+    if(manual) toast('Posisi terbaru dimuat ✓');
+  }).catch(function(e){ if(manual) toast('Gagal memuat posisi: '+e.message, true); });
+}
+function gambarLive(){
+  if(!pastikanPetaLacak()) return;
+  grupLive.clearLayers();
+  var batas = [];
+  LIVE.forEach(function(d){
+    if(!d.Latitude || !d.Longitude) return;
+    var warna = d.daring ? (d.Tipe==='kendaraan' ? '#1565C0' : '#2E7D46') : '#9E9E9E';
+    var m = L.marker([d.Latitude, d.Longitude], {
+      icon: L.divIcon({ className:'', iconAnchor:[20,20], html: ikonAvatarHTML(d, warna, 40) })
+    });
+    m.bindPopup(popupLiveHTML(d));
+    m.addTo(grupLive);
+    batas.push([d.Latitude, d.Longitude]);
+  });
+  if(batas.length && !gambarLive._pernahFit){
+    try{ petaLacak.fitBounds(batas, { padding:[40,40], maxZoom:16 }); gambarLive._pernahFit = true; }catch(e){}
+  }
+}
+/* Penanda berbentuk avatar bulat: foto profil bila ada, emoji bila tidak. */
+function ikonAvatarHTML(d, warna, sz){
+  var ikon = d.Tipe==='kendaraan' ? '🚜' : '👤';
+  var isi = d.Foto
+    ? '<img src="'+esc(d.Foto)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.replaceWith(document.createTextNode(\''+ikon+'\'))">'
+    : '<span style="font-size:'+Math.round(sz*0.45)+'px">'+ikon+'</span>';
+  var titik = d.daring
+    ? '<span style="position:absolute;right:-1px;bottom:-1px;width:'+Math.round(sz*0.28)+'px;height:'+Math.round(sz*0.28)+'px;border-radius:50%;background:#2E7D46;border:2px solid #fff"></span>'
+    : '';
+  return '<div style="position:relative;width:'+sz+'px;height:'+sz+'px">'+
+    '<div style="width:100%;height:100%;border-radius:50%;background:'+warna+';border:3px solid #fff;'+
+    'box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;overflow:hidden">'+isi+'</div>'+titik+'</div>';
+}
+function popupLiveHTML(d){
+  var ikon = d.Tipe==='kendaraan' ? '🚜' : '👤';
+  var foto = d.Foto ? '<img src="'+esc(d.Foto)+'" style="width:56px;height:56px;border-radius:10px;object-fit:cover;float:left;margin:0 8px 6px 0">' : '';
+  return foto+
+    '<b>'+ikon+' '+esc(d.Nama)+'</b><br>'+
+    (d.Tipe==='kendaraan' ? 'Alat: '+esc(namaAlat(d.IDAlat))+'<br>' : '')+
+    'Status: '+(d.daring?'<b style="color:#2E7D46">Daring</b>':'Terakhir terlihat')+'<br>'+
+    'Waktu: '+esc(d.Waktu||'-')+' ('+esc(usiaTeks(d.umurDetik))+')<br>'+
+    (d.Kecepatan!==''&&d.Kecepatan!=null ? 'Kecepatan: '+esc(d.Kecepatan)+' km/j<br>' : '')+
+    (d.Akurasi ? 'Akurasi: ±'+esc(d.Akurasi)+' m<br>' : '')+
+    'Oleh: '+esc(d.Username||'-')+'<div style="clear:both"></div>';
+}
+function namaAlat(id){
+  var e = (S.equipments||[]).find(function(x){ return String(x.ID)===String(id); });
+  return e ? e.Nama : (id||'-');
+}
+function usiaTeks(dtk){
+  if(dtk==null || dtk>=999999) return 'tak diketahui';
+  if(dtk < 60) return dtk+' detik lalu';
+  if(dtk < 3600) return Math.round(dtk/60)+' menit lalu';
+  if(dtk < 86400) return Math.round(dtk/3600)+' jam lalu';
+  return Math.round(dtk/86400)+' hari lalu';
+}
+function renderDaftarLacak(){
+  var el = document.getElementById('daftarLacak'); if(!el) return;
+  if(!LIVE.length){ el.innerHTML = '<div class="kosong">Belum ada perangkat yang berbagi lokasi.</div>'; return; }
+  el.innerHTML = LIVE.slice().sort(function(a,b){ return a.umurDetik-b.umurDetik; }).map(function(d){
+    var ikon = d.Tipe==='kendaraan' ? '🚜' : '👤';
+    var av = d.Foto
+      ? '<img src="'+esc(d.Foto)+'" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:2px solid var(--garis)">'
+      : '<div style="width:38px;height:38px;border-radius:50%;background:var(--hijau-50);display:flex;align-items:center;justify-content:center;font-size:18px">'+ikon+'</div>';
+    return '<div class="item"><div class="kepala"><div style="display:flex;align-items:center;gap:10px">'+av+
+      '<div><b>'+esc(d.Nama)+'</b>'+
+      '<div class="meta">'+(d.Tipe==='kendaraan'?esc(namaAlat(d.IDAlat))+' · ':'')+esc(d.Username||'-')+' · '+esc(usiaTeks(d.umurDetik))+'</div></div></div>'+
+      '<div class="kanan"><span class="chip '+(d.daring?'hijau':'abu')+'">'+(d.daring?'Daring':'Luring')+'</span></div></div>'+
+      '<div class="aksi-baris">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="pusatkanKe(\''+esc(d.DeviceID)+'\')">🎯 Pusatkan</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="lihatJejakCepat(\''+esc(d.DeviceID)+'\')">🛤️ Rute Hari Ini</button>'+
+      '<button class="btn btn-bahaya btn-kecil adminOnly" onclick="hapusPelacak(\''+esc(d.DeviceID)+'\')">Hapus</button>'+
+      '</div></div>';
+  }).join('');
+}
+function pusatkanKe(dev){
+  var d = LIVE.find(function(x){ return String(x.DeviceID)===String(dev); });
+  if(!d || !pastikanPetaLacak()) return;
+  petaLacak.setView([d.Latitude, d.Longitude], 17);
+  toast('Dipusatkan ke '+d.Nama);
+}
+function hapusPelacak(dev){
+  if(!confirm('Hapus perangkat ini dari daftar pelacakan?')) return;
+  callApi('deleteTracker', { deviceId:dev }).then(function(){ toast('Perangkat dihapus ✓'); segarkanLive(false); })
+    .catch(function(e){ toast(e.message, true); });
+}
+function toggleAutoLive(){
+  autoLive = !autoLive;
+  document.getElementById('btnAutoLive').textContent = '⏱ Auto: ' + (autoLive?'ON':'OFF');
+  aturAutoLive();
+}
+function aturAutoLive(){
+  if(timerAuto){ clearInterval(timerAuto); timerAuto=null; }
+  if(autoLive && halAktif==='lacak'){
+    timerAuto = setInterval(function(){ segarkanLive(false); }, 30000);
+  }
+}
+
+/* ---------- Riwayat jejak ---------- */
+function isiOpsiJejak(){
+  var el = document.getElementById('jkDevice'); if(!el) return;
+  var cur = el.value;
+  el.innerHTML = '<option value="">— pilih —</option>' + LIVE.map(function(d){
+    var ikon = d.Tipe==='kendaraan' ? '🚜' : '👤';
+    return '<option value="'+esc(d.DeviceID)+'"'+(cur===d.DeviceID?' selected':'')+'>'+ikon+' '+esc(d.Nama)+'</option>';
+  }).join('');
+}
+function lihatJejakCepat(dev){
+  document.getElementById('jkDevice').value = dev;
+  document.getElementById('jkTanggal').value = hariISO(new Date());
+  tampilkanJejak();
+}
+function tampilkanJejak(){
+  var dev = document.getElementById('jkDevice').value;
+  var tgl = document.getElementById('jkTanggal').value;
+  if(!dev) return toast('Pilih perangkat dulu.', true);
+  if(!tgl) return toast('Pilih tanggal dulu.', true);
+  tampilLoader(true, 'Memuat rute…');
+  callApi('getTrack', { deviceId:dev, tanggal:tgl }).then(function(r){
+    tampilLoader(false);
+    if(!pastikanPetaLacak()) return;
+    grupJejak.clearLayers();
+    var titik = (r.titik||[]).filter(function(t){ return t.lat && t.lng; });
+    if(!titik.length){
+      document.getElementById('jkInfo').textContent = 'Tidak ada jejak pada tanggal tersebut.';
+      toast('Tidak ada jejak pada tanggal itu.', true); return;
+    }
+    var ll = titik.map(function(t){ return [t.lat, t.lng]; });
+    L.polyline(ll, { color:'#E8960C', weight:4, opacity:.85 }).addTo(grupJejak);
+    L.circleMarker(ll[0], { radius:6, color:'#2E7D46', fillColor:'#2E7D46', fillOpacity:1 })
+      .bindPopup('Mulai: '+esc(titik[0].waktu)).addTo(grupJejak);
+    L.circleMarker(ll[ll.length-1], { radius:6, color:'#C62828', fillColor:'#C62828', fillOpacity:1 })
+      .bindPopup('Terakhir: '+esc(titik[titik.length-1].waktu)).addTo(grupJejak);
+    try{ petaLacak.fitBounds(ll, { padding:[30,30] }); }catch(e){}
+
+    var jarak = hitungJarakKm(ll);
+    document.getElementById('jkInfo').innerHTML =
+      '<b>'+titik.length+' titik</b> · jarak tempuh ± <b>'+jarak.toFixed(2)+' km</b><br>'+
+      'Mulai '+esc(String(titik[0].waktu).slice(11,19))+' — terakhir '+esc(String(titik[titik.length-1].waktu).slice(11,19));
+    toast('Rute ditampilkan ✓');
+  }).catch(function(e){ tampilLoader(false); toast('Gagal: '+e.message, true); });
+}
+/* Jarak total rute (haversine). */
+function hitungJarakKm(ll){
+  var total = 0;
+  for(var i=1;i<ll.length;i++){
+    var R=6371, dLat=(ll[i][0]-ll[i-1][0])*Math.PI/180, dLng=(ll[i][1]-ll[i-1][1])*Math.PI/180;
+    var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(ll[i-1][0]*Math.PI/180)*Math.cos(ll[i][0]*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    total += R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+  return total;
+}
+function bersihkanJejak(){
+  if(!confirm('Hapus semua jejak GPS yang lebih lama dari 14 hari?')) return;
+  tampilLoader(true, 'Membersihkan…');
+  callApi('purgeTracks', { hariSimpan:14 }).then(function(r){
+    tampilLoader(false); toast((r.dihapus||0)+' titik jejak dihapus ✓');
   }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
 }
 
