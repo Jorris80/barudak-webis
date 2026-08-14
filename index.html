@@ -643,6 +643,7 @@
       <button onclick="bukaHalaman('traksi')"><span class="ic">🚜</span>Traksi &amp; Alat Berat</button>
       <button onclick="bukaHalaman('gudang')"><span class="ic">📦</span>Gudang &amp; Stok</button>
       <button onclick="bukaHalaman('budget')"><span class="ic">💰</span>Budgeting Kebun</button>
+      <button onclick="bukaHalaman('ktu')"><span class="ic">🗂️</span>KTU (Administrasi)</button>
       <button onclick="bukaHalaman('landclearing')"><span class="ic">🚜</span>Land Clearing (LC)</button>
       <button onclick="bukaHalaman('jadwal')"><span class="ic">🗓️</span>Jadwal Kerja</button>
       <button onclick="bukaHalaman('hujan')"><span class="ic">🌧️</span>Curah Hujan</button>
@@ -950,6 +951,99 @@
     <div id="daftarLandClearing"></div>
   </section>
 
+  <!-- ================= KTU / ADMINISTRASI TATA USAHA ================= -->
+  <section class="halaman" id="hal-ktu">
+    <h2 class="judul">KTU — Administrasi Kebun <small id="ringkasKtu"></small></h2>
+
+    <div class="filter-bar" id="tabKtu">
+      <button class="btn btn-utama btn-kecil" data-tab="kas" onclick="gantiTabKtu('kas')">💵 Kas &amp; Bank</button>
+      <button class="btn btn-sekunder btn-kecil" data-tab="upah" onclick="gantiTabKtu('upah')">👷 Upah</button>
+      <button class="btn btn-sekunder btn-kecil" data-tab="pb" onclick="gantiTabKtu('pb')">🧾 Permintaan Barang</button>
+      <button class="btn btn-sekunder btn-kecil" data-tab="aset" onclick="gantiTabKtu('aset')">🏷️ Inventaris</button>
+      <button class="btn btn-sekunder btn-kecil" data-tab="surat" onclick="gantiTabKtu('surat')">✉️ Agenda Surat</button>
+    </div>
+
+    <!-- ---------- KAS & BANK ---------- -->
+    <div class="ktu-panel" id="ktu-kas">
+      <div class="filter-bar">
+        <select id="ksPer" onchange="renderKas()"><option value="">Semua Perusahaan</option></select>
+        <select id="ksEst" onchange="renderKas()"><option value="">Semua Estate</option></select>
+        <input type="month" id="ksBulan" onchange="renderKas()">
+        <select id="ksJenis" onchange="renderKas()">
+          <option value="">Semua Transaksi</option><option>Masuk</option><option>Keluar</option>
+        </select>
+        <button class="btn btn-sekunder btn-kecil" onclick="eksporKtuCSV('kas')">⬇ CSV</button>
+      </div>
+      <div class="kpi-grid" id="kpiKas" style="margin-bottom:12px"></div>
+      <div id="daftarKas"></div>
+    </div>
+
+    <!-- ---------- UPAH / PAYROLL ---------- -->
+    <div class="ktu-panel" id="ktu-upah" style="display:none">
+      <div class="filter-bar">
+        <select id="upPer" onchange="isiCascade('upPer','upEst','upDiv');renderUpah();"><option value="">Semua Perusahaan</option></select>
+        <select id="upEst" onchange="isiCascade('upPer','upEst','upDiv');renderUpah();"><option value="">Semua Estate</option></select>
+        <select id="upDiv" onchange="renderUpah()"><option value="">Semua Divisi</option></select>
+        <input type="month" id="upPeriode" onchange="renderUpah()">
+        <input type="search" id="upCari" placeholder="Cari nama / NIK…" oninput="renderUpah()">
+        <button class="btn btn-sekunder btn-kecil" onclick="eksporKtuCSV('upah')">⬇ CSV</button>
+      </div>
+      <div class="kpi-grid" id="kpiUpah" style="margin-bottom:12px"></div>
+      <div id="daftarUpah"></div>
+    </div>
+
+    <!-- ---------- PERMINTAAN BARANG ---------- -->
+    <div class="ktu-panel" id="ktu-pb" style="display:none">
+      <div class="filter-bar">
+        <select id="pbPer" onchange="isiCascade('pbPer','pbEst','pbDiv');renderPB();"><option value="">Semua Perusahaan</option></select>
+        <select id="pbEst" onchange="isiCascade('pbPer','pbEst','pbDiv');renderPB();"><option value="">Semua Estate</option></select>
+        <select id="pbDiv" onchange="renderPB()"><option value="">Semua Divisi</option></select>
+        <select id="pbStatus" onchange="renderPB()">
+          <option value="">Semua Status</option><option>Diajukan</option><option>Disetujui</option>
+          <option>Dipesan</option><option>Diterima</option><option>Ditolak</option>
+        </select>
+        <input type="search" id="pbCari" placeholder="Cari barang / No PB…" oninput="renderPB()">
+        <button class="btn btn-sekunder btn-kecil" onclick="eksporKtuCSV('pb')">⬇ CSV</button>
+      </div>
+      <div class="kpi-grid" id="kpiPB" style="margin-bottom:12px"></div>
+      <div id="daftarPB"></div>
+    </div>
+
+    <!-- ---------- INVENTARIS ASET ---------- -->
+    <div class="ktu-panel" id="ktu-aset" style="display:none">
+      <div class="filter-bar">
+        <select id="asPer" onchange="renderAset()"><option value="">Semua Perusahaan</option></select>
+        <select id="asEst" onchange="renderAset()"><option value="">Semua Estate</option></select>
+        <select id="asKondisi" onchange="renderAset()">
+          <option value="">Semua Kondisi</option><option>Baik</option><option>Rusak Ringan</option>
+          <option>Rusak Berat</option><option>Dihapuskan</option>
+        </select>
+        <input type="search" id="asCari" placeholder="Cari aset / kode…" oninput="renderAset()">
+        <button class="btn btn-sekunder btn-kecil" onclick="eksporKtuCSV('aset')">⬇ CSV</button>
+      </div>
+      <div class="kpi-grid" id="kpiAset" style="margin-bottom:12px"></div>
+      <div id="daftarAset"></div>
+    </div>
+
+    <!-- ---------- AGENDA SURAT ---------- -->
+    <div class="ktu-panel" id="ktu-surat" style="display:none">
+      <div class="filter-bar">
+        <select id="srArah" onchange="renderSurat()">
+          <option value="">Masuk &amp; Keluar</option><option>Masuk</option><option>Keluar</option>
+        </select>
+        <select id="srStatus" onchange="renderSurat()">
+          <option value="">Semua Status</option><option>Belum Ditindaklanjuti</option>
+          <option>Diproses</option><option>Selesai</option><option>Arsip</option>
+        </select>
+        <input type="month" id="srBulan" onchange="renderSurat()">
+        <input type="search" id="srCari" placeholder="Cari perihal / no surat…" oninput="renderSurat()">
+        <button class="btn btn-sekunder btn-kecil" onclick="eksporKtuCSV('surat')">⬇ CSV</button>
+      </div>
+      <div class="kpi-grid" id="kpiSurat" style="margin-bottom:12px"></div>
+      <div id="daftarSurat"></div>
+    </div>
+  </section>
+
   <!-- ================= ABSENSI BKM & PREMI ================= -->
   <section class="halaman" id="hal-bkm">
     <h2 class="judul">Absensi BKM &amp; Premi Mandor / Pemanen <small id="ringkasBkm"></small></h2>
@@ -1091,7 +1185,7 @@
 /* =====================================================================
  *  STATE & API
  * ===================================================================*/
-var S = { blocks:[], harvests:[], issues:[], schedules:[], equipments:[], rainfalls:[], shipments:[], fertilizers:[], censuses:[], attendances:[], layers:[], positions:[], logs:[], settings:{}, sensusbuah:[], audits:[], traksi:[], gudang:[], budgets:[], landclearing:[] };
+var S = { blocks:[], harvests:[], issues:[], schedules:[], equipments:[], rainfalls:[], shipments:[], fertilizers:[], censuses:[], attendances:[], layers:[], positions:[], logs:[], settings:{}, sensusbuah:[], audits:[], traksi:[], gudang:[], budgets:[], landclearing:[], kasbank:[], payrolls:[], purchases:[], assets:[], letters:[] };
 var halAktif = 'dasbor';
 var peta = null, lapisanOSM = null, lapisanSat = null, grupBlok = null, grupTitik = null, grupLabel = null, grupLiveUtama = null, penandaSaya = null;
 var kontrolLayer = null, lapisanKustom = {}, lapisanSementara = {};
@@ -2007,6 +2101,11 @@ function pastikanStrukturS(){
   if(!S.gudang) S.gudang = [];
   if(!S.budgets) S.budgets = [];
   if(!S.landclearing) S.landclearing = [];
+  if(!S.kasbank) S.kasbank = [];
+  if(!S.payrolls) S.payrolls = [];
+  if(!S.purchases) S.purchases = [];
+  if(!S.assets) S.assets = [];
+  if(!S.letters) S.letters = [];
 }
 
 function lolosFilterUnit(item, fP, fE, fD){
@@ -2802,10 +2901,10 @@ function bukaHalaman(nama){
   if(el) el.classList.add('aktif');
   document.querySelectorAll('#navBawah button').forEach(function(b){
     b.classList.toggle('aktif', b.dataset.hal === nama ||
-      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing'].indexOf(nama)>=0));
+      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu'].indexOf(nama)>=0));
   });
   // FAB per halaman (hanya untuk yang boleh edit)
-  var fabPeta = { blok:'＋', panen:'＋', spb:'＋', pupuk:'＋', sensus:'＋', bkm:'＋', masalah:'＋', jadwal:'＋', alat:'＋', hujan:'＋', sensusbuah:'＋', audit:'＋', traksi:'＋', gudang:'＋', budget:'＋', landclearing:'＋' };
+  var fabPeta = { blok:'＋', panen:'＋', spb:'＋', pupuk:'＋', sensus:'＋', bkm:'＋', masalah:'＋', jadwal:'＋', alat:'＋', hujan:'＋', sensusbuah:'＋', audit:'＋', traksi:'＋', gudang:'＋', budget:'＋', landclearing:'＋', ktu:'＋' };
   var fab = document.getElementById('fab');
   fab.classList.toggle('tampil', !!fabPeta[nama] && bolehEdit());
   window.scrollTo(0,0);
@@ -2823,6 +2922,7 @@ function bukaHalaman(nama){
   if(nama === 'gudang') renderGudang();
   if(nama === 'budget') renderBudget();
   if(nama === 'landclearing') renderLandClearing();
+  if(nama === 'ktu') gantiTabKtu(tabKtuAktif);
   if(nama === 'pengguna') renderPengguna();
   if(nama === 'lacak'){
     isiOpsiLacak();
@@ -2847,6 +2947,14 @@ function aksiFab(){
   else if(halAktif==='gudang') formGudangBarang();
   else if(halAktif==='budget') formBudget();
   else if(halAktif==='landclearing') formLandClearing();
+  else if(halAktif==='ktu'){
+    // form mengikuti tab KTU yang sedang dibuka
+    if(tabKtuAktif==='kas') formKas();
+    else if(tabKtuAktif==='upah') formUpah();
+    else if(tabKtuAktif==='pb') formPB();
+    else if(tabKtuAktif==='aset') formAset();
+    else if(tabKtuAktif==='surat') formSurat();
+  }
 }
 function perbaruiBadge(){
   var buka = S.issues.filter(function(i){ return i.Status==='Terbuka'; }).length;
@@ -4834,8 +4942,8 @@ var petaPick = null, penandaPick = null;
  * dan {p}Map (mini-peta). titik=true menambah penanda lat/lng.
  */
 var miniMaps = {};
-function filterUnitFormHTML(prefix){
-  return '<label>Saring Blok (opsional)</label>'+
+function filterUnitFormHTML(prefix, labelKustom){
+  return '<label>'+(labelKustom || 'Saring Blok (opsional)')+'</label>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
     '<select id="'+prefix+'FP" onchange="onFilterFormBlok(\''+prefix+'\')" style="flex:1;min-width:120px"><option value="">Semua Perusahaan</option></select>'+
     '<select id="'+prefix+'FE" onchange="onFilterFormBlok(\''+prefix+'\')" style="flex:1;min-width:110px"><option value="">Semua Estate</option></select>'+
@@ -10364,6 +10472,681 @@ function bukaPanelNotifikasi(){
     '<button class="btn btn-sekunder btn-kecil btn-blok" style="margin-top:10px" onclick="ujiNotifikasiMaintenance()">🔔 Uji Notifikasi Browser</button>'+
     '<button class="btn btn-sekunder btn-blok" style="margin-top:6px" onclick="tutupLembar()">Tutup</button>'
   );
+}
+
+
+/* ==================== KTU — ADMINISTRASI TATA USAHA ====================
+ * Lima sub-modul kantor kebun: Kas & Bank, Upah (payroll), Permintaan
+ * Barang, Inventaris Aset, dan Agenda Surat. Semua memakai pola yang sama
+ * dengan modul lain: satu formulir menangani tambah maupun ubah.
+ */
+var tabKtuAktif = 'kas';
+
+function gantiTabKtu(tab){
+  tabKtuAktif = tab;
+  ['kas','upah','pb','aset','surat'].forEach(function(t){
+    var p = document.getElementById('ktu-'+t);
+    if(p) p.style.display = (t===tab) ? 'block' : 'none';
+  });
+  var bar = document.getElementById('tabKtu');
+  if(bar) bar.querySelectorAll('button').forEach(function(b){
+    var aktif = b.dataset.tab === tab;
+    b.className = 'btn btn-kecil ' + (aktif ? 'btn-utama' : 'btn-sekunder');
+  });
+  renderKtu();
+}
+function renderKtu(){
+  isiOpsiKtu();
+  if(tabKtuAktif==='kas') renderKas();
+  else if(tabKtuAktif==='upah') renderUpah();
+  else if(tabKtuAktif==='pb') renderPB();
+  else if(tabKtuAktif==='aset') renderAset();
+  else if(tabKtuAktif==='surat') renderSurat();
+}
+/* Isi dropdown Perusahaan/Estate yang tidak memakai isiCascade. */
+function isiOpsiKtu(){
+  var per = {}, est = {};
+  S.blocks.forEach(function(b){ if(b.Perusahaan) per[b.Perusahaan]=1; if(b.Estate) est[b.Estate]=1; });
+  [['ksPer','Semua Perusahaan',per],['ksEst','Semua Estate',est],
+   ['asPer','Semua Perusahaan',per],['asEst','Semua Estate',est]].forEach(function(x){
+    var el = document.getElementById(x[0]); if(!el) return;
+    var cur = el.value;
+    el.innerHTML = '<option value="">'+x[1]+'</option>' + Object.keys(x[2]).sort().map(function(v){
+      return '<option'+(cur===v?' selected':'')+'>'+esc(v)+'</option>'; }).join('');
+  });
+  isiCascade('upPer','upEst','upDiv');
+  isiCascade('pbPer','pbEst','pbDiv');
+  var b1=document.getElementById('ksBulan'); if(b1 && !b1.value) b1.value = hariISO(new Date()).slice(0,7);
+  var b2=document.getElementById('upPeriode'); if(b2 && !b2.value) b2.value = hariISO(new Date()).slice(0,7);
+}
+function rp(n){ return 'Rp ' + fmtAngka(Math.round(Number(n)||0)); }
+function kpiKotak(judul, nilai, warna){
+  return '<div class="kpi" style="border-left-color:'+(warna||'var(--hijau-700)')+'">'+
+    '<b>'+nilai+'</b><span>'+judul+'</span></div>';
+}
+
+/* ---------------- KAS & BANK ---------------- */
+function renderKas(){
+  var fP=(document.getElementById('ksPer')||{}).value||'';
+  var fE=(document.getElementById('ksEst')||{}).value||'';
+  var fB=(document.getElementById('ksBulan')||{}).value||'';
+  var fJ=(document.getElementById('ksJenis')||{}).value||'';
+  var list=(S.kasbank||[]).filter(function(k){
+    if(fP && k.Perusahaan!==fP) return false;
+    if(fE && k.Estate!==fE) return false;
+    if(fB && String(k.Tanggal).slice(0,7)!==fB) return false;
+    if(fJ && k.Jenis!==fJ) return false;
+    return true;
+  }).sort(function(a,b){ return String(b.Tanggal).localeCompare(String(a.Tanggal)); });
+
+  var masuk=0, keluar=0;
+  list.forEach(function(k){
+    var n=Number(k.NominalRp)||0;
+    if(k.Jenis==='Masuk') masuk+=n; else keluar+=n;
+  });
+  var el=document.getElementById('kpiKas');
+  if(el) el.innerHTML = kpiKotak('Penerimaan', rp(masuk), '#2E7D46') +
+    kpiKotak('Pengeluaran', rp(keluar), '#C62828') +
+    kpiKotak('Saldo Periode', rp(masuk-keluar), (masuk-keluar)>=0?'#1565C0':'#C62828') +
+    kpiKotak('Transaksi', list.length+'', '#E8960C');
+  var r=document.getElementById('ringkasKtu'); if(r) r.textContent = list.length+' transaksi kas';
+
+  var d=document.getElementById('daftarKas');
+  if(!d) return;
+  if(!list.length){ d.innerHTML='<div class="kosong">Belum ada transaksi kas pada filter ini.</div>'; return; }
+  d.innerHTML = list.map(function(k){
+    var masukQ = k.Jenis==='Masuk';
+    return '<div class="item"><div class="kepala"><div><b>'+(masukQ?'⬆️ ':'⬇️ ')+esc(k.Uraian||'-')+'</b>'+
+      '<div class="meta">'+esc(k.Tanggal||'-')+' · '+esc(k.KodeRekening||'tanpa kode')+' · '+esc(k.MetodeBayar||'-')+
+      (k.NoBukti?' · bukti '+esc(k.NoBukti):'')+'</div></div>'+
+      '<div class="kanan"><b style="color:'+(masukQ?'#2E7D46':'#C62828')+'">'+(masukQ?'+':'−')+rp(k.NominalRp)+'</b></div></div>'+
+      (k.Catatan?'<div class="meta" style="margin-top:4px">'+esc(k.Catatan)+'</div>':'')+
+      mediaKtuHTML(k.Bukti)+
+      '<div class="aksi-baris">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="formKas(\''+esc(k.ID)+'\')">✏️ Edit</button>'+
+      '<button class="btn btn-bahaya btn-kecil" onclick="hapusKtu(\'deleteKasBank\',\''+esc(k.ID)+'\',\'transaksi kas\')">🗑 Hapus</button>'+
+      '</div></div>';
+  }).join('');
+}
+function formKas(id){
+  var k = id ? (S.kasbank||[]).find(function(x){ return String(x.ID)===String(id); }) : null;
+  var per={},est={};
+  S.blocks.forEach(function(b){ if(b.Perusahaan) per[b.Perusahaan]=1; if(b.Estate) est[b.Estate]=1; });
+  var opt=function(obj,sel){ return Object.keys(obj).sort().map(function(v){
+    return '<option'+(sel===v?' selected':'')+'>'+esc(v)+'</option>'; }).join(''); };
+  bukaLembar('<h3>'+(k?'Edit Transaksi Kas':'Catat Transaksi Kas / Bank')+'</h3>'+
+    '<div class="grid2">'+
+      '<div><label>Tanggal *</label><input type="date" id="fkTgl" value="'+esc(k?k.Tanggal:hariISO(new Date()))+'"></div>'+
+      '<div><label>Jenis *</label><select id="fkJenis">'+
+        ['Masuk','Keluar'].map(function(j){ return '<option'+(k&&k.Jenis===j?' selected':'')+'>'+j+'</option>'; }).join('')+
+      '</select></div>'+
+    '</div>'+
+    '<label>Uraian / Keterangan *</label><input id="fkUraian" value="'+esc(k?k.Uraian:'')+'" placeholder="cth: Pembelian solar traktor">'+
+    '<div class="grid2">'+
+      '<div><label>Nominal (Rp) *</label><input type="number" id="fkNominal" value="'+esc(k?k.NominalRp:'')+'" placeholder="0"></div>'+
+      '<div><label>Kode Rekening</label><input id="fkKode" value="'+esc(k?k.KodeRekening:'')+'" placeholder="cth: 5101-BBM"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Metode Bayar</label><select id="fkMetode">'+
+        ['Kas','Bank','Transfer','Lainnya'].map(function(m){ return '<option'+(k&&k.MetodeBayar===m?' selected':'')+'>'+m+'</option>'; }).join('')+
+      '</select></div>'+
+      '<div><label>No. Bukti</label><input id="fkBukti" value="'+esc(k?k.NoBukti:'')+'" placeholder="cth: KK-2026-014"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Perusahaan</label><select id="fkPer"><option value="">—</option>'+opt(per,k?k.Perusahaan:'')+'</select></div>'+
+      '<div><label>Estate</label><select id="fkEst"><option value="">—</option>'+opt(est,k?k.Estate:'')+'</select></div>'+
+    '</div>'+
+    '<label>Petugas</label><input id="fkPetugas" value="'+esc(k?k.Petugas:(SESI?(SESI.nama||SESI.username):''))+'">'+
+    '<label>Catatan</label><textarea id="fkCatatan" rows="2" placeholder="Opsional">'+esc(k?k.Catatan:'')+'</textarea>'+
+    '<label>Foto Bukti / Kuitansi</label><input type="file" id="fkFile" accept="image/*" style="font-size:12.5px">'+
+    (k&&k.Bukti?'<div class="meta" style="margin-top:4px">Bukti lama tersimpan — unggah baru untuk mengganti.</div>':'')+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="simpanKas(\''+(k?esc(k.ID):'')+'\')">💾 Simpan</button>');
+}
+function simpanKas(id){
+  var nominal = document.getElementById('fkNominal').value;
+  var uraian = document.getElementById('fkUraian').value.trim();
+  if(!uraian) return toast('Uraian wajib diisi.', true);
+  if(nominal==='' || isNaN(Number(nominal)) || Number(nominal)<=0) return toast('Nominal harus angka lebih dari 0.', true);
+  var lama = id ? (S.kasbank||[]).find(function(x){ return String(x.ID)===String(id); }) : null;
+  ambilBerkasKtu('fkFile').then(function(dataUrl){
+    tampilLoader(true,'Menyimpan transaksi kas…');
+    kirim('addKasBank', {
+      id: id||'',
+      Tanggal: document.getElementById('fkTgl').value,
+      Jenis: document.getElementById('fkJenis').value,
+      KodeRekening: document.getElementById('fkKode').value.trim(),
+      Uraian: uraian,
+      NominalRp: Number(nominal),
+      MetodeBayar: document.getElementById('fkMetode').value,
+      NoBukti: document.getElementById('fkBukti').value.trim(),
+      Perusahaan: document.getElementById('fkPer').value,
+      Estate: document.getElementById('fkEst').value,
+      Petugas: document.getElementById('fkPetugas').value.trim(),
+      Catatan: document.getElementById('fkCatatan').value.trim(),
+      Bukti: dataUrl || (lama?lama.Bukti:'') || ''
+    }, 'Transaksi kas tersimpan ✓');
+  });
+}
+
+/* ---------------- UPAH / PAYROLL ---------------- */
+function hitungUpahNetto(o){
+  return (Number(o.GajiPokokRp)||0) + (Number(o.PremiRp)||0) + (Number(o.LemburRp)||0) +
+         (Number(o.TunjanganRp)||0) - (Number(o.PotBPJSRp)||0) - (Number(o.PotKoperasiRp)||0) -
+         (Number(o.PotKasbonRp)||0);
+}
+function renderUpah(){
+  var fP=(document.getElementById('upPer')||{}).value||'';
+  var fE=(document.getElementById('upEst')||{}).value||'';
+  var fD=(document.getElementById('upDiv')||{}).value||'';
+  var fPer=(document.getElementById('upPeriode')||{}).value||'';
+  var q=((document.getElementById('upCari')||{}).value||'').toLowerCase();
+  var list=(S.payrolls||[]).filter(function(u){
+    if(fP && u.Perusahaan!==fP) return false;
+    if(fE && u.Estate!==fE) return false;
+    if(fD && u.Divisi!==fD) return false;
+    if(fPer && String(u.Periode).slice(0,7)!==fPer) return false;
+    if(q && (String(u.NamaKaryawan)+' '+String(u.NIK)+' '+String(u.Jabatan)).toLowerCase().indexOf(q)<0) return false;
+    return true;
+  }).sort(function(a,b){ return String(a.NamaKaryawan).localeCompare(String(b.NamaKaryawan)); });
+
+  var total=0, hk=0;
+  list.forEach(function(u){ total += Number(u.TotalTerimaRp)||hitungUpahNetto(u); hk += Number(u.HariKerja)||0; });
+  var el=document.getElementById('kpiUpah');
+  if(el) el.innerHTML = kpiKotak('Karyawan', list.length+'', '#1565C0') +
+    kpiKotak('Total Upah', rp(total), '#2E7D46') +
+    kpiKotak('Total HK', fmtAngka(hk), '#E8960C') +
+    kpiKotak('Rata-rata/Orang', rp(list.length?total/list.length:0), '#6A4C93');
+  var r=document.getElementById('ringkasKtu'); if(r) r.textContent = list.length+' karyawan';
+
+  var d=document.getElementById('daftarUpah'); if(!d) return;
+  if(!list.length){ d.innerHTML='<div class="kosong">Belum ada data upah pada filter ini.</div>'; return; }
+  d.innerHTML = list.map(function(u){
+    var netto = Number(u.TotalTerimaRp)||hitungUpahNetto(u);
+    var potongan = (Number(u.PotBPJSRp)||0)+(Number(u.PotKoperasiRp)||0)+(Number(u.PotKasbonRp)||0);
+    return '<div class="item"><div class="kepala"><div><b>👷 '+esc(u.NamaKaryawan||'-')+'</b>'+
+      '<div class="meta">'+esc(u.NIK||'tanpa NIK')+' · '+esc(u.Jabatan||'-')+' · '+esc(u.Periode||'-')+
+      ' · '+esc(u.HariKerja||0)+' HK</div></div>'+
+      '<div class="kanan"><b>'+rp(netto)+'</b>'+
+      (u.Status?'<div><span class="chip '+(u.Status==='Dibayar'?'hijau':'abu')+'">'+esc(u.Status)+'</span></div>':'')+
+      '</div></div>'+
+      '<div class="meta" style="margin-top:4px">Pokok '+rp(u.GajiPokokRp)+' · Premi '+rp(u.PremiRp)+
+      ' · Lembur '+rp(u.LemburRp)+' · Potongan '+rp(potongan)+'</div>'+
+      '<div class="aksi-baris">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="formUpah(\''+esc(u.ID)+'\')">✏️ Edit</button>'+
+      '<button class="btn btn-bahaya btn-kecil" onclick="hapusKtu(\'deletePayroll\',\''+esc(u.ID)+'\',\'data upah\')">🗑 Hapus</button>'+
+      '</div></div>';
+  }).join('');
+}
+function formUpah(id){
+  var u = id ? (S.payrolls||[]).find(function(x){ return String(x.ID)===String(id); }) : null;
+  var n=function(k){ return u&&u[k]!==undefined&&u[k]!=='' ? esc(u[k]) : ''; };
+  bukaLembar('<h3>'+(u?'Edit Data Upah':'Input Upah Karyawan')+'</h3>'+
+    filterUnitFormHTML('fu','Unit Kerja (opsional)')+
+    '<div class="grid2">'+
+      '<div><label>Periode *</label><input type="month" id="fuPeriode" value="'+(u?esc(String(u.Periode).slice(0,7)):hariISO(new Date()).slice(0,7))+'"></div>'+
+      '<div><label>NIK</label><input id="fuNIK" value="'+n('NIK')+'" placeholder="cth: 2019-0451"></div>'+
+    '</div>'+
+    '<label>Nama Karyawan *</label><input id="fuNama" value="'+n('NamaKaryawan')+'" placeholder="cth: Budi Santoso">'+
+    '<div class="grid2">'+
+      '<div><label>Jabatan</label><input id="fuJabatan" value="'+n('Jabatan')+'" placeholder="cth: Pemanen"></div>'+
+      '<div><label>Golongan</label><input id="fuGol" value="'+n('Golongan')+'" placeholder="cth: SKU-H"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Hari Kerja (HK)</label><input type="number" id="fuHK" value="'+n('HariKerja')+'" placeholder="25" oninput="hitungPreviewUpah()"></div>'+
+      '<div><label>Gaji Pokok (Rp)</label><input type="number" id="fuPokok" value="'+n('GajiPokokRp')+'" placeholder="0" oninput="hitungPreviewUpah()"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Premi (Rp)</label><input type="number" id="fuPremi" value="'+n('PremiRp')+'" placeholder="0" oninput="hitungPreviewUpah()"></div>'+
+      '<div><label>Lembur (Rp)</label><input type="number" id="fuLembur" value="'+n('LemburRp')+'" placeholder="0" oninput="hitungPreviewUpah()"></div>'+
+    '</div>'+
+    '<label>Tunjangan (Rp)</label><input type="number" id="fuTunjangan" value="'+n('TunjanganRp')+'" placeholder="0" oninput="hitungPreviewUpah()">'+
+    '<div class="grid2">'+
+      '<div><label>Potongan BPJS (Rp)</label><input type="number" id="fuBPJS" value="'+n('PotBPJSRp')+'" placeholder="0" oninput="hitungPreviewUpah()"></div>'+
+      '<div><label>Potongan Koperasi (Rp)</label><input type="number" id="fuKoperasi" value="'+n('PotKoperasiRp')+'" placeholder="0" oninput="hitungPreviewUpah()"></div>'+
+    '</div>'+
+    '<label>Potongan Kasbon (Rp)</label><input type="number" id="fuKasbon" value="'+n('PotKasbonRp')+'" placeholder="0" oninput="hitungPreviewUpah()">'+
+    '<div id="previewUpah" style="margin-top:12px;padding:12px;border-radius:10px;background:var(--hijau-50);font-weight:800;text-align:center"></div>'+
+    '<label>Status Pembayaran</label><select id="fuStatus">'+
+      ['Draft','Disetujui','Dibayar'].map(function(s){ return '<option'+(u&&u.Status===s?' selected':'')+'>'+s+'</option>'; }).join('')+
+    '</select>'+
+    '<label>Catatan</label><textarea id="fuCatatan" rows="2" placeholder="Opsional">'+n('Catatan')+'</textarea>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="simpanUpah(\''+(u?esc(u.ID):'')+'\')">💾 Simpan</button>');
+  isiCascade('fuFP','fuFE','fuFD');
+  if(u){
+    var sP=document.getElementById('fuFP'); if(sP&&u.Perusahaan){ sP.value=u.Perusahaan; isiCascade('fuFP','fuFE','fuFD'); }
+    var sE=document.getElementById('fuFE'); if(sE&&u.Estate){ sE.value=u.Estate; isiCascade('fuFP','fuFE','fuFD'); }
+    var sD=document.getElementById('fuFD'); if(sD&&u.Divisi) sD.value=u.Divisi;
+  }
+  hitungPreviewUpah();
+}
+function hitungPreviewUpah(){
+  var g=function(id){ var e=document.getElementById(id); return e?Number(e.value)||0:0; };
+  var netto = g('fuPokok')+g('fuPremi')+g('fuLembur')+g('fuTunjangan')-g('fuBPJS')-g('fuKoperasi')-g('fuKasbon');
+  var el=document.getElementById('previewUpah');
+  if(el) el.innerHTML = 'Upah Bersih Diterima<br><span style="font-size:20px;color:var(--hijau-700)">'+rp(netto)+'</span>';
+}
+function simpanUpah(id){
+  var nama=document.getElementById('fuNama').value.trim();
+  if(!nama) return toast('Nama karyawan wajib diisi.', true);
+  var g=function(i){ var e=document.getElementById(i); return e?Number(e.value)||0:0; };
+  var data={
+    id:id||'',
+    Periode: document.getElementById('fuPeriode').value,
+    NIK: document.getElementById('fuNIK').value.trim(),
+    NamaKaryawan: nama,
+    Jabatan: document.getElementById('fuJabatan').value.trim(),
+    Golongan: document.getElementById('fuGol').value.trim(),
+    Perusahaan: (document.getElementById('fuFP')||{}).value||'',
+    Estate: (document.getElementById('fuFE')||{}).value||'',
+    Divisi: (document.getElementById('fuFD')||{}).value||'',
+    HariKerja: g('fuHK'),
+    GajiPokokRp: g('fuPokok'), PremiRp: g('fuPremi'), LemburRp: g('fuLembur'),
+    TunjanganRp: g('fuTunjangan'), PotBPJSRp: g('fuBPJS'),
+    PotKoperasiRp: g('fuKoperasi'), PotKasbonRp: g('fuKasbon'),
+    Status: document.getElementById('fuStatus').value,
+    Catatan: document.getElementById('fuCatatan').value.trim()
+  };
+  data.TotalTerimaRp = hitungUpahNetto(data);
+  tampilLoader(true,'Menyimpan data upah…');
+  kirim('addPayroll', data, 'Data upah tersimpan ✓');
+}
+
+/* ---------------- PERMINTAAN BARANG ---------------- */
+function renderPB(){
+  var fP=(document.getElementById('pbPer')||{}).value||'';
+  var fE=(document.getElementById('pbEst')||{}).value||'';
+  var fD=(document.getElementById('pbDiv')||{}).value||'';
+  var fS=(document.getElementById('pbStatus')||{}).value||'';
+  var q=((document.getElementById('pbCari')||{}).value||'').toLowerCase();
+  var list=(S.purchases||[]).filter(function(x){
+    if(fP && x.Perusahaan!==fP) return false;
+    if(fE && x.Estate!==fE) return false;
+    if(fD && x.Divisi!==fD) return false;
+    if(fS && x.Status!==fS) return false;
+    if(q && (String(x.NamaBarang)+' '+String(x.NoPB)+' '+String(x.Supplier)).toLowerCase().indexOf(q)<0) return false;
+    return true;
+  }).sort(function(a,b){ return String(b.Tanggal).localeCompare(String(a.Tanggal)); });
+
+  var totalNilai=0, belum=0;
+  list.forEach(function(x){
+    totalNilai += Number(x.TotalRp)||0;
+    if(['Diajukan','Disetujui','Dipesan'].indexOf(x.Status)>=0) belum++;
+  });
+  var el=document.getElementById('kpiPB');
+  if(el) el.innerHTML = kpiKotak('Permintaan', list.length+'', '#1565C0') +
+    kpiKotak('Nilai Total', rp(totalNilai), '#2E7D46') +
+    kpiKotak('Belum Diterima', belum+'', belum?'#E8960C':'#9E9E9E') +
+    kpiKotak('Diterima', list.filter(function(x){return x.Status==='Diterima';}).length+'', '#2E7D46');
+  var r=document.getElementById('ringkasKtu'); if(r) r.textContent = list.length+' permintaan barang';
+
+  var d=document.getElementById('daftarPB'); if(!d) return;
+  if(!list.length){ d.innerHTML='<div class="kosong">Belum ada permintaan barang pada filter ini.</div>'; return; }
+  var chip={Diajukan:'abu',Disetujui:'biru',Dipesan:'kuning',Diterima:'hijau',Ditolak:'merah'};
+  d.innerHTML = list.map(function(x){
+    return '<div class="item"><div class="kepala"><div><b>🧾 '+esc(x.NamaBarang||'-')+'</b>'+
+      '<div class="meta">'+esc(x.NoPB||'tanpa No PB')+' · '+esc(x.Tanggal||'-')+' · '+
+      esc(x.Jumlah||0)+' '+esc(x.Satuan||'')+(x.Supplier?' · '+esc(x.Supplier):'')+'</div></div>'+
+      '<div class="kanan"><b>'+rp(x.TotalRp)+'</b>'+
+      '<div><span class="chip '+(chip[x.Status]||'abu')+'">'+esc(x.Status||'Diajukan')+'</span></div></div></div>'+
+      (x.Peruntukan?'<div class="meta" style="margin-top:4px">Untuk: '+esc(x.Peruntukan)+'</div>':'')+
+      mediaKtuHTML(x.Bukti)+
+      '<div class="aksi-baris">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="formPB(\''+esc(x.ID)+'\')">✏️ Edit</button>'+
+      '<button class="btn btn-bahaya btn-kecil" onclick="hapusKtu(\'deletePurchase\',\''+esc(x.ID)+'\',\'permintaan barang\')">🗑 Hapus</button>'+
+      '</div></div>';
+  }).join('');
+}
+function formPB(id){
+  var x = id ? (S.purchases||[]).find(function(v){ return String(v.ID)===String(id); }) : null;
+  var n=function(k){ return x&&x[k]!==undefined&&x[k]!=='' ? esc(x[k]) : ''; };
+  bukaLembar('<h3>'+(x?'Edit Permintaan Barang':'Buat Permintaan Barang (PB)')+'</h3>'+
+    filterUnitFormHTML('fq','Unit Peruntukan (opsional)')+
+    '<div class="grid2">'+
+      '<div><label>No. PB</label><input id="fqNo" value="'+n('NoPB')+'" placeholder="cth: PB/2026/07/012"></div>'+
+      '<div><label>Tanggal *</label><input type="date" id="fqTgl" value="'+(x?esc(x.Tanggal):hariISO(new Date()))+'"></div>'+
+    '</div>'+
+    '<label>Nama Barang *</label><input id="fqBarang" value="'+n('NamaBarang')+'" placeholder="cth: Pupuk NPK 15-15-6-4">'+
+    '<div class="grid2">'+
+      '<div><label>Jumlah *</label><input type="number" id="fqJumlah" value="'+n('Jumlah')+'" placeholder="0" oninput="hitungTotalPB()"></div>'+
+      '<div><label>Satuan</label><input id="fqSatuan" value="'+n('Satuan')+'" placeholder="cth: sak / liter / unit"></div>'+
+    '</div>'+
+    '<label>Harga Satuan (Rp)</label><input type="number" id="fqHarga" value="'+n('HargaSatuanRp')+'" placeholder="0" oninput="hitungTotalPB()">'+
+    '<div id="previewPB" style="margin-top:10px;padding:10px;border-radius:10px;background:var(--hijau-50);font-weight:800;text-align:center"></div>'+
+    '<label>Supplier</label><input id="fqSupplier" value="'+n('Supplier')+'" placeholder="cth: CV Sumber Tani">'+
+    '<label>Peruntukan</label><input id="fqPeruntukan" value="'+n('Peruntukan')+'" placeholder="cth: Pemupukan Blok B1-B5">'+
+    '<div class="grid2">'+
+      '<div><label>Status</label><select id="fqStatus">'+
+        ['Diajukan','Disetujui','Dipesan','Diterima','Ditolak'].map(function(s){ return '<option'+(x&&x.Status===s?' selected':'')+'>'+s+'</option>'; }).join('')+
+      '</select></div>'+
+      '<div><label>Tanggal Terima</label><input type="date" id="fqTerima" value="'+n('TanggalTerima')+'"></div>'+
+    '</div>'+
+    '<label>Pemohon</label><input id="fqPemohon" value="'+(x?n('Pemohon'):esc(SESI?(SESI.nama||SESI.username):''))+'">'+
+    '<label>Catatan</label><textarea id="fqCatatan" rows="2" placeholder="Opsional">'+n('Catatan')+'</textarea>'+
+    '<label>Foto Bukti / Nota</label><input type="file" id="fqFile" accept="image/*" style="font-size:12.5px">'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="simpanPB(\''+(x?esc(x.ID):'')+'\')">💾 Simpan</button>');
+  isiCascade('fqFP','fqFE','fqFD');
+  if(x){
+    var sP=document.getElementById('fqFP'); if(sP&&x.Perusahaan){ sP.value=x.Perusahaan; isiCascade('fqFP','fqFE','fqFD'); }
+    var sE=document.getElementById('fqFE'); if(sE&&x.Estate){ sE.value=x.Estate; isiCascade('fqFP','fqFE','fqFD'); }
+    var sD=document.getElementById('fqFD'); if(sD&&x.Divisi) sD.value=x.Divisi;
+  }
+  hitungTotalPB();
+}
+function hitungTotalPB(){
+  var j=Number((document.getElementById('fqJumlah')||{}).value)||0;
+  var h=Number((document.getElementById('fqHarga')||{}).value)||0;
+  var el=document.getElementById('previewPB');
+  if(el) el.innerHTML='Total Nilai<br><span style="font-size:19px;color:var(--hijau-700)">'+rp(j*h)+'</span>';
+}
+function simpanPB(id){
+  var barang=document.getElementById('fqBarang').value.trim();
+  if(!barang) return toast('Nama barang wajib diisi.', true);
+  var jumlah=Number(document.getElementById('fqJumlah').value)||0;
+  if(jumlah<=0) return toast('Jumlah harus lebih dari 0.', true);
+  var harga=Number(document.getElementById('fqHarga').value)||0;
+  var lama = id ? (S.purchases||[]).find(function(v){ return String(v.ID)===String(id); }) : null;
+  ambilBerkasKtu('fqFile').then(function(dataUrl){
+    tampilLoader(true,'Menyimpan permintaan barang…');
+    kirim('addPurchase', {
+      id:id||'',
+      NoPB: document.getElementById('fqNo').value.trim(),
+      Tanggal: document.getElementById('fqTgl').value,
+      NamaBarang: barang,
+      Jumlah: jumlah,
+      Satuan: document.getElementById('fqSatuan').value.trim(),
+      HargaSatuanRp: harga,
+      TotalRp: jumlah*harga,
+      Supplier: document.getElementById('fqSupplier').value.trim(),
+      Peruntukan: document.getElementById('fqPeruntukan').value.trim(),
+      Perusahaan: (document.getElementById('fqFP')||{}).value||'',
+      Estate: (document.getElementById('fqFE')||{}).value||'',
+      Divisi: (document.getElementById('fqFD')||{}).value||'',
+      Status: document.getElementById('fqStatus').value,
+      TanggalTerima: document.getElementById('fqTerima').value,
+      Pemohon: document.getElementById('fqPemohon').value.trim(),
+      Catatan: document.getElementById('fqCatatan').value.trim(),
+      Bukti: dataUrl || (lama?lama.Bukti:'') || ''
+    }, 'Permintaan barang tersimpan ✓');
+  });
+}
+
+/* ---------------- INVENTARIS ASET ---------------- */
+function renderAset(){
+  var fP=(document.getElementById('asPer')||{}).value||'';
+  var fE=(document.getElementById('asEst')||{}).value||'';
+  var fK=(document.getElementById('asKondisi')||{}).value||'';
+  var q=((document.getElementById('asCari')||{}).value||'').toLowerCase();
+  var list=(S.assets||[]).filter(function(a){
+    if(fP && a.Perusahaan!==fP) return false;
+    if(fE && a.Estate!==fE) return false;
+    if(fK && a.Kondisi!==fK) return false;
+    if(q && (String(a.NamaAset)+' '+String(a.KodeAset)+' '+String(a.Kategori)).toLowerCase().indexOf(q)<0) return false;
+    return true;
+  }).sort(function(a,b){ return String(a.NamaAset).localeCompare(String(b.NamaAset)); });
+
+  var perolehan=0, buku=0, rusak=0;
+  list.forEach(function(a){
+    perolehan += Number(a.NilaiPerolehanRp)||0;
+    buku += Number(a.NilaiBukuRp)||0;
+    if(String(a.Kondisi).indexOf('Rusak')>=0) rusak++;
+  });
+  var el=document.getElementById('kpiAset');
+  if(el) el.innerHTML = kpiKotak('Jumlah Aset', list.length+'', '#1565C0') +
+    kpiKotak('Nilai Perolehan', rp(perolehan), '#2E7D46') +
+    kpiKotak('Nilai Buku', rp(buku), '#6A4C93') +
+    kpiKotak('Perlu Perhatian', rusak+'', rusak?'#C62828':'#9E9E9E');
+  var r=document.getElementById('ringkasKtu'); if(r) r.textContent = list.length+' aset';
+
+  var d=document.getElementById('daftarAset'); if(!d) return;
+  if(!list.length){ d.innerHTML='<div class="kosong">Belum ada data aset pada filter ini.</div>'; return; }
+  var chip={'Baik':'hijau','Rusak Ringan':'kuning','Rusak Berat':'merah','Dihapuskan':'abu'};
+  d.innerHTML = list.map(function(a){
+    return '<div class="item"><div class="kepala"><div style="display:flex;align-items:center;gap:10px">'+
+      (a.Foto?'<img src="'+esc(a.Foto)+'" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:1px solid var(--garis)">':
+              '<div style="width:40px;height:40px;border-radius:8px;background:var(--hijau-50);display:flex;align-items:center;justify-content:center;font-size:20px">🏷️</div>')+
+      '<div><b>'+esc(a.NamaAset||'-')+'</b>'+
+      '<div class="meta">'+esc(a.KodeAset||'tanpa kode')+' · '+esc(a.Kategori||'-')+
+      (a.Merk?' · '+esc(a.Merk):'')+(a.TahunPerolehan?' · '+esc(a.TahunPerolehan):'')+'</div></div></div>'+
+      '<div class="kanan"><span class="chip '+(chip[a.Kondisi]||'abu')+'">'+esc(a.Kondisi||'-')+'</span></div></div>'+
+      '<div class="meta" style="margin-top:4px">Perolehan '+rp(a.NilaiPerolehanRp)+' · Nilai buku '+rp(a.NilaiBukuRp)+
+      (a.Lokasi?' · '+esc(a.Lokasi):'')+(a.PenanggungJawab?' · PJ: '+esc(a.PenanggungJawab):'')+'</div>'+
+      '<div class="aksi-baris">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="formAset(\''+esc(a.ID)+'\')">✏️ Edit</button>'+
+      '<button class="btn btn-bahaya btn-kecil" onclick="hapusKtu(\'deleteAsset\',\''+esc(a.ID)+'\',\'data aset\')">🗑 Hapus</button>'+
+      '</div></div>';
+  }).join('');
+}
+function formAset(id){
+  var a = id ? (S.assets||[]).find(function(x){ return String(x.ID)===String(id); }) : null;
+  var n=function(k){ return a&&a[k]!==undefined&&a[k]!=='' ? esc(a[k]) : ''; };
+  var per={},est={};
+  S.blocks.forEach(function(b){ if(b.Perusahaan) per[b.Perusahaan]=1; if(b.Estate) est[b.Estate]=1; });
+  var opt=function(obj,sel){ return Object.keys(obj).sort().map(function(v){
+    return '<option'+(sel===v?' selected':'')+'>'+esc(v)+'</option>'; }).join(''); };
+  bukaLembar('<h3>'+(a?'Edit Data Aset':'Tambah Aset / Inventaris')+'</h3>'+
+    '<div class="grid2">'+
+      '<div><label>Kode Aset</label><input id="faKode" value="'+n('KodeAset')+'" placeholder="cth: INV-2021-034"></div>'+
+      '<div><label>Kategori</label><select id="faKategori">'+
+        ['Kendaraan','Alat Berat','Bangunan','Mesin','Peralatan Kantor','Elektronik','Lainnya']
+          .map(function(k){ return '<option'+(a&&a.Kategori===k?' selected':'')+'>'+k+'</option>'; }).join('')+
+      '</select></div>'+
+    '</div>'+
+    '<label>Nama Aset *</label><input id="faNamaAset" value="'+n('NamaAset')+'" placeholder="cth: Dump Truck Hino 130HD">'+
+    '<div class="grid2">'+
+      '<div><label>Merk / Tipe</label><input id="faMerk" value="'+n('Merk')+'"></div>'+
+      '<div><label>Tahun Perolehan</label><input type="number" id="faTahun" value="'+n('TahunPerolehan')+'" placeholder="2021" oninput="hitungPenyusutan()"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Nilai Perolehan (Rp)</label><input type="number" id="faNilai" value="'+n('NilaiPerolehanRp')+'" placeholder="0" oninput="hitungPenyusutan()"></div>'+
+      '<div><label>Umur Ekonomis (thn)</label><input type="number" id="faUmur" value="'+n('UmurEkonomisThn')+'" placeholder="8" oninput="hitungPenyusutan()"></div>'+
+    '</div>'+
+    '<div id="previewAset" style="margin-top:10px;padding:10px;border-radius:10px;background:var(--hijau-50);font-size:12.5px;text-align:center;font-weight:700"></div>'+
+    '<div class="grid2">'+
+      '<div><label>Kondisi</label><select id="faKondisi">'+
+        ['Baik','Rusak Ringan','Rusak Berat','Dihapuskan'].map(function(k){ return '<option'+(a&&a.Kondisi===k?' selected':'')+'>'+k+'</option>'; }).join('')+
+      '</select></div>'+
+      '<div><label>Lokasi</label><input id="faLokasi" value="'+n('Lokasi')+'" placeholder="cth: Kantor Divisi 1"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Perusahaan</label><select id="faPerA"><option value="">—</option>'+opt(per,a?a.Perusahaan:'')+'</select></div>'+
+      '<div><label>Estate</label><select id="faEstA"><option value="">—</option>'+opt(est,a?a.Estate:'')+'</select></div>'+
+    '</div>'+
+    '<label>Penanggung Jawab</label><input id="faPJ" value="'+n('PenanggungJawab')+'">'+
+    '<label>Catatan</label><textarea id="faCatatanA" rows="2" placeholder="Opsional">'+n('Catatan')+'</textarea>'+
+    '<label>Foto Aset</label><input type="file" id="faFileAset" accept="image/*" style="font-size:12.5px">'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="simpanAset(\''+(a?esc(a.ID):'')+'\')">💾 Simpan</button>');
+  hitungPenyusutan();
+}
+function hitungPenyusutan(){
+  var nilai=Number((document.getElementById('faNilai')||{}).value)||0;
+  var umur=Number((document.getElementById('faUmur')||{}).value)||0;
+  var tahun=Number((document.getElementById('faTahun')||{}).value)||0;
+  var perThn = umur>0 ? nilai/umur : 0;
+  var usia = tahun>0 ? Math.max(0, new Date().getFullYear()-tahun) : 0;
+  var buku = Math.max(0, nilai - perThn*usia);
+  var el=document.getElementById('previewAset');
+  if(el) el.innerHTML='Penyusutan/tahun '+rp(perThn)+' · Usia '+usia+' thn<br>'+
+    '<span style="font-size:17px;color:var(--hijau-700)">Nilai buku ± '+rp(buku)+'</span>';
+}
+function simpanAset(id){
+  var nama=document.getElementById('faNamaAset').value.trim();
+  if(!nama) return toast('Nama aset wajib diisi.', true);
+  var nilai=Number(document.getElementById('faNilai').value)||0;
+  var umur=Number(document.getElementById('faUmur').value)||0;
+  var tahun=Number(document.getElementById('faTahun').value)||0;
+  var perThn = umur>0 ? nilai/umur : 0;
+  var usia = tahun>0 ? Math.max(0, new Date().getFullYear()-tahun) : 0;
+  var lama = id ? (S.assets||[]).find(function(x){ return String(x.ID)===String(id); }) : null;
+  ambilBerkasKtu('faFileAset').then(function(dataUrl){
+    tampilLoader(true,'Menyimpan data aset…');
+    kirim('addAsset', {
+      id:id||'',
+      KodeAset: document.getElementById('faKode').value.trim(),
+      NamaAset: nama,
+      Kategori: document.getElementById('faKategori').value,
+      Merk: document.getElementById('faMerk').value.trim(),
+      TahunPerolehan: tahun||'',
+      NilaiPerolehanRp: nilai,
+      UmurEkonomisThn: umur||'',
+      PenyusutanPerThnRp: Math.round(perThn),
+      NilaiBukuRp: Math.round(Math.max(0, nilai - perThn*usia)),
+      Kondisi: document.getElementById('faKondisi').value,
+      Lokasi: document.getElementById('faLokasi').value.trim(),
+      Perusahaan: document.getElementById('faPerA').value,
+      Estate: document.getElementById('faEstA').value,
+      PenanggungJawab: document.getElementById('faPJ').value.trim(),
+      Catatan: document.getElementById('faCatatanA').value.trim(),
+      Foto: dataUrl || (lama?lama.Foto:'') || ''
+    }, 'Data aset tersimpan ✓');
+  });
+}
+
+/* ---------------- AGENDA SURAT ---------------- */
+function renderSurat(){
+  var fA=(document.getElementById('srArah')||{}).value||'';
+  var fS=(document.getElementById('srStatus')||{}).value||'';
+  var fB=(document.getElementById('srBulan')||{}).value||'';
+  var q=((document.getElementById('srCari')||{}).value||'').toLowerCase();
+  var list=(S.letters||[]).filter(function(s){
+    if(fA && s.Arah!==fA) return false;
+    if(fS && s.StatusTindakLanjut!==fS) return false;
+    if(fB && String(s.Tanggal).slice(0,7)!==fB) return false;
+    if(q && (String(s.Perihal)+' '+String(s.NoSurat)+' '+String(s.PengirimTujuan)).toLowerCase().indexOf(q)<0) return false;
+    return true;
+  }).sort(function(a,b){ return String(b.Tanggal).localeCompare(String(a.Tanggal)); });
+
+  var masuk=list.filter(function(s){return s.Arah==='Masuk';}).length;
+  var belum=list.filter(function(s){return s.StatusTindakLanjut==='Belum Ditindaklanjuti';}).length;
+  var el=document.getElementById('kpiSurat');
+  if(el) el.innerHTML = kpiKotak('Total Surat', list.length+'', '#1565C0') +
+    kpiKotak('Surat Masuk', masuk+'', '#2E7D46') +
+    kpiKotak('Surat Keluar', (list.length-masuk)+'', '#6A4C93') +
+    kpiKotak('Belum Ditindaklanjuti', belum+'', belum?'#C62828':'#9E9E9E');
+  var r=document.getElementById('ringkasKtu'); if(r) r.textContent = list.length+' surat';
+
+  var d=document.getElementById('daftarSurat'); if(!d) return;
+  if(!list.length){ d.innerHTML='<div class="kosong">Belum ada surat pada filter ini.</div>'; return; }
+  var chip={'Belum Ditindaklanjuti':'merah','Diproses':'kuning','Selesai':'hijau','Arsip':'abu'};
+  d.innerHTML = list.map(function(s){
+    return '<div class="item"><div class="kepala"><div><b>'+(s.Arah==='Masuk'?'📥 ':'📤 ')+esc(s.Perihal||'-')+'</b>'+
+      '<div class="meta">'+esc(s.NoSurat||'tanpa nomor')+' · '+esc(s.Tanggal||'-')+' · '+
+      (s.Arah==='Masuk'?'dari ':'kepada ')+esc(s.PengirimTujuan||'-')+
+      (s.Klasifikasi?' · '+esc(s.Klasifikasi):'')+'</div></div>'+
+      '<div class="kanan"><span class="chip '+(chip[s.StatusTindakLanjut]||'abu')+'">'+esc(s.StatusTindakLanjut||'-')+'</span></div></div>'+
+      (s.Disposisi?'<div class="meta" style="margin-top:4px">Disposisi: '+esc(s.Disposisi)+'</div>':'')+
+      mediaKtuHTML(s.Lampiran)+
+      '<div class="aksi-baris">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="formSurat(\''+esc(s.ID)+'\')">✏️ Edit</button>'+
+      '<button class="btn btn-bahaya btn-kecil" onclick="hapusKtu(\'deleteLetter\',\''+esc(s.ID)+'\',\'surat\')">🗑 Hapus</button>'+
+      '</div></div>';
+  }).join('');
+}
+function formSurat(id){
+  var s = id ? (S.letters||[]).find(function(x){ return String(x.ID)===String(id); }) : null;
+  var n=function(k){ return s&&s[k]!==undefined&&s[k]!=='' ? esc(s[k]) : ''; };
+  var per={},est={};
+  S.blocks.forEach(function(b){ if(b.Perusahaan) per[b.Perusahaan]=1; if(b.Estate) est[b.Estate]=1; });
+  var opt=function(obj,sel){ return Object.keys(obj).sort().map(function(v){
+    return '<option'+(sel===v?' selected':'')+'>'+esc(v)+'</option>'; }).join(''); };
+  bukaLembar('<h3>'+(s?'Edit Agenda Surat':'Catat Surat Masuk / Keluar')+'</h3>'+
+    '<div class="grid2">'+
+      '<div><label>Arah *</label><select id="fsArah">'+
+        ['Masuk','Keluar'].map(function(a){ return '<option'+(s&&s.Arah===a?' selected':'')+'>'+a+'</option>'; }).join('')+
+      '</select></div>'+
+      '<div><label>Tanggal *</label><input type="date" id="fsTgl" value="'+(s?esc(s.Tanggal):hariISO(new Date()))+'"></div>'+
+    '</div>'+
+    '<label>Nomor Surat</label><input id="fsNo" value="'+n('NoSurat')+'" placeholder="cth: 045/KTU/VII/2026">'+
+    '<label>Perihal *</label><input id="fsPerihal" value="'+n('Perihal')+'" placeholder="cth: Permohonan Perbaikan Jalan Produksi">'+
+    '<label>Pengirim / Tujuan *</label><input id="fsPihak" value="'+n('PengirimTujuan')+'" placeholder="cth: Kantor Pusat / Dinas Perkebunan">'+
+    '<div class="grid2">'+
+      '<div><label>Klasifikasi</label><select id="fsKlas">'+
+        ['Umum','Keuangan','Kepegawaian','Produksi','Legal/Perizinan','Pengadaan','Lainnya']
+          .map(function(k){ return '<option'+(s&&s.Klasifikasi===k?' selected':'')+'>'+k+'</option>'; }).join('')+
+      '</select></div>'+
+      '<div><label>Status Tindak Lanjut</label><select id="fsStatus">'+
+        ['Belum Ditindaklanjuti','Diproses','Selesai','Arsip'].map(function(k){ return '<option'+(s&&s.StatusTindakLanjut===k?' selected':'')+'>'+k+'</option>'; }).join('')+
+      '</select></div>'+
+    '</div>'+
+    '<label>Disposisi</label><input id="fsDisposisi" value="'+n('Disposisi')+'" placeholder="cth: Diteruskan ke Askep untuk ditindaklanjuti">'+
+    '<div class="grid2">'+
+      '<div><label>Perusahaan</label><select id="fsPer"><option value="">—</option>'+opt(per,s?s.Perusahaan:'')+'</select></div>'+
+      '<div><label>Estate</label><select id="fsEst"><option value="">—</option>'+opt(est,s?s.Estate:'')+'</select></div>'+
+    '</div>'+
+    '<label>Petugas Pencatat</label><input id="fsPetugas" value="'+(s?n('Petugas'):esc(SESI?(SESI.nama||SESI.username):''))+'">'+
+    '<label>Catatan</label><textarea id="fsCatatan" rows="2" placeholder="Opsional">'+n('Catatan')+'</textarea>'+
+    '<label>Scan / Foto Surat</label><input type="file" id="fsFile" accept="image/*" style="font-size:12.5px">'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="simpanSurat(\''+(s?esc(s.ID):'')+'\')">💾 Simpan</button>');
+}
+function simpanSurat(id){
+  var perihal=document.getElementById('fsPerihal').value.trim();
+  var pihak=document.getElementById('fsPihak').value.trim();
+  if(!perihal) return toast('Perihal wajib diisi.', true);
+  if(!pihak) return toast('Pengirim/Tujuan wajib diisi.', true);
+  var lama = id ? (S.letters||[]).find(function(x){ return String(x.ID)===String(id); }) : null;
+  ambilBerkasKtu('fsFile').then(function(dataUrl){
+    tampilLoader(true,'Menyimpan agenda surat…');
+    kirim('addLetter', {
+      id:id||'',
+      Tanggal: document.getElementById('fsTgl').value,
+      Arah: document.getElementById('fsArah').value,
+      NoSurat: document.getElementById('fsNo').value.trim(),
+      Perihal: perihal,
+      PengirimTujuan: pihak,
+      Klasifikasi: document.getElementById('fsKlas').value,
+      Disposisi: document.getElementById('fsDisposisi').value.trim(),
+      StatusTindakLanjut: document.getElementById('fsStatus').value,
+      Perusahaan: document.getElementById('fsPer').value,
+      Estate: document.getElementById('fsEst').value,
+      Petugas: document.getElementById('fsPetugas').value.trim(),
+      Catatan: document.getElementById('fsCatatan').value.trim(),
+      Lampiran: dataUrl || (lama?lama.Lampiran:'') || ''
+    }, 'Agenda surat tersimpan ✓');
+  });
+}
+
+/* ---------------- UTILITAS BERSAMA KTU ---------------- */
+/* Ambil berkas dari input file, kompres bila gambar. Kosong → '' (tak diubah). */
+function ambilBerkasKtu(idInput){
+  var el = document.getElementById(idInput);
+  var f = el && el.files ? el.files[0] : null;
+  if(!f) return Promise.resolve('');
+  if(!/^image\//.test(f.type)){ toast('Berkas harus berupa gambar.', true); return Promise.resolve(''); }
+  return kompresGambar(f, 1280, 0.75).catch(function(){ return ''; });
+}
+function mediaKtuHTML(url){
+  if(!url) return '';
+  return '<div style="margin-top:6px"><a href="'+esc(url)+'" target="_blank" rel="noopener">'+
+    '<img src="'+esc(url)+'" style="width:64px;height:52px;object-fit:cover;border-radius:6px;border:1px solid var(--garis)" alt="bukti"></a></div>';
+}
+function hapusKtu(aksi, id, label){
+  if(!confirm('Hapus '+label+' ini? Tindakan ini tidak bisa dibatalkan.')) return;
+  tampilLoader(true,'Menghapus…');
+  kirim(aksi, { id:id }, label.charAt(0).toUpperCase()+label.slice(1)+' dihapus ✓');
+}
+/* Ekspor CSV per sub-modul KTU. */
+function eksporKtuCSV(jenis){
+  var peta = {
+    kas:   { data:S.kasbank,   nama:'kas_bank' },
+    upah:  { data:S.payrolls,  nama:'upah_karyawan' },
+    pb:    { data:S.purchases, nama:'permintaan_barang' },
+    aset:  { data:S.assets,    nama:'inventaris_aset' },
+    surat: { data:S.letters,   nama:'agenda_surat' }
+  }[jenis];
+  if(!peta || !(peta.data||[]).length) return toast('Tidak ada data untuk diekspor.', true);
+  var rows = peta.data;
+  var kolom = Object.keys(rows[0]).filter(function(k){ return ['Bukti','Foto','Lampiran'].indexOf(k)<0; });
+  var csv = kolom.join(',') + '\n' + rows.map(function(r){
+    return kolom.map(function(k){
+      var v = r[k]==null ? '' : String(r[k]);
+      return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+    }).join(',');
+  }).join('\n');
+  var blob = new Blob(['\ufeff'+csv], { type:'text/csv;charset=utf-8;' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = peta.nama+'_'+hariISO(new Date())+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  toast('CSV diunduh ✓');
 }
 
 /* ==================== MULAI ==================== */

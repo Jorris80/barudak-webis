@@ -20,8 +20,21 @@ var POLA_CDN = [
   'unpkg.com',
   'cdnjs.cloudflare.com',
   'cdn.jsdelivr.net',
+  'fonts.googleapis.com',
+  'fonts.gstatic.com',
+  'cdn-icons-png.flaticon.com',
   'tile.openstreetmap.org',
-  'server.arcgisonline.com'
+  'tile.opentopomap.org',
+  'server.arcgisonline.com',
+  'basemaps.cartocdn.com'
+];
+
+/* Host yang TIDAK boleh di-cache: data yang harus selalu segar.
+   (Panggilan API ke Apps Script memakai POST sehingga sudah otomatis
+   dilewati, tetapi cuaca memakai GET dan harus tetap real-time.) */
+var POLA_JANGAN_CACHE = [
+  'script.google.com',
+  'api.open-meteo.com'
 ];
 
 self.addEventListener('install', function (e) {
@@ -44,6 +57,9 @@ self.addEventListener('fetch', function (e) {
   if (req.method !== 'GET') return; // POST ke API tidak di-cache
 
   var url = new URL(req.url);
+
+  // Selalu ambil dari jaringan untuk data yang harus segar
+  if (POLA_JANGAN_CACHE.some(function (p) { return url.hostname.indexOf(p) >= 0; })) return;
 
   // Navigasi/HTML: network-first, fallback ke cache (agar tetap tampil offline)
   if (req.mode === 'navigate' || (req.headers.get('accept') || '').indexOf('text/html') >= 0) {
