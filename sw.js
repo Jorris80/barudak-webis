@@ -5,7 +5,7 @@
  *
  *  Naikkan VERSI setiap kali index.html diubah agar cache diperbarui.
  * ============================================================ */
-var VERSI = 'sawitgis-v10';
+var VERSI = 'sawitgis-v1.1.1';
 var INTI = [
   './',
   './index.html',
@@ -16,17 +16,37 @@ var INTI = [
 
 // Pustaka CDN yang ikut di-cache saat pertama kali diakses (agar peta/chart
 // tetap jalan offline setelah sekali online).
+/* Hanya pustaka & font yang di-cache.
+ *
+ * PENTING — TILE PETA SENGAJA TIDAK DI-CACHE.
+ * Kebijakan pemakaian tile OpenStreetMap Foundation melarang pengunduhan
+ * massal dan penyimpanan tile untuk pemakaian offline. Hal serupa berlaku pada
+ * OpenTopoMap dan citra Esri. Menyimpannya di Service Worker adalah pelanggaran
+ * lisensi sekaligus berisiko pemblokiran IP.
+ *
+ * Untuk peta offline yang sah, gunakan salah satu:
+ *   1. Berlangganan penyedia yang mengizinkan caching (MapTiler, Mapbox,
+ *      Stadia Maps), lalu isi URL-nya di menu Pengaturan; atau
+ *   2. Muat berkas MBTiles milik sendiri lewat menu "Muat File" — legal
+ *      sepenuhnya karena datanya milik/berlisensi pelanggan.
+ */
 var POLA_CDN = [
   'unpkg.com',
   'cdnjs.cloudflare.com',
   'cdn.jsdelivr.net',
   'fonts.googleapis.com',
-  'fonts.gstatic.com',
-  'cdn-icons-png.flaticon.com',
+  'fonts.gstatic.com'
+];
+
+/* Host tile yang WAJIB selalu dari jaringan (tidak boleh masuk cache). */
+var POLA_TILE = [
   'tile.openstreetmap.org',
   'tile.opentopomap.org',
-  'server.arcgisonline.com',
-  'basemaps.cartocdn.com'
+  'arcgisonline.com',
+  'basemaps.cartocdn.com',
+  'tile.stadiamaps.com',
+  'api.maptiler.com',
+  'api.mapbox.com'
 ];
 
 /* Host yang TIDAK boleh di-cache: data yang harus selalu segar.
@@ -60,6 +80,7 @@ self.addEventListener('fetch', function (e) {
 
   // Selalu ambil dari jaringan untuk data yang harus segar
   if (POLA_JANGAN_CACHE.some(function (p) { return url.hostname.indexOf(p) >= 0; })) return;
+  if (POLA_TILE.some(function (p) { return url.hostname.indexOf(p) >= 0; })) return;
 
   // Navigasi/HTML: network-first, fallback ke cache (agar tetap tampil offline)
   if (req.mode === 'navigate' || (req.headers.get('accept') || '').indexOf('text/html') >= 0) {

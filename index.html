@@ -10,16 +10,14 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- Hanya pustaka inti yang dimuat di awal (defer = tidak memblokir render).
+     jsPDF, autoTable, html2canvas, QR encoder/scanner dimuat saat dibutuhkan
+     lewat muatSkrip() — memangkas ±600 KB dari jalur muat awal. -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -59,6 +57,28 @@
   .btn-ikon{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.14);color:#fff;
     display:flex;align-items:center;justify-content:center;font-size:17px;transition:background .15s}
   .btn-ikon:active{background:rgba(255,255,255,.3)}
+
+  /* Header di layar sempit: judul dipangkas dengan elipsis dan deretan tombol
+     boleh membungkus, supaya tidak meluber ke samping di HP. */
+  header .baris > div:not(.aksi){min-width:0;flex:1}
+  header h1,header p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  header .aksi{flex-wrap:wrap;justify-content:flex-end;row-gap:6px}
+  @media(max-width:640px){
+    header{padding:10px 12px}
+    header .baris{gap:8px}
+    header .emoji{font-size:22px}
+    header #hdLogo{width:32px;height:32px}
+    header h1{font-size:15px}
+    header p{font-size:10.5px}
+    header .aksi{gap:5px}
+    .btn-ikon{width:32px;height:32px;font-size:15px;border-radius:9px}
+    /* pintasan papan ketik tidak relevan di layar sentuh */
+    header .aksi button[title^="Pintasan"]{display:none}
+  }
+  @media(max-width:380px){
+    header .aksi button[title^="Mode Gelap"]{display:none}
+    .btn-ikon{width:30px;height:30px;font-size:14px}
+  }
 
   /* ---------- Navigasi bawah (HP) / atas (desktop) ---------- */
   nav#navBawah{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--garis);
@@ -215,6 +235,55 @@
   body.nonadmin .adminOnly{display:none!important}
   #statusOffline{display:none;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
     background:#FFF3E0;color:#8a5000;font-size:12.5px;font-weight:600;padding:7px 12px;border-bottom:1px solid #f0d9b5}
+  /* ==================== WORKFLOW STEPPER ==================== */
+  .workflow-stepper{position:relative;display:flex;justify-content:space-between;
+    margin:18px 0 26px;padding:0 4px}
+  .workflow-stepper .rel{position:absolute;top:18px;left:22px;right:22px;height:4px;
+    background:var(--garis);border-radius:2px;overflow:hidden}
+  .workflow-stepper .rel-isi{height:100%;width:0;border-radius:2px;
+    background:linear-gradient(90deg,var(--hijau-700),#5FBF7F);
+    transition:width .8s cubic-bezier(.4,0,.2,1)}
+  .step-item{position:relative;z-index:1;flex:1;text-align:center;cursor:pointer;min-width:0}
+  .step-circle{width:38px;height:38px;margin:0 auto;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;
+    background:#fff;border:3px solid var(--garis);color:var(--abu);
+    transition:transform .2s,border-color .3s,background .3s}
+  .step-item .step-nama{font-size:11px;margin-top:6px;color:var(--abu);line-height:1.3;
+    overflow:hidden;text-overflow:ellipsis;padding:0 2px}
+  .step-item.done .step-circle{background:var(--hijau-700);border-color:var(--hijau-700);color:#fff}
+  .step-item.rejected .step-circle{background:#C62828;border-color:#C62828;color:#fff}
+  .step-item.revised .step-circle{background:#E8960C;border-color:#E8960C;color:#fff}
+  .step-item.active .step-circle{background:#fff;border-color:var(--hijau-700);color:var(--hijau-700);
+    animation:denyutLangkah 1.8s ease-in-out infinite}
+  .step-item.done .step-nama,.step-item.active .step-nama{color:var(--tinta);font-weight:600}
+  @keyframes denyutLangkah{
+    0%,100%{box-shadow:0 0 0 0 rgba(46,125,70,.5)}
+    50%{box-shadow:0 0 0 9px rgba(46,125,70,0)}
+  }
+  .step-pop{display:none;position:absolute;left:50%;transform:translateX(-50%);top:82px;
+    background:var(--tinta);color:#fff;padding:9px 12px;border-radius:8px;font-size:11.5px;
+    line-height:1.5;white-space:normal;width:170px;text-align:left;z-index:20;
+    box-shadow:0 6px 20px rgba(0,0,0,.28)}
+  .step-pop::before{content:'';position:absolute;top:-5px;left:50%;margin-left:-5px;
+    border:5px solid transparent;border-bottom-color:var(--tinta);border-top:0}
+  .step-item.buka .step-pop{display:block}
+  .step-item.buka .step-circle{transform:scale(1.12)}
+  @media(prefers-reduced-motion:reduce){
+    .workflow-stepper .rel-isi{transition:none}
+    .step-item.active .step-circle{animation:none}
+  }
+  /* kanvas tanda tangan */
+  #ttdKanvas{width:100%;height:150px;border:2px dashed var(--garis);border-radius:10px;
+    background:#fff;touch-action:none;cursor:crosshair}
+  .wf-chip{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}
+  #barLisensi{display:none}
+  #barLisensi[style*="display:block"],#barLisensi[style*="display: block"]{display:flex!important}
+  #barLisensi button{background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.5);
+    border-radius:8px;padding:4px 12px;font-size:12px;font-weight:800;flex:0 0 auto}
+  /* Mode baca-saja saat lisensi habis: sembunyikan seluruh aksi tulis */
+  body.lisensiHabis .fab,
+  body.lisensiHabis .btn-bahaya,
+  body.lisensiHabis .aksi-baris .btn-sekunder{display:none!important}
   #statusOffline button{background:var(--hijau-700);color:#fff;border-radius:8px;padding:4px 12px;font-size:12px;font-weight:700}
 
   /* Kontrol layer Leaflet: netralkan gaya input global agar checkbox tidak
@@ -298,6 +367,7 @@
   </div>
 </div>
 
+<div id="barLisensi" style="display:none;position:sticky;top:0;z-index:1200;color:#fff;padding:8px 12px;font-size:12.5px;font-weight:700;display:none;align-items:center;justify-content:space-between;gap:10px"></div>
 <header id="hdr">
   <div class="baris">
     <img id="hdLogo" alt="Logo" onerror="this.style.display='none';document.getElementById('hdEmoji').style.display='block'">
@@ -447,6 +517,8 @@
       </select>
       <button class="btn btn-sekunder btn-kecil" onclick="formImporBlok()">⬆ Impor SHP/KML</button>
       <button class="btn btn-sekunder btn-kecil" onclick="eksporBlokGeoJSON()">⬇ GeoJSON</button>
+      <button class="btn btn-sekunder btn-kecil" onclick="unduhBlokSHP()">⬇ Shapefile</button>
+      <button class="btn btn-sekunder btn-kecil" onclick="unduhBlokExcel()">⬇ Excel</button>
     </div>
     <div id="daftarBlok"></div>
   </section>
@@ -464,6 +536,7 @@
       <input type="date" id="filterPanenDari" onchange="renderPanen()">
       <input type="date" id="filterPanenSampai" onchange="renderPanen()">
       <button class="btn btn-sekunder btn-kecil" onclick="eksporPanenCSV()">⬇ CSV</button>
+      <button class="btn btn-sekunder btn-kecil" onclick="unduhPanenExcel()">⬇ Excel</button>
     </div>
     <div id="daftarPanen"></div>
   </section>
@@ -592,6 +665,10 @@
       <label>atau URL Logo (opsional, mis. link publik)</label>
       <input id="setLogo" placeholder="https://…/logo.png" oninput="pratinjauLogoDari(this.value)">
       <label>Teks Footer</label><input id="setFooter">
+      <label>Nomor WhatsApp Penyedia (untuk permintaan lisensi)</label>
+      <input id="setWA" placeholder="cth: 628123456789 (tanpa + dan spasi)" inputmode="numeric">
+      <label>Nama Perusahaan (dicantumkan pada pesan lisensi)</label>
+      <input id="setNamaPT" placeholder="cth: PT Agrindo Sukses Sejahtera">
     </div>
     <div class="kartu">
       <b style="font-size:14px">Notifikasi &amp; Pemeliharaan</b>
@@ -643,7 +720,9 @@
       <button onclick="bukaHalaman('traksi')"><span class="ic">🚜</span>Traksi &amp; Alat Berat</button>
       <button onclick="bukaHalaman('gudang')"><span class="ic">📦</span>Gudang &amp; Stok</button>
       <button onclick="bukaHalaman('budget')"><span class="ic">💰</span>Budgeting Kebun</button>
+      <button onclick="bukaHalaman('workflow')"><span class="ic">✅</span>Workflow Persetujuan</button>
       <button onclick="bukaHalaman('ktu')"><span class="ic">🗂️</span>KTU (Administrasi)</button>
+      <button onclick="bukaAktivasiLisensi()"><span class="ic">🔑</span>Lisensi</button>
       <button onclick="bukaHalaman('landclearing')"><span class="ic">🚜</span>Land Clearing (LC)</button>
       <button onclick="bukaHalaman('jadwal')"><span class="ic">🗓️</span>Jadwal Kerja</button>
       <button onclick="bukaHalaman('hujan')"><span class="ic">🌧️</span>Curah Hujan</button>
@@ -652,7 +731,11 @@
       <button onclick="bukaHalaman('lacak')"><span class="ic">🛰️</span>Lacak GPS</button>
       <button class="adminOnly" onclick="bukaHalaman('pengaturan')"><span class="ic">⚙️</span>Pengaturan</button>
       <button class="adminOnly" id="menuPengguna" onclick="bukaHalaman('pengguna')"><span class="ic">👥</span>Pengguna</button>
+      <button class="adminOnly" onclick="bukaCadangan()"><span class="ic">💾</span>Cadangkan Data</button>
     </div>
+    <p style="text-align:center;margin-top:16px;font-size:11.5px;color:var(--abu)">
+      Versi aplikasi <b id="versiApp"></b> · <span id="modeApp"></span>
+    </p>
   </section>
 
   <!-- ================= PENGIRIMAN SPB & TIMBANGAN PABRIK ================= -->
@@ -973,6 +1056,7 @@
           <option value="">Semua Transaksi</option><option>Masuk</option><option>Keluar</option>
         </select>
         <button class="btn btn-sekunder btn-kecil" onclick="eksporKtuCSV('kas')">⬇ CSV</button>
+        <button class="btn btn-sekunder btn-kecil" onclick="unduhKtuExcel('kas')">⬇ Excel</button>
       </div>
       <div class="kpi-grid" id="kpiKas" style="margin-bottom:12px"></div>
       <div id="daftarKas"></div>
@@ -987,6 +1071,7 @@
         <input type="month" id="upPeriode" onchange="renderUpah()">
         <input type="search" id="upCari" placeholder="Cari nama / NIK…" oninput="renderUpah()">
         <button class="btn btn-sekunder btn-kecil" onclick="eksporKtuCSV('upah')">⬇ CSV</button>
+        <button class="btn btn-sekunder btn-kecil" onclick="unduhKtuExcel('upah')">⬇ Excel</button>
       </div>
       <div class="kpi-grid" id="kpiUpah" style="margin-bottom:12px"></div>
       <div id="daftarUpah"></div>
@@ -1004,6 +1089,7 @@
         </select>
         <input type="search" id="pbCari" placeholder="Cari barang / No PB…" oninput="renderPB()">
         <button class="btn btn-sekunder btn-kecil" onclick="eksporKtuCSV('pb')">⬇ CSV</button>
+        <button class="btn btn-sekunder btn-kecil" onclick="unduhKtuExcel('pb')">⬇ Excel</button>
       </div>
       <div class="kpi-grid" id="kpiPB" style="margin-bottom:12px"></div>
       <div id="daftarPB"></div>
@@ -1020,6 +1106,7 @@
         </select>
         <input type="search" id="asCari" placeholder="Cari aset / kode…" oninput="renderAset()">
         <button class="btn btn-sekunder btn-kecil" onclick="eksporKtuCSV('aset')">⬇ CSV</button>
+        <button class="btn btn-sekunder btn-kecil" onclick="unduhKtuExcel('aset')">⬇ Excel</button>
       </div>
       <div class="kpi-grid" id="kpiAset" style="margin-bottom:12px"></div>
       <div id="daftarAset"></div>
@@ -1038,11 +1125,40 @@
         <input type="month" id="srBulan" onchange="renderSurat()">
         <input type="search" id="srCari" placeholder="Cari perihal / no surat…" oninput="renderSurat()">
         <button class="btn btn-sekunder btn-kecil" onclick="eksporKtuCSV('surat')">⬇ CSV</button>
+        <button class="btn btn-sekunder btn-kecil" onclick="unduhKtuExcel('surat')">⬇ Excel</button>
       </div>
       <div class="kpi-grid" id="kpiSurat" style="margin-bottom:12px"></div>
       <div id="daftarSurat"></div>
     </div>
   </section>
+  <!-- ================= WORKFLOW PERSETUJUAN ================= -->
+  <section class="halaman" id="hal-workflow">
+    <h2 class="judul">Workflow Persetujuan <small id="ringkasWf"></small></h2>
+    <div class="filter-bar" id="tabWf">
+      <button class="btn btn-utama btn-kecil" data-tab="perlu" onclick="gantiTabWf('perlu')">📥 Perlu Persetujuan</button>
+      <button class="btn btn-sekunder btn-kecil" data-tab="saya" onclick="gantiTabWf('saya')">📤 Pengajuan Saya</button>
+      <button class="btn btn-sekunder btn-kecil" data-tab="semua" onclick="gantiTabWf('semua')">📚 Semua</button>
+      <button class="btn btn-sekunder btn-kecil adminOnly" data-tab="alur" onclick="gantiTabWf('alur')">⚙️ Kelola Alur</button>
+    </div>
+    <div class="filter-bar">
+      <select id="wfJenis" onchange="renderWf()">
+        <option value="">Semua Jenis</option>
+        <option value="cuti">Cuti</option><option value="sppd">Perjalanan Dinas</option>
+        <option value="uangmuka">Uang Muka</option><option value="deklarasi">Deklarasi Biaya</option>
+        <option value="aset">Pembelian Aset/Barang</option>
+      </select>
+      <select id="wfStatus" onchange="renderWf()">
+        <option value="">Semua Status</option><option>Diajukan</option><option>Diproses</option>
+        <option>Selesai</option><option>Ditolak</option><option>Revisi</option>
+      </select>
+      <input type="search" id="wfCari" placeholder="Cari nomor / perihal…" oninput="renderWf()">
+      <button class="btn btn-sekunder btn-kecil" onclick="muatWorkflow(true)">⟳ Segarkan</button>
+    </div>
+    <div class="kpi-grid" id="kpiWf" style="margin-bottom:12px"></div>
+    <div id="daftarWf"></div>
+    <div id="panelAlur" style="display:none"></div>
+  </section>
+
 
   <!-- ================= ABSENSI BKM & PREMI ================= -->
   <section class="halaman" id="hal-bkm">
@@ -1362,6 +1478,11 @@ function callApi(action, params){
       OFFLINE = false; perbaruiStatusOffline();
       if(r.ok){ res(r.data); }
       else if(r.error === 'SESI_HABIS'){ sesiHabis(); rej(new Error('Sesi berakhir, silakan masuk lagi.')); }
+      else if(r.error === 'LISENSI_HABIS'){
+        // masa uji coba/lisensi habis → aplikasi jadi baca-saja
+        segarkanLisensi();
+        rej(new Error('Masa lisensi telah berakhir. Aplikasi dalam mode baca-saja — aktifkan lisensi untuk menyimpan data lagi.'));
+      }
       else rej(new Error(r.error || 'Terjadi kesalahan.'));
     }).catch(function(){ offlineFallback(); });
   });
@@ -1464,7 +1585,7 @@ function sinkronAntre(diam){
   function langkah(){
     if(!sisa.length){
       tulisAntre([]);
-      return callApi('getAllData').then(function(d){ if(d){ S=d; simpanCache(); terapkanPengaturan(); isiOpsiBlok(); renderSemua(); } });
+      return callApi('getAllData').then(function(d){ if(d){ S=d; batasiDataAkses(); simpanCache(); terapkanPengaturan(); isiOpsiBlok(); renderSemua(); } });
     }
     var item = sisa[0];
     return transportServer(item.action, item.params).then(function(jsonStr){
@@ -1498,12 +1619,7 @@ function perbaruiStatusOffline(){
   }
 }
 
-function sesiHabis(){
-  TOKEN=''; SESI=null;
-  try{ localStorage.removeItem('sg_token'); }catch(e){}
-  tampilLoader(false);
-  document.getElementById('layarLogin').style.display='flex';
-}
+function sesiHabis(){ bersihkanSesi(); }
 
 /* ---------- Data contoh untuk mode demo (di luar GAS) ---------- */
 function dataDemo(){
@@ -1910,7 +2026,7 @@ function tampilLoader(on, teks){
 function muatData(ulang){
   if(ulang) tampilLoader(true, 'Menyegarkan data…');
   callApi('getAllData').then(function(d){
-    S = d;
+    S = d; batasiDataAkses();
     if(d.sesi) SESI = d.sesi;
     simpanCache();
     terapkanPengaturan();
@@ -1926,7 +2042,7 @@ function muatData(ulang){
     // gagal & ada cache → buka mode offline
     var c = bacaCache();
     if(c){
-      S = c; OFFLINE = true;
+      S = c; batasiDataAkses(); OFFLINE = true;
       try{ SESI = JSON.parse(localStorage.getItem('sg_sesi')||'null') || SESI; }catch(er){}
       terapkanPengaturan(); terapkanPeran(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline();
       tampilLoader(false);
@@ -1939,6 +2055,8 @@ function muatData(ulang){
 }
 
 function terapkanPengaturan(){
+  if(S && S.license) terapkanLisensi(S.license);
+  tampilkanCakupanAkses();
   var st = S.settings || {};
   document.getElementById('hdJudul').textContent = st.judulAplikasi || 'SawitGIS Mandiri';
   document.getElementById('hdSub').textContent = st.subjudul || '';
@@ -1968,6 +2086,8 @@ function terapkanPengaturan(){
   // ---- isi form pengaturan ----
   var eE = document.getElementById('setEmoji'); if(eE) eE.value = st.emoji || '🌴';
   var eJ = document.getElementById('setJudul'); if(eJ) eJ.value = st.judulAplikasi || '';
+  var eW = document.getElementById('setWA'); if(eW) eW.value = st.waPenyedia || '';
+  var eN = document.getElementById('setNamaPT'); if(eN) eN.value = st.namaPerusahaan || '';
   var eS = document.getElementById('setSub'); if(eS) eS.value = st.subjudul || '';
   var eF = document.getElementById('setFooter'); if(eF) eF.value = st.footer || '';
   var lg = st.logoUrl || '';
@@ -2013,12 +2133,48 @@ function isiCascade(idP, idE, idD){
   var elP=document.getElementById(idP), elE=document.getElementById(idE), elD=document.getElementById(idD);
   if(!elP && !elE && !elD) return;
   var selP=elP ? elP.value : '', selE=elE ? elE.value : '', selD=elD ? elD.value : '';
+
+  /* Pengguna dengan hak akses terbatas hanya melihat unitnya sendiri.
+     Pilihan dipaksa ke unit tersebut lalu dikunci, sehingga seluruh halaman
+     otomatis tersaring dan tidak ada jalan melihat unit lain. */
+  var ak = hakAkses();
+  if(ak.terbatas){
+    if(ak.per){ selP = ak.per; }
+    if(ak.est){ selE = ak.est; }
+    if(ak.div){ selD = ak.div; }
+  }
   var per={}; S.blocks.forEach(function(b){ if(b.Perusahaan) per[b.Perusahaan]=1; });
   if(elP) elP.innerHTML='<option value="">Semua Perusahaan</option>'+Object.keys(per).sort().map(function(v){return '<option'+(v===selP?' selected':'')+'>'+esc(v)+'</option>';}).join('');
   var est={}; S.blocks.forEach(function(b){ if(b.Estate&&(!selP||b.Perusahaan===selP)) est[b.Estate]=1; });
   if(elE) elE.innerHTML='<option value="">Semua Estate</option>'+Object.keys(est).sort().map(function(v){return '<option'+(v===selE?' selected':'')+'>'+esc(v)+'</option>';}).join('');
   var div={}; S.blocks.forEach(function(b){ if(b.Divisi&&(!selP||b.Perusahaan===selP)&&(!selE||b.Estate===selE)) div[b.Divisi]=1; });
   if(elD) elD.innerHTML='<option value="">Semua Divisi</option>'+Object.keys(div).sort().map(function(v){return '<option'+(v===selD?' selected':'')+'>'+esc(v)+'</option>';}).join('');
+
+  if(ak.terbatas){
+    // paksa nilai lalu nonaktifkan agar tidak bisa diubah pengguna
+    if(ak.per && elP){ elP.value=ak.per; elP.disabled=true; elP.title='Dibatasi hak akses Anda'; }
+    if(ak.est && elE){ elE.value=ak.est; elE.disabled=true; elE.title='Dibatasi hak akses Anda'; }
+    if(ak.div && elD){ elD.value=ak.div; elD.disabled=true; elD.title='Dibatasi hak akses Anda'; }
+  }
+}
+
+/* Hak akses unit pengguna yang sedang masuk. Admin selalu bebas. */
+function hakAkses(){
+  if(!SESI || SESI.peran==='admin') return { terbatas:false, per:'', est:'', div:'' };
+  var per=SESI.AksesPerusahaan||'', est=SESI.AksesEstate||'', div=SESI.AksesDivisi||'';
+  return { terbatas: !!(per||est||div), per:per, est:est, div:div };
+}
+
+/* Saring daftar blok mengikuti hak akses — dipakai seluruh halaman. */
+function blokBolehAkses(){
+  var ak=hakAkses();
+  if(!ak.terbatas) return S.blocks||[];
+  return (S.blocks||[]).filter(function(b){
+    if(ak.per && b.Perusahaan!==ak.per) return false;
+    if(ak.est && b.Estate!==ak.est) return false;
+    if(ak.div && b.Divisi!==ak.div) return false;
+    return true;
+  });
 }
 function blokUnit(idBlok){ return S.blocks.find(function(b){ return String(b.ID)===String(idBlok); }) || {}; }
 function lolosUnit(idBlok, fP, fE, fD){
@@ -2074,13 +2230,49 @@ function blokTampil(){
   var fP = (document.getElementById('petaFilPerusahaan')||{}).value || '';
   var fE = (document.getElementById('petaFilEstate')||{}).value || '';
   var fD = (document.getElementById('petaFilDivisi')||{}).value || '';
-  return S.blocks.filter(function(b){
+  return blokBolehAkses().filter(function(b){
     if(fP && b.Perusahaan!==fP) return false;
     if(fE && b.Estate!==fE) return false;
     if(fD && b.Divisi!==fD) return false;
     if(!lolosAksesUser(b)) return false;
     return true;
   });
+}
+
+/* Saring seluruh koleksi mengikuti hak akses unit pengguna.
+   Dijalankan sekali setiap data masuk, sehingga tiap halaman cukup membaca S
+   tanpa perlu memikirkan pembatasan lagi. */
+/* Dipanggil TEPAT setelah data masuk, sebelum dropdown mana pun dibangun.
+   Dengan begitu seluruh aplikasi cukup membaca S seperti biasa — isinya sudah
+   dibatasi sesuai hak akses, termasuk daftar pilihan pada setiap saringan. */
+function batasiDataAkses(){
+  try{ pastikanStrukturS(); saringDataSesuaiAkses(); }catch(e){}
+}
+
+function saringDataSesuaiAkses(){
+  var ak = hakAkses();
+  if(!ak.terbatas) return;
+  var idBoleh = {};
+  blokBolehAkses().forEach(function(b){ idBoleh[String(b.ID)] = 1; });
+
+  function cocok(x){
+    // berdasarkan unit langsung bila ada
+    if(x.Perusahaan || x.Estate || x.Divisi){
+      if(ak.per && x.Perusahaan && x.Perusahaan!==ak.per) return false;
+      if(ak.est && x.Estate && x.Estate!==ak.est) return false;
+      if(ak.div && x.Divisi && x.Divisi!==ak.div) return false;
+      return true;
+    }
+    // berdasarkan blok yang dirujuk
+    if(x.IDBlok) return !!idBoleh[String(x.IDBlok)];
+    return true;   // data tanpa unit (mis. pengaturan) dibiarkan
+  }
+  ['harvests','issues','schedules','equipments','rainfalls','shipments','fertilizers',
+   'censuses','attendances','sensusbuah','audits','traksi','gudang','budgets',
+   'landclearing','kasbank','payrolls','purchases','assets','letters'].forEach(function(k){
+    if(Array.isArray(S[k])) S[k] = S[k].filter(cocok);
+  });
+  if(Array.isArray(S.blocks)) S.blocks = blokBolehAkses();
 }
 
 function pastikanStrukturS(){
@@ -2120,6 +2312,7 @@ function lolosFilterUnit(item, fP, fE, fD){
 
 function renderSemua(){
   pastikanStrukturS();
+  saringDataSesuaiAkses();
   isiCascade('dbPer','dbEst','dbDiv');
   isiCascade('pnPer','pnEst','pnDiv'); isiCascade('msPer','msEst','msDiv');
   isiCascade('jdPer','jdEst','jdDiv'); isiCascade('alPer','alEst','alDiv');
@@ -2461,40 +2654,7 @@ function eksporPanenPDF(){
   eksporTabelKePDF('Laporan Catatan Hasil Panen TBS', 'Total Catatan: ' + (S.harvests||[]).length + ' item', kolom, baris, 'laporan_panen_tbs');
 }
 
-function eksporSpbPDF(){
-  var kolom = ['No SPB', 'Tanggal', 'Perusahaan/Estate', 'Sopir & NoPol', 'Janjang', 'Netto PKS (kg)', 'Status'];
-  var baris = [];
-  (S.shipments||[]).forEach(function(s){
-    baris.push([
-      s.NoSPB || s.ID,
-      fmtTgl(s.Tanggal),
-      (s.Perusahaan || '') + ' - ' + (s.Estate || ''),
-      (s.Sopir || '-') + ' (' + (s.NoPolisi || '-') + ')',
-      angka(s.JumlahJanjang, 0),
-      angka(s.NettoDiterimaKg || s.TimbanganNettoKg || 0, 0) + ' kg',
-      s.Status || 'Proses'
-    ]);
-  });
-  eksporTabelKePDF('Laporan Pengiriman Surat Pengantar Buah (SPB)', 'Total SPB: ' + (S.shipments||[]).length + ' pengiriman', kolom, baris, 'laporan_spb_pks');
-}
 
-function eksporPupukPDF(){
-  var kolom = ['Blok', 'Tanggal', 'Jenis Pupuk', 'Dosis/Pokok', 'Jml Pokok', 'Total Pupuk (kg)', 'Aplikasi', 'Petugas'];
-  var baris = [];
-  (S.fertilizers||[]).forEach(function(p){
-    baris.push([
-      namaBlok(p.IDBlok),
-      fmtTgl(p.Tanggal),
-      p.JenisPupuk || '-',
-      (p.DosisKgPokok || 0) + ' kg',
-      angka(p.JumlahPokok, 0),
-      angka(p.TotalKg, 1) + ' kg',
-      p.CaraAplikasi || '-',
-      p.Petugas || '-'
-    ]);
-  });
-  eksporTabelKePDF('Laporan Pemupukan Kebun', 'Total Aplikasi: ' + (S.fertilizers||[]).length + ' kegiatan', kolom, baris, 'laporan_pemupukan');
-}
 
 function eksporSensusBuahPDF(){
   var kolom = ['Blok', 'Tanggal', 'Pokok Sampel', 'Black Bunch', 'Janjang Matang', 'BJR', 'Proyeksi (Ton)', 'Petugas'];
@@ -2901,10 +3061,10 @@ function bukaHalaman(nama){
   if(el) el.classList.add('aktif');
   document.querySelectorAll('#navBawah button').forEach(function(b){
     b.classList.toggle('aktif', b.dataset.hal === nama ||
-      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu'].indexOf(nama)>=0));
+      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu','workflow'].indexOf(nama)>=0));
   });
   // FAB per halaman (hanya untuk yang boleh edit)
-  var fabPeta = { blok:'＋', panen:'＋', spb:'＋', pupuk:'＋', sensus:'＋', bkm:'＋', masalah:'＋', jadwal:'＋', alat:'＋', hujan:'＋', sensusbuah:'＋', audit:'＋', traksi:'＋', gudang:'＋', budget:'＋', landclearing:'＋', ktu:'＋' };
+  var fabPeta = { blok:'＋', panen:'＋', spb:'＋', pupuk:'＋', sensus:'＋', bkm:'＋', masalah:'＋', jadwal:'＋', alat:'＋', hujan:'＋', sensusbuah:'＋', audit:'＋', traksi:'＋', gudang:'＋', budget:'＋', landclearing:'＋', ktu:'＋', workflow:'＋' };
   var fab = document.getElementById('fab');
   fab.classList.toggle('tampil', !!fabPeta[nama] && bolehEdit());
   window.scrollTo(0,0);
@@ -2922,7 +3082,16 @@ function bukaHalaman(nama){
   if(nama === 'gudang') renderGudang();
   if(nama === 'budget') renderBudget();
   if(nama === 'landclearing') renderLandClearing();
+  siapkanHalaman(nama, function(){
+    // gambar ulang setelah data modulnya tiba
+    var f = { hujan:renderHujan, spb:renderSpb, pupuk:renderPupuk, sensus:renderSensus,
+              bkm:renderBkm, sensusbuah:renderSensusBuah, audit:renderAudit, traksi:renderTraksi,
+              gudang:renderGudang, budget:renderBudget, landclearing:renderLandClearing,
+              ktu:renderKtu, dasbor:renderDasbor, peta:gambarPeta }[nama];
+    try{ if(typeof f==='function') f(); }catch(e){}
+  });
   if(nama === 'ktu') gantiTabKtu(tabKtuAktif);
+  if(nama === 'workflow') muatWorkflow(false);
   if(nama === 'pengguna') renderPengguna();
   if(nama === 'lacak'){
     isiOpsiLacak();
@@ -2947,6 +3116,7 @@ function aksiFab(){
   else if(halAktif==='gudang') formGudangBarang();
   else if(halAktif==='budget') formBudget();
   else if(halAktif==='landclearing') formLandClearing();
+  else if(halAktif==='workflow') formWorkflow();
   else if(halAktif==='ktu'){
     // form mengikuti tab KTU yang sedang dibuka
     if(tabKtuAktif==='kas') formKas();
@@ -3323,24 +3493,6 @@ function pasangPintasanKeyboard(){
   });
 }
 
-function ujiNotifikasiMaintenance(){
-  if(!('Notification' in window)){
-    return toast('Browser ini tidak mendukung Push Notifications Web.', true);
-  }
-  Notification.requestPermission().then(function(perm){
-    if(perm === 'granted'){
-      try {
-        new Notification('🔔 SawitGIS Mandiri', {
-          body: 'Notifikasi pemeliharaan aktif! Anda akan menerima peringatan untuk jadwal perawatan kebun.',
-          icon: '/icon-192.png'
-        });
-      } catch(e) {}
-      toast('Notifikasi uji coba terkirim! Cek notifikasi sistem perangkat.');
-    } else {
-      toast('Izin notifikasi ditolak oleh browser. Aktifkan di pengaturan browser Anda.', true);
-    }
-  });
-}
 
 function cekNotifikasiMaintenance(){
   var st = S.settings || {};
@@ -3401,7 +3553,7 @@ function unduhDashboardPDF(){
 
   tampilLoader(true, 'Mengambil tampilan Dasbor, KPI, & Grafik…');
 
-  pastikanJsPDF().then(function(){
+  Promise.all([pastikanJsPDF(), pastikanHtml2Canvas()]).then(function(){
     if(typeof html2canvas === 'undefined'){
       tampilLoader(false);
       return toast('Pustaka html2canvas belum siap. Coba lagi.', true);
@@ -3876,12 +4028,18 @@ function pastikanPeta(){
   }
   var st = S.settings||{};
   peta = L.map('peta', { zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false }).setView([Number(st.petaLat)||0.531, Number(st.petaLng)||101.456], Number(st.petaZoom)||15);
+  /* Atribusi WAJIB sesuai lisensi tiap penyedia peta — jangan dihapus.
+     OSM/OpenTopoMap: ODbL & CC-BY-SA mensyaratkan atribusi yang terlihat. */
   lapisanOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    { maxZoom:19, attribution:'© OpenStreetMap' });
-  lapisanSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom:19, attribution:'© Esri' });
+    { maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' });
+  /* Citra satelit: memakai URL & atribusi milik pelanggan bila diisi di
+     Pengaturan. Endpoint bawaan hanya untuk evaluasi/non-komersial —
+     pemakaian komersial wajib berlangganan penyedia citra sendiri. */
+  lapisanSat = L.tileLayer(
+    (st.satelitURL || 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
+    { maxZoom:19, attribution: (st.satelitAtribusi || 'Citra: Esri, Maxar, Earthstar Geographics — pemakaian komersial memerlukan lisensi penyedia') });
   window.lapisanTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    { maxZoom:17, attribution:'© OpenTopoMap' });
+    { maxZoom:17, attribution:'Peta &copy; <a href="https://opentopomap.org" target="_blank" rel="noopener">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC-BY-SA</a>), data &copy; OpenStreetMap contributors' });
 
   lapisanOSM.addTo(peta);
   grupBlok = L.layerGroup().addTo(peta);
@@ -4233,7 +4391,7 @@ function hapusBlokTerpilih(){
       Promise.all(janji).then(function(){
         toast(checkedItems.length + ' blok berhasil dihapus ✓');
         return callApi('getAllData').then(function(d){
-          if(d){ S = d; simpanCache(); terapkanPengaturan(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline(); }
+          if(d){ S = d; batasiDataAkses(); simpanCache(); terapkanPengaturan(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline(); }
           tampilLoader(false);
         });
       }).catch(function(e){
@@ -4697,7 +4855,7 @@ function simpanMasalah(){
         return null;
       }
       toast(pesan);
-      return callApi('getAllData').then(function(d){ if(d){ S=d; simpanCache(); terapkanPengaturan(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline(); } tampilLoader(false); });
+      return callApi('getAllData').then(function(d){ if(d){ S=d; batasiDataAkses(); simpanCache(); terapkanPengaturan(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline(); } tampilLoader(false); });
     };
   }
 
@@ -4975,7 +5133,7 @@ function initMiniBlok(prefix){
   if(miniMaps[prefix]){ try{ miniMaps[prefix].remove(); }catch(e){} }
   var st=S.settings||{};
   var mp = L.map(prefix+'Map').setView([Number(st.petaLat)||0.531, Number(st.petaLng)||101.456], 14);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(mp);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'}).addTo(mp);
   mp._grup = L.layerGroup().addTo(mp);
   miniMaps[prefix] = mp;
   gambarMiniBlok(prefix);
@@ -5030,7 +5188,7 @@ function initPickerAlat(){
   if(!adaTitik){ var c = pusatUntukPicker(); lat=c[0]; lng=c[1]; }
 
   petaPick = L.map('petaPickAlat').setView([lat,lng], 16);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OSM' }).addTo(petaPick);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' }).addTo(petaPick);
 
   // batas blok sebagai referensi (garis tipis, tak menutupi)
   S.blocks.forEach(function(b){
@@ -5409,6 +5567,8 @@ function simpanPengaturan(){
     judulAplikasi: document.getElementById('setJudul').value.trim(),
     subjudul: document.getElementById('setSub').value.trim(),
     footer: document.getElementById('setFooter').value.trim(),
+    waPenyedia: (document.getElementById('setWA')||{value:''}).value.replace(/[^0-9]/g,''),
+    namaPerusahaan: (document.getElementById('setNamaPT')||{value:''}).value.trim(),
     logoUrl: logo,
     ikonHeader: document.getElementById('setIkon').value,
     headerAwal: document.getElementById('setHeader').value,
@@ -5583,7 +5743,7 @@ function jalankanImporBlok(){
     tutupLembar();
     toast('Impor selesai: '+r.dibuat+' baru, '+r.diperbarui+' diperbarui, '+(r.dilewati+dilewati)+' dilewati ✓');
     return callApi('getAllData');
-  }).then(function(d){ if(d){ S=d; terapkanPengaturan(); isiOpsiBlok(); renderSemua(); } tampilLoader(false); })
+  }).then(function(d){ if(d){ S=d; batasiDataAkses(); terapkanPengaturan(); isiOpsiBlok(); renderSemua(); } tampilLoader(false); })
   .catch(function(e){ tampilLoader(false); toast(e.message, true); });
 }
 
@@ -5697,7 +5857,8 @@ function formLayer(id){
   var opsiTipe = {
     xyz:'XYZ Tiles (drone/MBTiles ter-tile)', wms:'WMS (GeoServer/QGIS Server)',
     imageOverlay:'Image Overlay (1 gambar + bounds)', geojson:'GeoJSON (dari URL)',
-    kml:'KML (dari URL)', shp:'Shapefile .zip (dari URL)', mbtiles:'MBTiles raster (dari URL)'
+    kml:'KML (dari URL)', shp:'Shapefile .zip (dari URL)', mbtiles:'MBTiles raster (dari URL)',
+    maptiler:'MapTiler — peta dasar berlisensi (pakai kunci API)'
   };
   bukaLembar('<h3>'+(d?'Edit Layer':'Tambah Layer Peta')+'</h3>'+
     '<label>Nama Layer *</label><input id="lyNama" value="'+esc(d?d.Nama:'')+'" placeholder="cth: Orthophoto Blok A 2026">'+
@@ -5706,6 +5867,17 @@ function formLayer(id){
     '<label id="lbURL">URL Template / Endpoint / Gambar *</label>'+
     '<input id="lyURL" value="'+esc(d?d.URL:'')+'" placeholder="https://…/{z}/{x}/{y}.png">'+
     '<div id="fieldParam"><label>Param <span id="hintParam"></span></label><input id="lyParam" value="'+esc(d?d.Param:'')+'"></div>'+
+    '<div id="fieldMaptiler" style="display:none">'+
+      '<label>Gaya Peta MapTiler</label><select id="mtGaya">'+
+        [['satellite','Citra Satelit'],['hybrid','Satelit + Label (Hybrid)'],['streets-v2','Peta Jalan'],
+         ['outdoor-v2','Topografi / Outdoor'],['basic-v2','Dasar Ringan'],['winter-v2','Kontras Tinggi']]
+        .map(function(x){ return '<option value="'+x[0]+'">'+x[1]+'</option>'; }).join('')+
+      '</select>'+
+      '<label>Kunci API MapTiler *</label><input id="mtKunci" placeholder="cth: AbCdEf123456" autocomplete="off">'+
+      '<div class="meta" style="margin-top:6px;line-height:1.6">Daftar gratis di <b>maptiler.com</b> lalu salin kunci API Anda. '+
+        'Paket gratis mencakup 100.000 tile/bulan dan <b>mengizinkan pemakaian komersial</b> selama atribusi tetap tampil — '+
+        'berbeda dengan tile bawaan OpenStreetMap yang hanya untuk pemakaian ringan.</div>'+
+    '</div>'+
     '<div id="fieldBounds" style="display:none"><label>Bounds [[selatan,barat],[utara,timur]]</label>'+
       '<input id="lyBounds" value="'+esc(d?d.Bounds:'')+'" placeholder="[[0.528,101.449],[0.533,101.455]]">'+
       '<button class="btn btn-sekunder btn-kecil btn-blok" style="margin-top:6px" onclick="isiBoundsDariPeta()">📐 Pakai area peta saat ini</button></div>'+
@@ -5721,6 +5893,12 @@ function formLayer(id){
 }
 function ubahFieldLayer(){
   var t = document.getElementById('lyTipe').value;
+  var mt = document.getElementById('fieldMaptiler');
+  if(mt) mt.style.display = (t==='maptiler') ? 'block' : 'none';
+  // URL disusun otomatis untuk MapTiler, jadi kolom URL disembunyikan
+  var elURL = document.getElementById('lyURL'), lbURL = document.getElementById('lbURL');
+  if(elURL) elURL.style.display = (t==='maptiler') ? 'none' : 'block';
+  if(lbURL) lbURL.style.display = (t==='maptiler') ? 'none' : 'block';
   document.getElementById('fieldBounds').style.display = (t==='imageOverlay') ? 'block' : 'none';
   document.getElementById('fieldParam').style.display = (t==='xyz'||t==='wms') ? 'block' : 'none';
   document.getElementById('hintParam').textContent = t==='wms' ? '(nama layer WMS, mis. workspace:ortho)' : (t==='xyz' ? "(isi 'tms' bila skema TMS, atau kosongkan)" : '');
@@ -5741,6 +5919,17 @@ function simpanLayer(existingId){
   var tipe = document.getElementById('lyTipe').value;
   var url = document.getElementById('lyURL').value.trim();
   if(!document.getElementById('lyNama').value.trim()) return toast('Nama layer wajib diisi.', true);
+
+  /* MapTiler: URL disusun dari gaya + kunci API, lalu disimpan sebagai layer
+     XYZ biasa agar dapat dirender tanpa penanganan khusus. */
+  if(tipe==='maptiler'){
+    var kunci=(document.getElementById('mtKunci')||{value:''}).value.trim();
+    var gaya=(document.getElementById('mtGaya')||{value:'satellite'}).value;
+    if(!kunci) return toast('Kunci API MapTiler wajib diisi.', true);
+    var ext = (gaya==='satellite'||gaya==='hybrid') ? 'jpg' : 'png';
+    url = 'https://api.maptiler.com/maps/'+gaya+'/{z}/{x}/{y}.'+ext+'?key='+encodeURIComponent(kunci);
+    tipe = 'xyz';
+  }
   if(!url) return toast('URL wajib diisi.', true);
   var bounds = document.getElementById('lyBounds').value.trim();
   if(tipe==='imageOverlay'){
@@ -5796,7 +5985,7 @@ function kirim(action, params, pesanSukses){
     }
     toast(pesanSukses || 'Tersimpan ✓');
     return callApi('getAllData').then(function(d){
-      if(d){ S = d; simpanCache(); terapkanPengaturan(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline(); }
+      if(d){ S = d; batasiDataAkses(); simpanCache(); terapkanPengaturan(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline(); }
       tampilLoader(false);
     });
   }).catch(function(e){
@@ -5830,14 +6019,57 @@ function prosesLogin(){
 function logout(){
   if(!confirm('Keluar dari aplikasi?')) return;
   callApi('logout', {}).catch(function(){});
+  /* Jangan memakai location.reload(): di dalam iframe Apps Script yang dimuat
+     ulang adalah URL sandbox, hasilnya halaman kosong sampai pengguna me-refresh
+     sendiri. Cukup kembalikan aplikasi ke keadaan awal lalu tampilkan login. */
+  bersihkanSesi();
+  toast('Anda telah keluar.');
+}
+
+/* Kembalikan aplikasi ke layar login tanpa memuat ulang halaman. */
+function bersihkanSesi(){
   TOKEN=''; SESI=null;
-  try{ localStorage.removeItem('sg_token'); }catch(e){}
-  location.reload();
+  try{ localStorage.removeItem('sg_token'); localStorage.removeItem('sg_sesi'); }catch(e){}
+
+  // hentikan proses latar yang masih berjalan
+  try{ if(typeof watchId!=='undefined' && watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; } }catch(e){}
+  try{ if(typeof timerKirim!=='undefined' && timerKirim){ clearInterval(timerKirim); timerKirim=null; } }catch(e){}
+  try{ if(typeof timerAuto!=='undefined' && timerAuto){ clearInterval(timerAuto); timerAuto=null; } }catch(e){}
+
+  // tutup lembar/modal yang mungkin terbuka & sembunyikan loader
+  try{ tutupLembar(); }catch(e){}
+  tampilLoader(false);
+
+  // kosongkan data di memori agar tidak terlihat pengguna berikutnya
+  S = { blocks:[], harvests:[], issues:[], schedules:[], equipments:[], rainfalls:[], shipments:[],
+        fertilizers:[], censuses:[], attendances:[], layers:[], positions:[], logs:[], settings:{},
+        sensusbuah:[], audits:[], traksi:[], gudang:[], budgets:[], landclearing:[],
+        kasbank:[], payrolls:[], purchases:[], assets:[], letters:[] };
+  try{ if(typeof WF!=='undefined'){ WF={ docs:[], templates:[], users:[], detail:null }; } }catch(e){}
+  MODUL_DIMUAT = {};
+
+  // kosongkan isian login lalu tampilkan layar login
+  var u=document.getElementById('loginUser'), p=document.getElementById('loginPass');
+  if(u) u.value=''; if(p) p.value='';
+  var pesan=document.getElementById('loginPesan'); if(pesan) pesan.innerHTML='';
+  var login=document.getElementById('layarLogin');
+  if(login) login.style.display='flex';
+  try{ window.scrollTo(0,0); }catch(e){}
 }
 function bolehEdit(){ return SESI && (SESI.peran==='editor' || SESI.peran==='admin'); }
 function bolehAdmin(){ return SESI && SESI.peran==='admin'; }
 
 /* Terapkan pembatasan UI sesuai peran. */
+/* Tampilkan cakupan akses di header agar pengguna paham mengapa datanya terbatas. */
+function tampilkanCakupanAkses(){
+  var ak = hakAkses();
+  var el = document.getElementById('hdSub');
+  if(!el || !ak.terbatas) return;
+  var bagian = [ak.per, ak.est, ak.div].filter(Boolean).join(' · ');
+  el.textContent = '🔒 ' + bagian;
+  el.title = 'Tampilan dibatasi sesuai hak akses Anda';
+}
+
 function terapkanPeran(){
   var badge = { admin:'Admin', editor:'Editor', viewer:'Viewer' }[SESI ? SESI.peran : ''] || '';
   var el = document.getElementById('hdPeran');
@@ -5887,6 +6119,23 @@ function formPengguna(username){
       '</div></div>'+
     '<label>Username *</label><input id="puUser" value="'+esc(u?u.Username:'')+'" '+(u?'readonly style="background:#eee"':'placeholder="huruf kecil/angka"')+'>'+
     '<label>Nama Lengkap</label><input id="puNama" value="'+esc(u?u.Nama:'')+'" placeholder="cth: Budi Mandor">'+
+    '<div class="grid2">'+
+      '<div><label>Jabatan</label><input id="puJabatan" value="'+esc(u?u.Jabatan:'')+'" placeholder="cth: Asisten Kepala"></div>'+
+      '<div><label>Level Struktur</label><input type="number" id="puLevel" value="'+esc(u?u.Level:'')+'" placeholder="1 = staf"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Lokasi Kerja</label><select id="puLokasi">'+
+        ['Kebun','HO'].map(function(x){ return '<option'+((u&&u.LokasiKerja===x)||(!u&&x==='Kebun')?' selected':'')+'>'+x+'</option>'; }).join('')+
+        '</select></div>'+
+      '<div><label>Hak Cuti Tahunan (hari)</label><input type="number" id="puHakCuti" value="'+esc(u&&u.HakCutiTahunan!==undefined?u.HakCutiTahunan:12)+'"></div>'+
+    '</div>'+
+    (u ? '<div class="meta" style="margin-top:-6px">Cuti terpakai tahun ini: <b>'+esc(u.CutiTerpakai||0)+' hari</b> · sisa <b>'+
+         esc(Math.max(0,(Number(u.HakCutiTahunan)||12)-(Number(u.CutiTerpakai)||0)))+' hari</b>. '+
+         'Staf <b>HO</b>: Sabtu &amp; Minggu tidak memotong cuti. Staf <b>Kebun</b>: hanya Minggu.</div>' : '')+
+    '<div class="grid2">'+
+      '<div><label>Email (notifikasi)</label><input id="puEmail" type="email" value="'+esc(u?u.Email:'')+'"></div>'+
+      '<div><label>Nomor WhatsApp</label><input id="puWA" value="'+esc(u?u.NomorWA:'')+'" placeholder="628…"></div>'+
+    '</div>'+
     '<label>Peran</label><select id="puPeran">'+
       ['admin','editor','viewer'].map(function(r){ return '<option value="'+r+'"'+(u&&u.Peran===r?' selected':'')+'>'+r+'</option>'; }).join('')+'</select>'+
     '<label style="margin-top:10px;font-weight:bold;color:var(--hijau-900)">🔒 Pembatasan Akses Wilayah Operasional</label>'+
@@ -5945,6 +6194,12 @@ function simpanPengguna(existing){
     AksesDivisi: elD ? elD.value : '',
     Aktif: document.getElementById('puAktif').checked,
     Foto: FOTO_BUF.pu || '',
+    Jabatan: (document.getElementById('puJabatan')||{value:''}).value.trim(),
+    Level: (document.getElementById('puLevel')||{value:''}).value,
+    Email: (document.getElementById('puEmail')||{value:''}).value.trim(),
+    NomorWA: (document.getElementById('puWA')||{value:''}).value.replace(/[^0-9]/g,''),
+    LokasiKerja: (document.getElementById('puLokasi')||{value:'Kebun'}).value,
+    HakCutiTahunan: Number((document.getElementById('puHakCuti')||{value:12}).value)||12,
     password: document.getElementById('puPass').value
   };
   if(!p.Username) return toast('Username wajib diisi.', true);
@@ -6084,7 +6339,7 @@ function pastikanPetaLacak(){
   var el = document.getElementById('petaLacak'); if(!el) return false;
   var st = S.settings||{};
   petaLacak = L.map('petaLacak').setView([Number(st.petaLat)||0.531, Number(st.petaLng)||101.456], Number(st.petaZoom)||14);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(petaLacak);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'}).addTo(petaLacak);
   grupBlokLacak = L.layerGroup().addTo(petaLacak);
   grupLabelLacak = L.layerGroup().addTo(petaLacak);
   grupJejak = L.layerGroup().addTo(petaLacak);
@@ -10002,6 +10257,7 @@ function bukaScannerQR(){
     '<button class="btn btn-sekunder btn-blok" style="margin-top:14px" onclick="hentikanScannerQR();tutupLembar()">Batal</button>'
   );
 
+  pastikanScannerQR().catch(function(){}).then(function(){
   setTimeout(function(){
     var bdg = document.getElementById('qrStatusBadge');
     if(typeof Html5QrcodeScanner !== 'undefined'){
@@ -10033,6 +10289,7 @@ function bukaScannerQR(){
       if(elR) elR.innerHTML = '<div style="padding:20px;color:var(--abu);font-size:12px;text-align:center">Pustaka QR Scanner sedang dimuat... Silakan ketik ID di bawah.</div>';
     }
   }, 100);
+  });
 }
 
 function hentikanScannerQR(){
@@ -10262,6 +10519,17 @@ function tampilQRIdentitas(tipe, id){
 
   setTimeout(function(){
     var el = document.getElementById('qrcodeBox');
+    if(el && typeof QRCode === 'undefined'){
+      // pustaka QR dimuat saat dibutuhkan, lalu gambar ulang di kotak yang sama
+      pastikanQRCode().then(function(){
+        var box = document.getElementById('qrcodeBox');
+        if(box && typeof QRCode !== 'undefined'){
+          box.innerHTML = '';
+          new QRCode(box, { text: qrText, width: 180, height: 180, colorDark:"#123B22", colorLight:"#ffffff", correctLevel: QRCode.CorrectLevel.H });
+        }
+      }).catch(function(){ toast('Gagal memuat pustaka QR. Periksa koneksi.', true); });
+      return;
+    }
     if(el && typeof QRCode !== 'undefined'){
       el.innerHTML = '';
       new QRCode(el, { text: qrText, width: 180, height: 180, colorDark : "#123B22", colorLight : "#ffffff", correctLevel : QRCode.CorrectLevel.H });
@@ -10294,22 +10562,37 @@ function cetakQRStiker(judul, qrText){
 /* =====================================================================
  *  SISTEM PUSH NOTIFICATION BROWSER & ALERTS
  * ===================================================================*/
+/* True bila aplikasi berjalan di dalam iframe (mis. dibuka lewat editor
+   Apps Script). Di dalam iframe lintas-domain, permintaan izin notifikasi
+   selalu ditolak browser — sama seperti pembatasan GPS. */
+function diDalamIframe(){
+  try{ return window.self !== window.top; }catch(e){ return true; }
+}
+
+/** Diagnosis kenapa notifikasi belum aktif, dalam bahasa yang bisa ditindaklanjuti. */
+function alasanNotifikasi(){
+  if(!('Notification' in window)) return { bisa:false, sebab:'tidak-didukung',
+    pesan:'Peramban ini tidak mendukung notifikasi. Gunakan Chrome di Android atau Safari iOS 16.4+.' };
+  if(Notification.permission === 'granted') return { bisa:true, sebab:'aktif', pesan:'Notifikasi aktif.' };
+  if(diDalamIframe()) return { bisa:false, sebab:'iframe',
+    pesan:'Aplikasi sedang terbuka di dalam bingkai (iframe). Browser tidak mengizinkan permintaan notifikasi dari sini. '+
+          'Buka aplikasi langsung lewat URL yang berakhiran /exec, atau lewat versi PWA yang dipasang di layar utama.' };
+  if(Notification.permission === 'denied') return { bisa:false, sebab:'ditolak',
+    pesan:'Izin notifikasi pernah ditolak, sehingga browser tidak akan bertanya lagi. Buka ikon gembok/⋮ di samping alamat situs → Setelan situs → Notifikasi → ubah menjadi Izinkan, lalu muat ulang halaman.' };
+  return { bisa:false, sebab:'belum', pesan:'Notifikasi belum diizinkan. Tekan tombol lalu pilih "Izinkan" pada permintaan browser.' };
+}
+
 function mintaIzinNotifikasi(){
-  if(!('Notification' in window)){
-    toast('Browser ini tidak mendukung Push Notification API.', true);
-    return Promise.resolve(false);
-  }
-  if(Notification.permission === 'granted'){
-    return Promise.resolve(true);
-  }
+  var d = alasanNotifikasi();
+  if(d.bisa) return Promise.resolve(true);
+  if(d.sebab !== 'belum'){ toast(d.pesan, true); return Promise.resolve(false); }
   return Notification.requestPermission().then(function(perm){
-    if(perm === 'granted'){
-      toast('🔔 Izin notifikasi browser diberikan ✓');
-      return true;
-    } else {
-      toast('Izin notifikasi tidak diberikan.', true);
-      return false;
-    }
+    if(perm === 'granted'){ toast('🔔 Izin notifikasi diberikan ✓'); return true; }
+    toast(alasanNotifikasi().pesan, true);
+    return false;
+  }).catch(function(){
+    toast('Permintaan izin gagal. Buka aplikasi langsung lewat URL /exec atau versi PWA.', true);
+    return false;
   });
 }
 
@@ -10319,7 +10602,7 @@ function ujiNotifikasiMaintenance(){
     try {
       new Notification('🌴 SawitGIS Mandiri', {
         body: 'Notifikasi browser berfungsi normal! Anda akan menerima pengingat jadwal pemupukan & stok kritis.',
-        icon: 'https://cdn-icons-png.flaticon.com/512/2921/2921822.png'
+        icon: './icon-192.png'
       });
     } catch(e){
       toast('Notifikasi terkirim!');
@@ -10421,7 +10704,7 @@ function periksaDanKirimNotifikasiJadwal(){
         try {
           new Notification('🌴 SawitGIS Mandiri: ' + totalAlerts + ' Peringatan Kebun!', {
             body: itemsAlert[0].judul + ' — ' + itemsAlert[0].sub,
-            icon: 'https://cdn-icons-png.flaticon.com/512/2921/2921822.png'
+            icon: './icon-192.png'
           });
           localStorage.setItem('sg_last_notif_time', String(Date.now()));
         } catch(e){}
@@ -10429,10 +10712,76 @@ function periksaDanKirimNotifikasiJadwal(){
     }
   }
 
+
+  // 6. Workflow yang menunggu persetujuan saya
+  try{
+    (WF.docs||[]).forEach(function(d){
+      if(!d.perluSaya) return;
+      totalAlerts++;
+      itemsAlert.push({
+        tipe: 'workflow',
+        judul: 'Menunggu persetujuan Anda: ' + d.NoDok,
+        sub: d.Judul + ' · dari ' + d.PemohonNama + ' · langkah ' + d.langkahSaya,
+        aksi: function(){ bukaHalaman('workflow'); setTimeout(function(){ bukaDetailWf(d.ID); }, 400); }
+      });
+    });
+    // dokumen saya yang diminta revisi
+    (WF.docs||[]).forEach(function(d){
+      if(!d.milikSaya || d.Status!=='Revisi') return;
+      totalAlerts++;
+      itemsAlert.push({
+        tipe: 'workflow',
+        judul: 'Perlu diperbaiki: ' + d.NoDok,
+        sub: d.Judul + ' — approver meminta revisi',
+        aksi: function(){ bukaHalaman('workflow'); setTimeout(function(){ bukaDetailWf(d.ID); }, 400); }
+      });
+    });
+  }catch(e){}
+
   return itemsAlert;
 }
 
+/* Kartu izin notifikasi.
+ *
+ * Aplikasi Apps Script SELALU disajikan di dalam iframe — bahkan lewat URL
+ * /exec. Browser tidak pernah mengizinkan permintaan notifikasi dari iframe
+ * lintas-domain, sehingga tombol "Izinkan" di sana tidak akan pernah berhasil.
+ * Menampilkan tombol yang pasti gagal hanya membingungkan pengguna, jadi di
+ * mode Apps Script kartunya diganti keterangan singkat. Notifikasi di dalam
+ * aplikasi (lonceng ini) tetap berjalan normal di semua mode.
+ */
+function kartuIzinNotifikasi(aktif){
+  // Mode Apps Script: push browser memang tidak tersedia — jangan tawarkan
+  if(typeof ADA_GAS !== 'undefined' && ADA_GAS){
+    return '<div class="kartu" style="background:#F7F9F7;border:1px solid var(--garis);padding:10px 12px;margin-bottom:12px">'+
+      '<b style="font-size:12.5px">Notifikasi</b>'+
+      '<div style="font-size:11.5px;color:var(--abu);margin-top:3px;line-height:1.55">'+
+        'Peringatan kebun tampil di lonceng ini setiap kali Anda membuka aplikasi. '+
+        'Notifikasi yang muncul di layar ponsel (push) hanya tersedia pada '+
+        '<b>versi PWA</b> yang dipasang di layar utama — hubungi administrator bila diperlukan.'+
+      '</div></div>';
+  }
+  if(aktif){
+    return '<div class="kartu" style="background:var(--hijau-50);padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">'+
+      '<div><b style="font-size:12.5px">Notifikasi Layar</b>'+
+      '<div style="font-size:11.5px;color:var(--hijau-700);font-weight:bold">🟢 Aktif</div></div>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="ujiNotifikasiMaintenance()">Uji Kirim</button></div>';
+  }
+  var d = alasanNotifikasi();
+  return '<div class="kartu" style="background:var(--hijau-50);padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">'+
+    '<div style="flex:1"><b style="font-size:12.5px">Notifikasi Layar</b>'+
+    '<div style="font-size:11px;color:var(--abu);margin-top:3px;line-height:1.5">'+esc(d.pesan)+'</div></div>'+
+    (d.sebab==='belum'
+      ? '<button class="btn btn-utama btn-kecil" onclick="mintaIzinNotifikasi().then(function(){bukaPanelNotifikasi();})">Izinkan</button>'
+      : '')+
+    '</div>';
+}
+
 function bukaPanelNotifikasi(){
+  // pastikan daftar workflow terbaru ikut terhitung di notifikasi
+  if(!(WF.docs||[]).length){
+    callApi('listWorkflows', {}).then(function(r){ WF.docs=r||[]; bukaPanelNotifikasi(); }).catch(function(){});
+  }
   var list = periksaDanKirimNotifikasiJadwal();
   var isNotifGranted = typeof Notification !== 'undefined' && Notification.permission === 'granted';
 
@@ -10441,7 +10790,7 @@ function bukaPanelNotifikasi(){
     htmlList = '<div class="kosong" style="padding:24px"><span style="font-size:36px">🟢</span><br><b>Semua Jadwal & Stok Aman!</b><br><span style="font-size:12px;color:var(--abu)">Tidak ada jadwal pemeliharaan overdue atau stok material kritis saat ini.</span></div>';
   } else {
     list.forEach(function(it, idx){
-      var ic = { pupuk:'🧪', siang:'🌿', jadwal:'🗓️', gudang:'📦', cuaca:'⛈️' }[it.tipe] || '⚠️';
+      var ic = { pupuk:'🧪', siang:'🌿', jadwal:'🗓️', gudang:'📦', cuaca:'⛈️', workflow:'✅' }[it.tipe] || '⚠️';
       var borderCol = it.tipe === 'cuaca' ? '#dc2626' : 'var(--merah)';
       var bgCol = it.tipe === 'cuaca' ? '#fef2f2' : 'transparent';
       htmlList += '<div class="item" style="margin-bottom:8px;border-left:4px solid '+borderCol+';background:'+bgCol+';padding:10px 12px;border-radius:6px">'+
@@ -10461,13 +10810,7 @@ function bukaPanelNotifikasi(){
       '<h3 style="margin:0">🔔 Peringatan & Notifikasi Kebun</h3>'+
       '<span class="chip '+(list.length?'merah':'hijau')+'">'+list.length+' Alert</span>'+
     '</div>'+
-    '<div class="kartu" style="background:var(--hijau-50);padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">'+
-      '<div>'+
-        '<b style="font-size:12.5px">Push Notification Browser</b>'+
-        '<div style="font-size:11.5px;color:var(--abu)">Status: '+(isNotifGranted?'<span style="color:var(--hijau-700);font-weight:bold">🟢 Aktif</span>':'<span style="color:var(--merah);font-weight:bold">🔴 Belum Diizinkan</span>')+'</div>'+
-      '</div>'+
-      '<button class="btn btn-utama btn-kecil" onclick="mintaIzinNotifikasi().then(function(){bukaPanelNotifikasi();})">'+(isNotifGranted?'🔔 Diaktifkan':'Izinkan Notif')+'</button>'+
-    '</div>'+
+    kartuIzinNotifikasi(isNotifGranted)+
     '<div style="max-height:340px;overflow-y:auto;padding-right:2px">'+htmlList+'</div>'+
     '<button class="btn btn-sekunder btn-kecil btn-blok" style="margin-top:10px" onclick="ujiNotifikasiMaintenance()">🔔 Uji Notifikasi Browser</button>'+
     '<button class="btn btn-sekunder btn-blok" style="margin-top:6px" onclick="tutupLembar()">Tutup</button>'
@@ -10519,7 +10862,10 @@ function isiOpsiKtu(){
   var b1=document.getElementById('ksBulan'); if(b1 && !b1.value) b1.value = hariISO(new Date()).slice(0,7);
   var b2=document.getElementById('upPeriode'); if(b2 && !b2.value) b2.value = hariISO(new Date()).slice(0,7);
 }
-function rp(n){ return 'Rp ' + fmtAngka(Math.round(Number(n)||0)); }
+/* Format rupiah memakai helper angka() yang sudah ada di aplikasi.
+   (Sebelumnya memanggil fmtAngka yang tidak pernah didefinisikan, sehingga
+   halaman workflow gagal dimuat.) */
+function rp(n){ return 'Rp ' + angka(Math.round(Number(n)||0), 0); }
 function kpiKotak(judul, nilai, warna){
   return '<div class="kpi" style="border-left-color:'+(warna||'var(--hijau-700)')+'">'+
     '<b>'+nilai+'</b><span>'+judul+'</span></div>';
@@ -10654,7 +11000,7 @@ function renderUpah(){
   var el=document.getElementById('kpiUpah');
   if(el) el.innerHTML = kpiKotak('Karyawan', list.length+'', '#1565C0') +
     kpiKotak('Total Upah', rp(total), '#2E7D46') +
-    kpiKotak('Total HK', fmtAngka(hk), '#E8960C') +
+    kpiKotak('Total HK', angka(hk,0), '#E8960C') +
     kpiKotak('Rata-rata/Orang', rp(list.length?total/list.length:0), '#6A4C93');
   var r=document.getElementById('ringkasKtu'); if(r) r.textContent = list.length+' karyawan';
 
@@ -11149,6 +11495,1279 @@ function eksporKtuCSV(jenis){
   toast('CSV diunduh ✓');
 }
 
+/* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
+ * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
+var VERSI_APP = '1.1.1';
+var TANGGAL_BUILD = '2026-08-19';
+function tampilkanVersiApp(){
+  var v = document.getElementById('versiApp');
+  if(v) v.textContent = VERSI_APP + ' (' + TANGGAL_BUILD + ')';
+  var m = document.getElementById('modeApp');
+  if(m){
+    var teks = ADA_GAS ? 'mode Apps Script' : (MODE_API ? 'mode PWA (offline siap)' : 'mode demo');
+    // peringatkan bila Code.gs dan Index.html berasal dari rilis berbeda
+    var vb = (S && S.license && S.license.versiBackend) || '';
+    if(vb && vb !== VERSI_APP){
+      teks += ' · ⚠️ backend v' + vb + ' — pasang ulang Code.gs & Index.html dari rilis yang sama';
+      m.style.color = 'var(--merah)';
+    }
+    m.textContent = teks;
+  }
+}
+
+/* ---- Pemuat lazy pustaka berat (dulu blocking di <head>) ---- */
+function pastikanHtml2Canvas(){
+  if(typeof html2canvas !== 'undefined') return Promise.resolve();
+  return muatSkrip('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+}
+function pastikanQRCode(){
+  if(typeof QRCode !== 'undefined') return Promise.resolve();
+  return muatSkrip('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js');
+}
+function pastikanScannerQR(){
+  if(typeof Html5Qrcode !== 'undefined' || typeof Html5QrcodeScanner !== 'undefined') return Promise.resolve();
+  return muatSkrip('https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js');
+}
+
+
+/* ==================== LISENSI (SISI KLIEN) ====================
+ * Menampilkan status uji coba / lisensi dan menegakkan mode baca-saja di
+ * antarmuka. Penegakan yang sebenarnya tetap di server (Code.gs) — bagian ini
+ * hanya agar pengguna tidak menemui tombol yang pasti ditolak.
+ */
+var LISENSI = null;
+
+/* Nomor WhatsApp penyedia untuk permintaan kunci lisensi.
+ * Format internasional tanpa tanda + dan tanpa spasi, mis. '628123456789'.
+ * PENYEDIA: ganti nilai di bawah sebelum mendistribusikan aplikasi.
+ * Bisa juga ditimpa lewat Pengaturan (kunci: waPenyedia). */
+var WA_PENYEDIA = '628123456789';
+function nomorWAPenyedia(){
+  var st = (S && S.settings) || {};
+  return String(st.waPenyedia || WA_PENYEDIA).replace(/[^0-9]/g,'');
+}
+
+function terapkanLisensi(lic){
+  if(!lic) return;
+  LISENSI = lic;
+  var bar = document.getElementById('barLisensi');
+  if(!bar) return;
+
+  if(lic.mode === 'aktif'){
+    bar.style.display = 'none';
+    document.body.classList.remove('lisensiHabis');
+    return;
+  }
+  document.body.classList.toggle('lisensiHabis', lic.mode === 'viewer');
+
+  var warna = { trial:'#1565C0', tenggang:'#E8960C', viewer:'#C62828' }[lic.mode] || '#1565C0';
+  var ikon  = { trial:'🎁', tenggang:'⏳', viewer:'🔒' }[lic.mode] || 'ℹ️';
+  bar.style.display = 'block';
+  bar.style.background = warna;
+  bar.innerHTML = '<span>'+ikon+' '+esc(lic.pesan)+'</span>' +
+    '<button onclick="bukaAktivasiLisensi()">'+(lic.mode==='viewer'?'Aktifkan':'Detail')+'</button>';
+}
+
+function bukaAktivasiLisensi(){
+  var lic = LISENSI || {};
+  var adminQ = SESI && SESI.peran === 'admin';
+  bukaLembar('<h3>🔑 Lisensi Aplikasi</h3>'+
+    '<div style="padding:12px;border-radius:10px;background:var(--hijau-50);margin-bottom:12px">'+
+      '<div style="font-size:12.5px;color:var(--abu)">Status</div>'+
+      '<b style="font-size:15px">'+esc(lic.pesan||'-')+'</b>'+
+      (lic.kedaluwarsa?'<div style="font-size:12.5px;margin-top:4px">Berlaku sampai '+esc(lic.kedaluwarsa)+'</div>':'')+
+    '</div>'+
+    '<label>ID Instalasi / Database (kirim ke penyedia saat membeli)</label>'+
+    '<div style="display:flex;gap:6px">'+
+      '<input id="licInstall" readonly value="'+esc(lic.installId||'-')+'" style="background:#eee;font-weight:800;letter-spacing:1px">'+
+      '<button class="btn btn-sekunder btn-kecil" style="flex:0 0 auto" onclick="salinIdInstalasi()">📋 Salin</button>'+
+    '</div>'+
+    (lic.namaDatabase ? '<div class="meta" style="margin-top:4px">Database: <b>'+esc(lic.namaDatabase)+'</b></div>' : '')+
+    '<button class="btn btn-utama btn-blok" style="margin-top:10px;background:#25D366;border-color:#25D366" onclick="kirimIdViaWA()">'+
+      '💬 Kirim ID via WhatsApp</button>'+
+    '<div class="meta" style="margin-top:4px">Pesan berisi ID Instalasi akan tersusun otomatis — Anda tinggal menekan kirim.</div>'+
+    (adminQ
+      ? '<label style="margin-top:14px">Masukkan Kunci Lisensi</label>'+
+        '<input id="licKunci" placeholder="SGIS-XXXXXXXXXXXX-YYYYMMDD-PAKET-XXXXXXXX" style="text-transform:uppercase">'+
+        '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="aktifkanLisensi()">✅ Aktifkan Lisensi</button>'
+      : '<div class="meta" style="margin-top:14px">Hanya admin yang dapat memasukkan kunci lisensi.</div>')+
+    '<div class="meta" style="margin-top:14px;line-height:1.6">'+
+      'Uji coba berlaku '+esc(lic.trialHari||10)+' hari, ditambah masa tenggang '+esc(lic.tenggangHari||3)+' hari. '+
+      'Setelah itu aplikasi beralih ke mode baca-saja — <b>data Anda tetap aman dan bisa dilihat serta diekspor</b>, '+
+      'hanya penambahan dan perubahan data yang dinonaktifkan sampai lisensi diaktifkan.'+
+    '</div>');
+}
+
+/* Susun pesan permintaan kunci dan buka WhatsApp. Pelanggan cukup menekan
+ * kirim — tidak perlu mengetik atau menyalin ID secara manual. */
+function kirimIdViaWA(){
+  var lic = LISENSI || {};
+  var st = (S && S.settings) || {};
+  var namaPerusahaan = st.namaPerusahaan || st.judulAplikasi || '';
+  var pesan =
+    'Halo, saya ingin mengaktifkan lisensi SawitGIS Mandiri.\n\n' +
+    'ID Instalasi : ' + (lic.installId || '-') + '\n' +
+    (lic.namaDatabase ? 'Database     : ' + lic.namaDatabase + '\n' : '') +
+    (namaPerusahaan ? 'Perusahaan   : ' + namaPerusahaan + '\n' : '') +
+    'Status saat ini : ' + (lic.pesan || '-') + '\n\n' +
+    'Mohon informasi paket dan biayanya. Terima kasih.';
+  var nomor = nomorWAPenyedia();
+  if(!nomor || nomor === '628123456789'){
+    // nomor belum diatur penyedia → salin pesan agar tetap bisa dikirim manual
+    salinTeks(pesan);
+    return toast('Nomor WhatsApp penyedia belum diatur. Pesan sudah disalin — tempel ke chat penyedia.', true);
+  }
+  var url = 'https://wa.me/' + nomor + '?text=' + encodeURIComponent(pesan);
+  var w = window.open(url, '_blank', 'noopener');
+  if(!w){ salinTeks(pesan); toast('Popup diblokir. Pesan sudah disalin — tempel ke WhatsApp.', true); }
+}
+function salinTeks(t){
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t); return; }
+  }catch(e){}
+  var ta=document.createElement('textarea'); ta.value=t;
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); }catch(e){}
+  document.body.removeChild(ta);
+}
+function salinIdInstalasi(){
+  var el = document.getElementById('licInstall');
+  if(!el) return;
+  el.select();
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(el.value).then(function(){ toast('ID Instalasi disalin ✓'); });
+    } else { document.execCommand('copy'); toast('ID Instalasi disalin ✓'); }
+  }catch(e){ toast('Salin manual: '+el.value); }
+}
+
+function aktifkanLisensi(){
+  var k = (document.getElementById('licKunci')||{}).value || '';
+  k = k.trim().toUpperCase();
+  if(!k) return toast('Masukkan kunci lisensi terlebih dahulu.', true);
+  tampilLoader(true, 'Memverifikasi lisensi…');
+  callApi('activateLicense', { kunci:k }).then(function(lic){
+    tampilLoader(false);
+    terapkanLisensi(lic);
+    tutupLembar();
+    toast('Lisensi aktif ✓ ' + (lic.pesan||''));
+    muatData();
+  }).catch(function(e){
+    tampilLoader(false);
+    toast('Aktivasi gagal: ' + e.message, true);
+  });
+}
+
+/* Ambil status lisensi lepas dari getAllData (mis. setelah login). */
+function segarkanLisensi(){
+  callApi('getLicense', {}).then(terapkanLisensi).catch(function(){});
+}
+
+
+/* ==================== PEMUATAN MODUL SESUAI KEBUTUHAN ====================
+ * Saat masuk aplikasi hanya data inti yang diambil. Data modul dimuat ketika
+ * halamannya pertama kali dibuka, sehingga proses login jauh lebih ringan. */
+var MODUL_DIMUAT = {};
+var HALAMAN_MODUL = {
+  hujan:['rainfalls'], spb:['shipments'], pupuk:['fertilizers'], sensus:['censuses'],
+  bkm:['attendances'], sensusbuah:['sensusbuah'], audit:['audits'], traksi:['traksi'],
+  gudang:['gudang'], budget:['budgets'], landclearing:['landclearing'],
+  ktu:['kasbank','payrolls','purchases','assets','letters'],
+  lacak:['positions'], peta:['positions'],
+  dasbor:['rainfalls','shipments','gudang']
+};
+
+/** Pastikan modul tertentu sudah ada di memori; muat bila belum. */
+function pastikanModul(nama){
+  var perlu = (nama||[]).filter(function(k){ return !MODUL_DIMUAT[k]; });
+  if(!perlu.length) return Promise.resolve();
+  return callApi('getModul', { nama:perlu }).then(function(r){
+    Object.keys(r||{}).forEach(function(k){ S[k] = r[k]; MODUL_DIMUAT[k] = true; });
+    simpanCache();
+  }).catch(function(){ /* offline: pakai cache yang ada */ });
+}
+/** Dipanggil bukaHalaman — muat data halaman lalu gambar ulang. */
+function siapkanHalaman(nama, gambarUlang){
+  var perlu = HALAMAN_MODUL[nama];
+  if(!perlu) return Promise.resolve();
+  var belum = perlu.filter(function(k){ return !MODUL_DIMUAT[k]; });
+  if(!belum.length) return Promise.resolve();
+  return pastikanModul(perlu).then(function(){ if(gambarUlang) gambarUlang(); });
+}
+
+/* ==================== WORKFLOW PERSETUJUAN (SISI KLIEN) ==================== */
+var WF = { docs:[], templates:[], users:[], detail:null };
+var tabWf = 'perlu';
+var KATEGORI_UM = ['Tiket','Hotel','Uang Makan','Uang Dinas','Transport Lokal','Lainnya'];
+
+function gantiTabWf(t){
+  tabWf = t;
+  var bar = document.getElementById('tabWf');
+  if(bar) bar.querySelectorAll('button').forEach(function(b){
+    b.className = 'btn btn-kecil ' + (b.dataset.tab===t ? 'btn-utama' : 'btn-sekunder') +
+      (b.dataset.tab==='alur' ? ' adminOnly' : '');
+  });
+  document.getElementById('daftarWf').style.display = (t==='alur') ? 'none' : 'block';
+  document.getElementById('panelAlur').style.display = (t==='alur') ? 'block' : 'none';
+  if(t==='alur') renderAlur(); else renderWf();
+}
+
+function muatWorkflow(pesan){
+  Promise.all([
+    callApi('listWorkflows', {}),
+    callApi('listWorkflowTemplates', { semua:(SESI&&SESI.peran==='admin') }),
+    callApi('listUsers', {}).catch(function(){ return []; })
+  ]).then(function(r){
+    WF.docs = r[0]||[]; WF.templates = r[1]||[]; WF.users = r[2]||[];
+    gantiTabWf(tabWf);
+    if(pesan) toast('Data workflow dimuat ✓');
+  }).catch(function(e){ toast('Gagal memuat workflow: '+e.message, true); });
+}
+
+function wfWarna(s){
+  return { 'Diajukan':'#1565C0','Diproses':'#E8960C','Selesai':'#2E7D46',
+           'Ditolak':'#C62828','Revisi':'#8E5A00' }[s] || '#6B665E';
+}
+function wfIkonJenis(j){
+  return { cuti:'🌴', sppd:'✈️', uangmuka:'💵', deklarasi:'🧾', aset:'📦' }[j] || '📄';
+}
+
+function renderWf(){
+  var fJ=(document.getElementById('wfJenis')||{}).value||'';
+  var fS=(document.getElementById('wfStatus')||{}).value||'';
+  var q=((document.getElementById('wfCari')||{}).value||'').toLowerCase();
+  var list = WF.docs.filter(function(d){
+    if(tabWf==='perlu' && !d.perluSaya) return false;
+    if(tabWf==='saya' && !d.milikSaya) return false;
+    if(fJ && d.Jenis!==fJ) return false;
+    if(fS && d.Status!==fS) return false;
+    if(q && (String(d.NoDok)+' '+String(d.Judul)+' '+String(d.PemohonNama)).toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+
+  var perlu = WF.docs.filter(function(d){ return d.perluSaya; }).length;
+  var proses = WF.docs.filter(function(d){ return ['Diajukan','Diproses'].indexOf(d.Status)>=0; }).length;
+  var el=document.getElementById('kpiWf');
+  if(el) el.innerHTML =
+    kpiKotak('Perlu Persetujuan Saya', perlu+'', perlu?'#C62828':'#9E9E9E') +
+    kpiKotak('Sedang Berjalan', proses+'', '#E8960C') +
+    kpiKotak('Selesai', WF.docs.filter(function(d){return d.Status==='Selesai';}).length+'', '#2E7D46') +
+    kpiKotak('Pengajuan Saya', WF.docs.filter(function(d){return d.milikSaya;}).length+'', '#1565C0');
+  var r=document.getElementById('ringkasWf'); if(r) r.textContent = list.length+' dokumen';
+
+  var d=document.getElementById('daftarWf'); if(!d) return;
+  if(!list.length){
+    d.innerHTML='<div class="kosong">'+
+      (tabWf==='perlu' ? 'Tidak ada dokumen yang menunggu persetujuan Anda.'
+       : tabWf==='saya' ? 'Anda belum mengajukan dokumen. Tekan tombol + untuk mengajukan.'
+       : 'Belum ada dokumen.')+'</div>';
+    return;
+  }
+  d.innerHTML = list.map(function(x){
+    return '<div class="item"><div class="kepala"><div><b>'+wfIkonJenis(x.Jenis)+' '+esc(x.Judul)+'</b>'+
+      '<div class="meta">'+esc(x.NoDok)+' · '+esc(x.PemohonNama)+' · '+esc(String(x.Dibuat).slice(0,16))+
+      (x.total?' · '+rp(x.total):'')+'</div></div>'+
+      '<div class="kanan"><span class="wf-chip" style="background:'+wfWarna(x.Status)+'22;color:'+wfWarna(x.Status)+'">'+
+      esc(x.Status)+'</span></div></div>'+
+      (x.perluSaya?'<div class="meta" style="margin-top:4px;color:#C62828;font-weight:700">⏳ Menunggu tindakan Anda — langkah: '+esc(x.langkahSaya)+'</div>':'')+
+      '<div class="aksi-baris">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="bukaDetailWf(\''+esc(x.ID)+'\')">🔍 Detail</button>'+
+      (x.perluSaya?'<button class="btn btn-utama btn-kecil" onclick="bukaDetailWf(\''+esc(x.ID)+'\')">✍️ Tindak Lanjuti</button>':'')+
+      (['Diajukan','Diproses'].indexOf(x.Status)>=0 && !x.perluSaya
+        ? '<button class="btn btn-sekunder btn-kecil" onclick="kirimPengingat(\''+esc(x.ID)+'\')">🔔 Ingatkan</button>' : '')+
+      '</div></div>';
+  }).join('');
+}
+
+/* ---------------- Detail + stepper ---------------- */
+function bukaDetailWf(id){
+  tampilLoader(true,'Memuat dokumen…');
+  callApi('getWorkflowDetail', { docId:id }).then(function(r){
+    tampilLoader(false); WF.detail = r; tampilDetailWf('detail');
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+function stepperHTML(steps){
+  var selesai = steps.filter(function(s){ return s.Status==='Disetujui'; }).length;
+  var persen = steps.length>1 ? (selesai/(steps.length-1))*100 : (selesai?100:0);
+  var ikon = { 'Disetujui':'✓','Ditolak':'✕','Revisi':'!','Menunggu':'◷','Belum':'' };
+  var kelas = { 'Disetujui':'done','Ditolak':'rejected','Revisi':'revised','Menunggu':'active','Belum':'' };
+  return '<div class="workflow-stepper">'+
+    '<div class="rel"><div class="rel-isi" id="relIsi" style="width:0"></div></div>'+
+    steps.map(function(s,i){
+      var st = String(s.Status||'Belum');
+      var pop = '<div class="step-pop"><b>'+esc(s.ApproverNama||'-')+'</b><br>'+
+        esc(s.NamaLangkah)+'<br>'+
+        (s.Waktu ? 'Waktu: '+esc(s.Waktu) : 'Belum ada tindakan') +
+        (s.DelegasiDari ? '<br>Delegasi dari '+esc(s.DelegasiDari) : '') +
+        (s.Catatan ? '<br>Catatan: '+esc(s.Catatan) : '') + '</div>';
+      return '<div class="step-item '+(kelas[st]||'')+'" onclick="this.classList.toggle(\'buka\')">'+
+        '<div class="step-circle">'+(ikon[st]||(i+1))+'</div>'+
+        '<div class="step-nama">'+esc(s.NamaLangkah)+'</div>'+pop+'</div>';
+    }).join('')+
+    '</div><script>setTimeout(function(){var e=document.getElementById("relIsi");if(e)e.style.width="'+persen.toFixed(1)+'%";},60);<\/script>';
+}
+
+function tampilDetailWf(tab){
+  var r = WF.detail; if(!r) return;
+  var d = r.doc, data = r.data||{}, steps = r.steps||[];
+  var akuApprover = steps.some(function(s){
+    return s.Status==='Menunggu' && SESI &&
+      String(s.ApproverUser).toLowerCase()===String(SESI.username).toLowerCase();
+  });
+  var isiTab;
+  if(tab==='audit'){
+    isiTab = (r.audit||[]).length
+      ? (r.audit||[]).map(function(a){
+          return '<div class="item"><div class="kepala"><div><b>'+esc(a.Aksi)+'</b>'+
+            '<div class="meta">'+esc(a.Waktu)+' · '+esc(a.User)+'</div></div></div>'+
+            diffAuditHTML(a.Sebelum, a.Sesudah)+'</div>'; }).join('')
+      : '<div class="kosong">Belum ada jejak perubahan.</div>';
+  } else {
+    var rows = Object.keys(data).filter(function(k){ return k!=='uangMuka'; }).map(function(k){
+      var v = data[k];
+      if(v===''||v==null) return '';
+      return '<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--garis)">'+
+        '<div style="flex:0 0 42%;color:var(--abu);font-size:12.5px">'+esc(k)+'</div>'+
+        '<div style="flex:1;font-weight:600">'+esc(typeof v==='number'?angka(v,0):v)+'</div></div>';
+    }).join('');
+    var um = '';
+    if(Array.isArray(data.uangMuka) && data.uangMuka.length){
+      var tot = data.uangMuka.reduce(function(a,x){ return a+(Number(x.nominal)||0); },0);
+      um = '<h4 style="margin:14px 0 6px;font-size:13px">Rincian Uang Muka</h4>'+
+        data.uangMuka.map(function(x){
+          return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--garis)">'+
+            '<span>'+esc(x.kategori)+'</span><b>'+rp(x.nominal)+'</b></div>'; }).join('')+
+        '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:800">'+
+        '<span>Total</span><span>'+rp(tot)+'</span></div>';
+    }
+    isiTab = (rows||um) ? (rows+um) : '<div class="kosong">Tidak ada rincian.</div>';
+  }
+
+  bukaLembar(
+    '<h3>'+wfIkonJenis(d.Jenis)+' '+esc(d.Judul)+'</h3>'+
+    '<div class="meta">'+esc(d.NoDok)+' · Pemohon '+esc(d.PemohonNama)+' · '+esc(String(d.Dibuat).slice(0,16))+'</div>'+
+    '<div style="margin-top:8px"><span class="wf-chip" style="background:'+wfWarna(d.Status)+'22;color:'+wfWarna(d.Status)+'">'+esc(d.Status)+'</span></div>'+
+    (r.induk ? '<div class="meta" style="margin-top:6px;padding:8px 10px;background:var(--hijau-50);border-radius:8px">'+
+      '🔗 Deklarasi dari <b>'+esc(r.induk.NoDok)+'</b> — '+esc(r.induk.Judul)+
+      (r.induk.total?' · uang muka '+rp(r.induk.total):'')+'</div>' : '')+
+    stepperHTML(steps)+
+    '<div class="filter-bar" style="margin-bottom:10px">'+
+      '<button class="btn btn-kecil '+(tab!=='audit'?'btn-utama':'btn-sekunder')+'" onclick="tampilDetailWf(\'detail\')">Rincian</button>'+
+      '<button class="btn btn-kecil '+(tab==='audit'?'btn-utama':'btn-sekunder')+'" onclick="tampilDetailWf(\'audit\')">Jejak Audit</button>'+
+    '</div>'+
+    isiTab+
+    (d.Status==='Revisi' && SESI && String(d.Pemohon).toLowerCase()===String(SESI.username).toLowerCase()
+      ? '<div class="aksi-baris" style="margin-top:16px">'+
+        '<button class="btn btn-utama btn-blok" onclick="formRevisi()">✏️ Perbaiki &amp; Kirim Ulang</button></div>'
+      : '')+
+    (akuApprover
+      ? '<div class="aksi-baris" style="margin-top:16px">'+
+        '<button class="btn btn-utama" style="flex:1" onclick="modalTindakan(\'setuju\')">✅ Setujui</button>'+
+        '<button class="btn btn-bahaya" style="flex:1" onclick="modalTindakan(\'tolak\')">❌ Tolak</button>'+
+        '<button class="btn btn-sekunder" onclick="modalTindakan(\'revisi\')">↩️ Revisi</button></div>'
+      : '')+
+    '<div class="aksi-baris" style="margin-top:10px">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="cetakWf()">🖨️ Cetak PDF</button>'+
+      (['Diajukan','Diproses'].indexOf(d.Status)>=0
+        ? '<button class="btn btn-sekunder btn-kecil" onclick="kirimPengingat(\''+esc(d.ID)+'\')">🔔 Ingatkan Approver</button>' : '')+
+      (d.Jenis==='sppd' ? '<button class="btn btn-sekunder btn-kecil" onclick="cetakWf(\'um\')">🖨️ Cetak Uang Muka</button>' : '')+
+    '</div>');
+}
+
+/* Tampilkan perubahan berdampingan. Entri baru tersimpan sebagai JSON sehingga
+ * bisa dibandingkan per bidang; entri lama yang berupa teks tetap ditampilkan
+ * apa adanya agar riwayat lama tidak hilang. */
+function uraiPotret(s){
+  if(!s) return null;
+  var t=String(s).trim();
+  if(t.charAt(0)!=='{') return null;
+  try{ var o=JSON.parse(t); return (o && typeof o==='object') ? o : null; }catch(e){ return null; }
+}
+function diffAuditHTML(sebelum, sesudah){
+  var a=uraiPotret(sebelum), b=uraiPotret(sesudah);
+  if(!a && !b){
+    var teks='';
+    if(sebelum) teks+='<div class="meta" style="margin-top:4px">Sebelum: '+esc(sebelum)+'</div>';
+    if(sesudah) teks+='<div class="meta">Sesudah: '+esc(sesudah)+'</div>';
+    return teks;
+  }
+  a=a||{}; b=b||{};
+  var kunci=[];
+  Object.keys(a).forEach(function(k){ if(kunci.indexOf(k)<0) kunci.push(k); });
+  Object.keys(b).forEach(function(k){ if(kunci.indexOf(k)<0) kunci.push(k); });
+  if(!kunci.length) return '';
+  var baris=kunci.map(function(k){
+    var v1=a[k]===undefined?'':String(a[k]), v2=b[k]===undefined?'':String(b[k]);
+    var berubah = v1!==v2;
+    if(!berubah && !v2) return '';
+    return '<tr'+(berubah?' style="background:#FFF8E8"':'')+'>'+
+      '<td style="padding:5px 7px;color:var(--abu);font-size:11.5px;white-space:nowrap">'+esc(k)+'</td>'+
+      '<td style="padding:5px 7px;font-size:12px;color:'+(berubah?'#C62828':'var(--abu)')+'">'+
+        (v1?esc(v1):'<span style="opacity:.5">—</span>')+'</td>'+
+      '<td style="padding:5px 7px;font-size:12px;font-weight:'+(berubah?'700':'400')+
+        ';color:'+(berubah?'var(--hijau-700)':'var(--abu)')+'">'+
+        (v2?esc(v2):'<span style="opacity:.5">—</span>')+'</td></tr>';
+  }).join('');
+  if(!baris) return '';
+  return '<div style="margin-top:8px;overflow-x:auto">'+
+    '<table style="width:100%;border-collapse:collapse;border:1px solid var(--garis);border-radius:6px">'+
+    '<tr style="background:var(--hijau-50)">'+
+      '<th style="padding:5px 7px;text-align:left;font-size:10.5px;letter-spacing:.05em;color:var(--abu)">BIDANG</th>'+
+      '<th style="padding:5px 7px;text-align:left;font-size:10.5px;letter-spacing:.05em;color:var(--abu)">SEBELUM</th>'+
+      '<th style="padding:5px 7px;text-align:left;font-size:10.5px;letter-spacing:.05em;color:var(--abu)">SESUDAH</th></tr>'+
+    baris+'</table></div>';
+}
+
+/* ---------------- Tindakan approver + tanda tangan ---------------- */
+function modalTindakan(aksi){
+  var judul = { setuju:'Setujui Dokumen', tolak:'Tolak Dokumen', revisi:'Minta Revisi' }[aksi];
+  var wajib = aksi!=='setuju';
+  bukaLembar('<h3>'+judul+'</h3>'+
+    '<div class="meta">'+esc(WF.detail.doc.NoDok)+' — '+esc(WF.detail.doc.Judul)+'</div>'+
+    '<label>'+(wajib?'Alasan *':'Catatan (opsional)')+'</label>'+
+    '<textarea id="wfAlasan" rows="3" placeholder="'+(wajib?'Wajib diisi — jelaskan alasannya':'Opsional')+'"></textarea>'+
+    '<div id="wfAlasanErr" style="color:var(--merah);font-size:12.5px;margin-top:4px;display:none">'+
+      '⚠️ Alasan wajib diisi sebelum melanjutkan.</div>'+
+    (aksi==='setuju'
+      ? '<label>Tanda Tangan Digital</label>'+
+        '<canvas id="ttdKanvas"></canvas>'+
+        '<div class="aksi-baris" style="margin-top:6px">'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="hapusTTD()">Bersihkan</button>'+
+        '<span class="meta" style="align-self:center">Tanda tangan tersimpan sebagai bukti persetujuan.</span></div>'
+      : '')+
+    '<button class="btn '+(aksi==='setuju'?'btn-utama':'btn-bahaya')+' btn-blok" style="margin-top:16px" '+
+      'onclick="kirimTindakan(\''+aksi+'\')">'+judul+'</button>');
+  if(aksi==='setuju') setTimeout(siapkanKanvasTTD, 120);
+}
+
+var ttdCtx=null, ttdGambar=false, ttdAda=false;
+function siapkanKanvasTTD(){
+  var c=document.getElementById('ttdKanvas'); if(!c) return;
+  var rasio = window.devicePixelRatio||1;
+  c.width = c.offsetWidth*rasio; c.height = c.offsetHeight*rasio;
+  ttdCtx = c.getContext('2d'); ttdCtx.scale(rasio,rasio);
+  ttdCtx.lineWidth=2.2; ttdCtx.lineCap='round'; ttdCtx.lineJoin='round'; ttdCtx.strokeStyle='#123B22';
+  ttdAda=false;
+  function pos(e){
+    var r=c.getBoundingClientRect();
+    var t=e.touches?e.touches[0]:e;
+    return { x:t.clientX-r.left, y:t.clientY-r.top };
+  }
+  function mulai(e){ e.preventDefault(); ttdGambar=true; ttdAda=true;
+    var p=pos(e); ttdCtx.beginPath(); ttdCtx.moveTo(p.x,p.y); }
+  function gerak(e){ if(!ttdGambar) return; e.preventDefault();
+    var p=pos(e); ttdCtx.lineTo(p.x,p.y); ttdCtx.stroke(); }
+  function henti(){ ttdGambar=false; }
+  c.onmousedown=mulai; c.onmousemove=gerak; c.onmouseup=henti; c.onmouseleave=henti;
+  c.ontouchstart=mulai; c.ontouchmove=gerak; c.ontouchend=henti;
+}
+/* Ambil tanda tangan dan perkecil ke lebar maks 420 px.
+ * Disimpan langsung sebagai data URL (bukan diunggah ke Drive) supaya gambarnya
+ * pasti tampil saat dicetak — tautan Drive kerap gagal dimuat bila berkasnya
+ * belum/ tidak berhasil dibagikan publik. */
+function ambilTandaTangan(){
+  var c=document.getElementById('ttdKanvas'); if(!c) return '';
+  var maks=420;
+  var skala=Math.min(1, maks/c.width);
+  var k=document.createElement('canvas');
+  k.width=Math.round(c.width*skala); k.height=Math.round(c.height*skala);
+  var kx=k.getContext('2d');
+  kx.fillStyle='#ffffff'; kx.fillRect(0,0,k.width,k.height);   // latar putih agar rapi di cetakan
+  kx.drawImage(c,0,0,k.width,k.height);
+  var d=k.toDataURL('image/png');
+  if(d.length>45000) d=k.toDataURL('image/jpeg',0.7);          // cadangan bila masih besar
+  return d;
+}
+function hapusTTD(){
+  var c=document.getElementById('ttdKanvas');
+  if(c && ttdCtx){ ttdCtx.clearRect(0,0,c.width,c.height); ttdAda=false; }
+}
+function kirimTindakan(aksi){
+  var alasan=(document.getElementById('wfAlasan')||{}).value||'';
+  alasan=alasan.trim();
+  if(aksi!=='setuju' && !alasan){
+    var err=document.getElementById('wfAlasanErr');
+    if(err) err.style.display='block';
+    var ta=document.getElementById('wfAlasan');
+    if(ta){ ta.style.borderColor='var(--merah)'; ta.focus(); }
+    return toast('Alasan wajib diisi saat menolak atau meminta revisi.', true);
+  }
+  var ttd='';
+  if(aksi==='setuju' && ttdAda){
+    ttd = ambilTandaTangan();   // sudah diperkecil agar muat di satu sel Sheets
+  }
+  tampilLoader(true,'Menyimpan tindakan…');
+  callApi('actWorkflow', { docId:WF.detail.doc.ID, aksi:aksi, alasan:alasan, tandaTangan:ttd })
+    .then(function(r){
+      tampilLoader(false); tutupLembar();
+      toast('Dokumen kini berstatus: '+r.status+' ✓');
+      muatWorkflow(false);
+    }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ---------------- Pengajuan baru ---------------- */
+function formWorkflow(){
+  var aktif = WF.templates.filter(function(t){ return t.Aktif; });
+  if(!aktif.length) return toast('Belum ada alur persetujuan. Admin dapat membuatnya di tab Kelola Alur.', true);
+  bukaLembar('<h3>Ajukan Dokumen</h3>'+
+    '<label>Jenis Alur *</label><select id="wfTpl" onchange="gantiFormWf()">'+
+      aktif.map(function(t){ return '<option value="'+esc(t.ID)+'" data-jenis="'+esc(t.Jenis)+'">'+esc(t.Nama)+'</option>'; }).join('')+
+    '</select>'+
+    '<label>Perihal *</label><input id="wfJudul" placeholder="cth: Dinas ke Kebun Plasma I">'+
+    '<div id="wfFormJenis"></div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="kirimPengajuan()">📤 Ajukan</button>');
+  gantiFormWf();
+}
+function gantiFormWf(){
+  var sel=document.getElementById('wfTpl');
+  var jenis = sel.options[sel.selectedIndex].getAttribute('data-jenis');
+  var el=document.getElementById('wfFormJenis');
+  var umum = '<label>Keterangan</label><textarea id="wfKet" rows="2" placeholder="Opsional"></textarea>';
+  if(jenis==='cuti'){
+    el.innerHTML = '<div class="grid2">'+
+      '<div><label>Mulai *</label><input type="date" id="wfMulai" onchange="hitungPreviewCuti()"></div>'+
+      '<div><label>Selesai *</label><input type="date" id="wfSelesai" onchange="hitungPreviewCuti()"></div></div>'+
+      '<div id="wfCutiInfo" style="margin-top:10px"></div>'+
+      '<label>Jenis Cuti</label><select id="wfJenisCuti">'+
+      ['Cuti Tahunan','Cuti Sakit','Cuti Melahirkan','Cuti Penting','Izin Tidak Masuk']
+        .map(function(x){ return '<option>'+x+'</option>'; }).join('')+'</select>'+
+      '<label>Alamat Selama Cuti</label><input id="wfAlamat">'+umum;
+    setTimeout(hitungPreviewCuti, 40);
+  } else if(jenis==='deklarasi'){
+    el.innerHTML = '<label>Ambil dari dokumen SPPD / Uang Muka *</label>'+
+      '<select id="wfInduk" onchange="tarikDataInduk()"><option value="">Memuat…</option></select>'+
+      '<div id="wfIndukInfo" class="meta" style="margin-top:6px"></div>'+
+      '<div id="wfRealisasi" style="margin-top:12px"></div>'+
+      '<div id="wfSelisih" style="margin-top:10px"></div>'+
+      umum;
+    muatDaftarInduk();
+  } else if(jenis==='uangmuka'){
+    /* Uang muka berdiri sendiri: tidak selalu terkait perjalanan, mis. panjar
+       pembelian material atau biaya operasional. Karena itu tanpa kolom
+       kendaraan, dan "Tujuan" diganti "Keperluan". */
+    el.innerHTML = '<label>Keperluan *</label><input id="wfTujuan" placeholder="cth: Panjar pembelian bibit">'+
+      '<div class="grid2">'+
+      '<div><label>Perlu Sejak</label><input type="date" id="wfMulai"></div>'+
+      '<div><label>Perkiraan Selesai</label><input type="date" id="wfSelesai"></div></div>'+
+      '<input type="hidden" id="wfKendaraan">'+
+      '<label>Penjelasan Kebutuhan</label><input id="wfMaksud">'+
+      '<h4 style="margin:16px 0 6px;font-size:13px">Rincian Uang Muka</h4>'+
+      '<div id="wfUM"></div>'+
+      '<button class="btn btn-sekunder btn-kecil" style="margin-top:8px" onclick="tambahBarisUM()">＋ Tambah kategori</button>'+
+      '<div id="wfUMTotal" style="margin-top:10px;padding:10px;border-radius:8px;background:var(--hijau-50);font-weight:800;text-align:center"></div>'+
+      umum;
+    setTimeout(function(){ tambahBarisUM(); }, 30);
+  } else if(jenis==='sppd'){
+    el.innerHTML = '<div class="grid2">'+
+      '<div><label>Tujuan *</label><input id="wfTujuan" placeholder="cth: Kebun Plasma I"></div>'+
+      '<div><label>Kendaraan</label><input id="wfKendaraan" placeholder="cth: Mobil dinas"></div></div>'+
+      '<div class="grid2">'+
+      '<div><label>Mulai *</label><input type="date" id="wfMulai"></div>'+
+      '<div><label>Selesai *</label><input type="date" id="wfSelesai"></div></div>'+
+      '<label>Maksud Perjalanan</label><input id="wfMaksud">'+
+      '<h4 style="margin:16px 0 6px;font-size:13px">Rincian Uang Muka <span style="font-weight:400;color:var(--abu);font-size:11.5px">(opsional — kosongkan bila tanpa panjar)</span></h4>'+
+      '<div id="wfUM"></div>'+
+      '<button class="btn btn-sekunder btn-kecil" style="margin-top:8px" onclick="tambahBarisUM()">＋ Tambah kategori</button>'+
+      '<div id="wfUMTotal" style="margin-top:10px;padding:10px;border-radius:8px;background:var(--hijau-50);font-weight:800;text-align:center"></div>'+
+      umum;
+    setTimeout(function(){ tambahBarisUM(); }, 30);
+  } else if(jenis==='aset'){
+    el.innerHTML = '<label>Nama Barang / Aset *</label><input id="wfBarang">'+
+      '<div class="grid2">'+
+      '<div><label>Jumlah</label><input type="number" id="wfJumlah" oninput="hitungTotalAset()"></div>'+
+      '<div><label>Harga Satuan (Rp)</label><input type="number" id="wfHarga" oninput="hitungTotalAset()"></div></div>'+
+      '<div id="wfTotalAset" style="margin-top:8px;padding:10px;border-radius:8px;background:var(--hijau-50);font-weight:800;text-align:center"></div>'+
+      '<label>Peruntukan</label><input id="wfPeruntukan">'+umum;
+    setTimeout(hitungTotalAset,30);
+  } else {
+    el.innerHTML = umum;
+  }
+}
+/* ---------------- Cuti: hitung hari & sisa hak ---------------- */
+var CUTI_HITUNG = null;
+function hitungPreviewCuti(){
+  var el=document.getElementById('wfCutiInfo'); if(!el) return;
+  var m=(document.getElementById('wfMulai')||{}).value, s=(document.getElementById('wfSelesai')||{}).value;
+  CUTI_HITUNG=null;
+  if(!m||!s){ el.innerHTML='<div class="meta">Pilih tanggal mulai dan selesai untuk melihat perhitungan hak cuti.</div>'; return; }
+  el.innerHTML='<div class="meta">Menghitung…</div>';
+  callApi('previewCuti', { mulai:m, selesai:s }).then(function(r){
+    CUTI_HITUNG=r;
+    var hit=r.hitung, rk=r.ringkas;
+    var warna = r.cukup ? 'var(--hijau-700)' : 'var(--merah)';
+    var lewat = (hit.dilewati||[]).length
+      ? '<div class="meta" style="margin-top:6px">Tidak memotong cuti: '+
+        hit.dilewati.map(function(d){ return esc(d.tanggal)+' ('+esc(d.alasan)+')'; }).join(', ')+'</div>'
+      : '';
+    el.innerHTML='<div style="padding:12px;border-radius:10px;background:var(--hijau-50)">'+
+      '<div style="display:flex;justify-content:space-between;font-size:13px"><span>Rentang tanggal</span><b>'+hit.totalKalender+' hari kalender</b></div>'+
+      '<div style="display:flex;justify-content:space-between;font-size:13px;margin-top:4px"><span>Memotong hak cuti</span>'+
+        '<b style="color:'+warna+'">'+hit.hariCuti+' hari</b></div>'+
+      '<div style="display:flex;justify-content:space-between;font-size:13px;margin-top:4px"><span>Hak cuti '+esc(rk.tahun)+' ('+esc(rk.lokasi)+')</span>'+
+        '<b>'+rk.hak+' hari</b></div>'+
+      '<div style="display:flex;justify-content:space-between;font-size:13px;margin-top:4px"><span>Sudah terpakai</span><b>'+rk.terpakai+' hari</b></div>'+
+      '<div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--garis);font-weight:800">'+
+        '<span>Sisa setelah cuti ini</span><span style="color:'+warna+'">'+r.sisaSetelah+' hari</span></div>'+
+      (r.cukup?'':'<div style="margin-top:8px;color:var(--merah);font-weight:700;font-size:12.5px">⚠️ Melebihi sisa hak cuti Anda.</div>')+
+      lewat+'</div>';
+  }).catch(function(e){ el.innerHTML='<div class="meta" style="color:var(--merah)">Gagal menghitung: '+esc(e.message)+'</div>'; });
+}
+
+/* ---------------- Perbaikan dokumen yang diminta revisi ---------------- */
+function formRevisi(){
+  var r=WF.detail; if(!r) return;
+  var d=r.doc, data=r.data||{};
+  var revisi=(r.steps||[]).filter(function(s){ return s.Status==='Revisi'; })[0];
+  var baris=Object.keys(data).filter(function(k){ return k!=='uangMuka'; }).map(function(k){
+    return '<label>'+esc(k)+'</label><input class="rvField" data-k="'+esc(k)+'" value="'+esc(data[k])+'">';
+  }).join('');
+  bukaLembar('<h3>Perbaiki Dokumen</h3>'+
+    '<div class="meta">'+esc(d.NoDok)+' — '+esc(d.Judul)+'</div>'+
+    (revisi?'<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#FFF4E5;border-left:3px solid #E8960C;font-size:12.5px">'+
+      '<b>Permintaan revisi dari '+esc(revisi.ApproverNama)+' ('+esc(revisi.NamaLangkah)+'):</b><br>'+esc(revisi.Catatan||'-')+'</div>':'')+
+    '<label>Perihal</label><input id="rvJudul" value="'+esc(d.Judul)+'">'+
+    baris+
+    '<div class="meta" style="margin-top:12px">Setelah diperbaiki, dokumen langsung kembali ke <b>'+
+      esc(revisi?revisi.NamaLangkah:'langkah peminta revisi')+'</b>. Persetujuan yang sudah diberikan sebelumnya tetap berlaku dan tidak perlu diulang.</div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="kirimRevisi()">📤 Kirim Perbaikan</button>');
+}
+function kirimRevisi(){
+  var data={};
+  document.querySelectorAll('.rvField').forEach(function(e){
+    var v=e.value.trim();
+    data[e.dataset.k] = (v!=='' && !isNaN(Number(v)) && /^-?[0-9.]+$/.test(v)) ? Number(v) : v;
+  });
+  var lama=(WF.detail&&WF.detail.data)||{};
+  if(Array.isArray(lama.uangMuka)) data.uangMuka=lama.uangMuka;
+  tampilLoader(true,'Mengirim perbaikan…');
+  callApi('reviseWorkflow', { docId:WF.detail.doc.ID, judul:(document.getElementById('rvJudul')||{}).value, data:data })
+    .then(function(r){
+      tampilLoader(false); tutupLembar();
+      toast('Perbaikan terkirim — kembali menunggu di langkah '+r.lanjutDi+' ('+r.namaLangkah+') ✓');
+      muatWorkflow(false);
+    }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ---------------- Deklarasi biaya: tarik data dari SPPD induk ---------------- */
+var INDUK = [];
+function muatDaftarInduk(){
+  callApi('listInduk', {}).then(function(r){
+    INDUK = r||[];
+    var s=document.getElementById('wfInduk'); if(!s) return;
+    if(!INDUK.length){
+      s.innerHTML='<option value="">(tidak ada dokumen yang bisa dideklarasikan)</option>';
+      document.getElementById('wfIndukInfo').innerHTML=
+        'Deklarasi hanya bisa dibuat dari SPPD atau Uang Muka milik Anda yang sudah <b>Selesai</b> '+
+        'dan belum pernah dideklarasikan.';
+      return;
+    }
+    s.innerHTML='<option value="">— pilih dokumen —</option>'+INDUK.map(function(d){
+      return '<option value="'+esc(d.ID)+'">'+esc(d.NoDok)+' — '+esc(d.Judul)+
+        (d.total?' ('+rp(d.total)+')':'')+'</option>'; }).join('');
+  }).catch(function(e){
+    var s=document.getElementById('wfInduk');
+    if(s) s.innerHTML='<option value="">(gagal memuat: '+esc(e.message)+')</option>';
+  });
+}
+function indukTerpilih(){
+  var id=(document.getElementById('wfInduk')||{}).value||'';
+  return INDUK.find(function(d){ return d.ID===id; })||null;
+}
+function tarikDataInduk(){
+  var d=indukTerpilih();
+  var info=document.getElementById('wfIndukInfo');
+  var wrap=document.getElementById('wfRealisasi');
+  if(!d){ if(info) info.innerHTML=''; if(wrap) wrap.innerHTML=''; hitungSelisih(); return; }
+
+  // isi otomatis perihal bila masih kosong
+  var j=document.getElementById('wfJudul');
+  if(j && !j.value.trim()) j.value='Deklarasi Biaya — '+d.Judul;
+
+  info.innerHTML='<b>'+esc(d.NoDok)+'</b>'+
+    (d.Tujuan?' · Tujuan: '+esc(d.Tujuan):'')+
+    (d.Mulai?' · '+esc(d.Mulai)+' s/d '+esc(d.Selesai||'-'):'')+
+    (d.Maksud?'<br>Maksud: '+esc(d.Maksud):'');
+
+  var kat = d.uangMuka.length ? d.uangMuka : KATEGORI_UM.map(function(k){ return { kategori:k, nominal:0 }; });
+  wrap.innerHTML='<h4 style="margin:4px 0 8px;font-size:13px">Realisasi per Kategori</h4>'+
+    '<div style="display:flex;gap:6px;font-size:11px;color:var(--abu);font-weight:700;margin-bottom:4px">'+
+      '<span style="flex:1.2">Kategori</span><span style="flex:1;text-align:right">Uang Muka</span>'+
+      '<span style="flex:1;text-align:right">Realisasi</span></div>'+
+    kat.map(function(x,i){
+      return '<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">'+
+        '<span style="flex:1.2;font-size:13px">'+esc(x.kategori)+
+          '<input type="hidden" class="rlKat" value="'+esc(x.kategori)+'"></span>'+
+        '<span style="flex:1;text-align:right;font-size:12.5px;color:var(--abu)" class="rlUM" data-n="'+
+          (Number(x.nominal)||0)+'">'+rp(x.nominal)+'</span>'+
+        '<input class="rlNom" type="number" placeholder="0" style="flex:1" oninput="hitungSelisih()">'+
+        '</div>'; }).join('');
+  hitungSelisih();
+}
+function hitungSelisih(){
+  var el=document.getElementById('wfSelisih'); if(!el) return;
+  var um=0, real=0;
+  document.querySelectorAll('#wfRealisasi .rlUM').forEach(function(e){ um+=Number(e.dataset.n)||0; });
+  document.querySelectorAll('#wfRealisasi .rlNom').forEach(function(e){ real+=Number(e.value)||0; });
+  var selisih = um - real;
+  var label = selisih>0 ? 'Sisa dikembalikan ke perusahaan'
+            : (selisih<0 ? 'Kekurangan dibayarkan ke karyawan' : 'Pas — tidak ada selisih');
+  var warna = selisih>0 ? '#1565C0' : (selisih<0 ? '#C62828' : 'var(--hijau-700)');
+  el.innerHTML='<div style="padding:12px;border-radius:10px;background:var(--hijau-50)">'+
+    '<div style="display:flex;justify-content:space-between;font-size:13px"><span>Total uang muka</span><b>'+rp(um)+'</b></div>'+
+    '<div style="display:flex;justify-content:space-between;font-size:13px;margin-top:4px"><span>Total realisasi</span><b>'+rp(real)+'</b></div>'+
+    '<div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--garis);font-weight:800">'+
+      '<span>Selisih</span><span style="color:'+warna+'">'+rp(Math.abs(selisih))+'</span></div>'+
+    '<div style="text-align:center;margin-top:6px;font-size:12px;color:'+warna+'">'+label+'</div></div>';
+}
+
+function tambahBarisUM(){
+  var w=document.getElementById('wfUM'); if(!w) return;
+  var i=w.children.length;
+  var div=document.createElement('div');
+  div.style.cssText='display:flex;gap:6px;margin-bottom:6px';
+  div.innerHTML='<select class="umKat" style="flex:1.2">'+
+    KATEGORI_UM.map(function(k){ return '<option>'+k+'</option>'; }).join('')+'</select>'+
+    '<input class="umNom" type="number" placeholder="0" style="flex:1" oninput="hitungTotalUM()">'+
+    '<button class="btn btn-sekunder btn-kecil" style="flex:0 0 auto" onclick="this.parentNode.remove();hitungTotalUM()">✕</button>';
+  w.appendChild(div);
+  hitungTotalUM();
+}
+function hitungTotalUM(){
+  var t=0;
+  document.querySelectorAll('#wfUM .umNom').forEach(function(e){ t+=Number(e.value)||0; });
+  var el=document.getElementById('wfUMTotal');
+  if(el) el.innerHTML='Total: <span style="color:var(--hijau-700)">'+rp(t)+'</span>';
+}
+function hitungTotalAset(){
+  var j=Number((document.getElementById('wfJumlah')||{}).value)||0;
+  var h=Number((document.getElementById('wfHarga')||{}).value)||0;
+  var el=document.getElementById('wfTotalAset');
+  if(el) el.innerHTML='Total: <span style="color:var(--hijau-700)">'+rp(j*h)+'</span>';
+}
+function nilai(id){ var e=document.getElementById(id); return e?e.value.trim():''; }
+function kirimPengajuan(){
+  var sel=document.getElementById('wfTpl');
+  var tplId=sel.value, jenis=sel.options[sel.selectedIndex].getAttribute('data-jenis');
+  var judul=nilai('wfJudul');
+  if(!judul) return toast('Perihal wajib diisi.', true);
+  var data={}, indukId='';
+  if(jenis==='cuti'){
+    if(!nilai('wfMulai')||!nilai('wfSelesai')) return toast('Tanggal mulai dan selesai wajib diisi.', true);
+    if(CUTI_HITUNG && !CUTI_HITUNG.cukup &&
+       !confirm('Pengajuan ini melebihi sisa hak cuti Anda ('+CUTI_HITUNG.ringkas.sisa+' hari).\n\nTetap ajukan? Atasan dan HRD akan melihat kelebihan ini.')) return;
+    data={ 'Jenis Cuti':nilai('wfJenisCuti'), Mulai:nilai('wfMulai'), Selesai:nilai('wfSelesai'),
+           Alamat:nilai('wfAlamat'), Keterangan:nilai('wfKet') };
+    if(CUTI_HITUNG && CUTI_HITUNG.hitung){
+      data['Hari Cuti Terpakai']=CUTI_HITUNG.hitung.hariCuti;
+      data['Total Hari Kalender']=CUTI_HITUNG.hitung.totalKalender;
+      data['Sisa Hak Cuti Setelahnya']=CUTI_HITUNG.sisaSetelah;
+      data['Lokasi Kerja']=CUTI_HITUNG.ringkas.lokasi;
+      if((CUTI_HITUNG.hitung.dilewati||[]).length)
+        data['Hari Tidak Dihitung']=CUTI_HITUNG.hitung.dilewati.map(function(x){ return x.tanggal+' ('+x.alasan+')'; }).join(', ');
+    }
+  } else if(jenis==='deklarasi'){
+    var ind=indukTerpilih();
+    if(!ind) return toast('Pilih dokumen SPPD/Uang Muka yang akan dideklarasikan.', true);
+    var kats=document.querySelectorAll('#wfRealisasi .rlKat');
+    var ums=document.querySelectorAll('#wfRealisasi .rlUM');
+    var nms=document.querySelectorAll('#wfRealisasi .rlNom');
+    var real=[], totUM=0, totReal=0;
+    for(var q=0;q<kats.length;q++){
+      var nm=Number(nms[q].value)||0, uu=Number(ums[q].dataset.n)||0;
+      totUM+=uu; totReal+=nm;
+      if(nm>0||uu>0) real.push({ kategori:kats[q].value, nominal:nm, uangMuka:uu });
+    }
+    if(totReal<=0) return toast('Isi realisasi biaya minimal satu kategori.', true);
+    data={ 'Dokumen Induk':ind.NoDok, Tujuan:ind.Tujuan, Mulai:ind.Mulai, Selesai:ind.Selesai,
+           Maksud:ind.Maksud, Keterangan:nilai('wfKet'),
+           uangMuka:real, total:totReal,
+           'Total Uang Muka':totUM, 'Total Realisasi':totReal,
+           Selisih:(totUM-totReal),
+           'Keterangan Selisih':(totUM-totReal)>0?'Sisa dikembalikan ke perusahaan'
+                              :((totUM-totReal)<0?'Kekurangan dibayarkan ke karyawan':'Tidak ada selisih') };
+    indukId = ind.ID;
+  } else if(jenis==='sppd'||jenis==='uangmuka'){
+    if(!nilai('wfTujuan')) return toast('Tujuan wajib diisi.', true);
+    var um=[], tot=0;
+    var kat=document.querySelectorAll('#wfUM .umKat'), nom=document.querySelectorAll('#wfUM .umNom');
+    for(var i=0;i<kat.length;i++){
+      var n=Number(nom[i].value)||0;
+      if(n>0){ um.push({ kategori:kat[i].value, nominal:n }); tot+=n; }
+    }
+    data={ Tujuan:nilai('wfTujuan'), Kendaraan:nilai('wfKendaraan'), Mulai:nilai('wfMulai'),
+           Selesai:nilai('wfSelesai'), Maksud:nilai('wfMaksud'), Keterangan:nilai('wfKet'),
+           uangMuka:um, total:tot };
+  } else if(jenis==='aset'){
+    if(!nilai('wfBarang')) return toast('Nama barang wajib diisi.', true);
+    var j=Number(nilai('wfJumlah'))||0, h=Number(nilai('wfHarga'))||0;
+    data={ Barang:nilai('wfBarang'), Jumlah:j, 'Harga Satuan':h, total:j*h,
+           Peruntukan:nilai('wfPeruntukan'), Keterangan:nilai('wfKet') };
+  } else {
+    data={ Keterangan:nilai('wfKet') };
+  }
+  tampilLoader(true,'Mengirim pengajuan…');
+  callApi('submitWorkflow', { templateId:tplId, judul:judul, data:data, indukId:indukId }).then(function(r){
+    tampilLoader(false); tutupLembar();
+    toast('Diajukan ✓ Nomor: '+r.noDok);
+    muatWorkflow(false);
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ---------------- Kelola alur (admin) ---------------- */
+function renderAlur(){
+  var el=document.getElementById('panelAlur'); if(!el) return;
+  el.innerHTML = '<button class="btn btn-utama btn-blok" style="margin-bottom:12px" onclick="formAlur()">＋ Buat Alur Baru</button>'+
+    (WF.templates.length ? WF.templates.map(function(t){
+      return '<div class="item"><div class="kepala"><div><b>'+wfIkonJenis(t.Jenis)+' '+esc(t.Nama)+'</b>'+
+        '<div class="meta">'+esc(t.Jenis)+' · '+t.Langkah.length+' langkah'+
+          ((t.LevelMin!==''||t.LevelMaks!==''||t.UntukJabatan)
+            ? ' · untuk '+(t.UntukJabatan?esc(t.UntukJabatan):'level '+(t.LevelMin!==''?t.LevelMin:'1')+'–'+(t.LevelMaks!==''?t.LevelMaks:'∞'))
+            : ' · semua karyawan')+'</div></div>'+
+        '<div class="kanan"><span class="chip '+(t.Aktif?'hijau':'abu')+'">'+(t.Aktif?'Aktif':'Nonaktif')+'</span></div></div>'+
+        '<div class="meta" style="margin-top:6px">'+t.Langkah.map(function(l,i){
+          return (i+1)+'. '+esc(l.nama)+' → '+esc(namaUser(l.approver)); }).join(' &nbsp;·&nbsp; ')+'</div>'+
+        '<div class="aksi-baris">'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="formAlur(\''+esc(t.ID)+'\')">✏️ Ubah</button>'+
+        '<button class="btn btn-bahaya btn-kecil" onclick="hapusAlur(\''+esc(t.ID)+'\')">🗑 Hapus</button>'+
+        '</div></div>'; }).join('')
+      : '<div class="kosong">Belum ada alur. Buat alur pertama untuk mulai memakai workflow.</div>');
+}
+function namaUser(u){
+  var x=(WF.users||[]).find(function(p){ return String(p.Username)===String(u); });
+  return x ? (x.Nama||x.Username)+(x.Jabatan?' ('+x.Jabatan+')':'') : (u||'-');
+}
+function opsiApprover(pilih){
+  var punya=(WF.users||[]).filter(function(u){ return u.Jabatan; });
+  var sumber = punya.length ? punya : (WF.users||[]);
+  return '<option value="">— pilih approver —</option>'+sumber.map(function(u){
+    return '<option value="'+esc(u.Username)+'"'+(pilih===u.Username?' selected':'')+'>'+
+      esc(u.Nama||u.Username)+(u.Jabatan?' — '+esc(u.Jabatan):'')+'</option>'; }).join('');
+}
+function formAlur(id){
+  var t = id ? WF.templates.find(function(x){ return x.ID===id; }) : null;
+  var langkah = t ? t.Langkah : [{ nama:'Atasan Langsung', approver:'' }];
+  bukaLembar('<h3>'+(t?'Ubah Alur':'Buat Alur Persetujuan')+'</h3>'+
+    '<label>Nama Alur *</label><input id="alNama" value="'+esc(t?t.Nama:'')+'" placeholder="cth: Perjalanan Dinas (SPPD)">'+
+    '<label>Jenis Dokumen</label><select id="alJenis">'+
+      [['cuti','Cuti'],['sppd','Perjalanan Dinas'],['uangmuka','Uang Muka'],
+       ['deklarasi','Deklarasi Biaya'],['aset','Pembelian Aset/Barang'],['umum','Umum']]
+      .map(function(x){ return '<option value="'+x[0]+'"'+(t&&t.Jenis===x[0]?' selected':'')+'>'+x[1]+'</option>'; }).join('')+
+    '</select>'+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Berlaku Untuk Siapa</h4>'+
+    '<div class="grid2">'+
+      '<div><label>Level Minimal</label><input type="number" id="alLvMin" value="'+esc(t&&t.LevelMin!==''?t.LevelMin:'')+'" placeholder="kosong = semua"></div>'+
+      '<div><label>Level Maksimal</label><input type="number" id="alLvMaks" value="'+esc(t&&t.LevelMaks!==''?t.LevelMaks:'')+'" placeholder="kosong = semua"></div>'+
+    '</div>'+
+    '<label>Khusus Jabatan (opsional)</label>'+
+    '<input id="alJabatan" value="'+esc(t?t.UntukJabatan:'')+'" placeholder="cth: manajer, askep — pisahkan dengan koma">'+
+    '<div class="meta" style="margin-top:4px">Kosongkan bila alur ini berlaku untuk semua karyawan. '+
+      'Gunakan level untuk membedakan alur staf dan alur manajer — pemohon hanya melihat alur yang cocok dengan levelnya.</div>'+
+    '<label style="display:flex;align-items:center;gap:8px;margin-top:12px">'+
+      '<input type="checkbox" id="alAktif" style="width:auto" '+(!t||t.Aktif?'checked':'')+'> Alur aktif</label>'+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Langkah Persetujuan (berurutan)</h4>'+
+    '<div id="alLangkah"></div>'+
+    '<button class="btn btn-sekunder btn-kecil" style="margin-top:8px" onclick="tambahLangkah()">＋ Tambah langkah</button>'+
+    (!((WF.users||[]).some(function(u){ return u.Jabatan; }))
+      ? '<div class="meta" style="margin-top:10px;color:#C62828">Belum ada pengguna yang memiliki jabatan. Isi jabatan di menu Pengguna agar daftar approver lebih rapi.</div>'
+      : '')+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="simpanAlur(\''+(t?esc(t.ID):'')+'\')">💾 Simpan Alur</button>');
+  langkah.forEach(function(l){ tambahLangkah(l.nama, l.approver); });
+}
+function tambahLangkah(nama, approver){
+  var w=document.getElementById('alLangkah'); if(!w) return;
+  var div=document.createElement('div');
+  div.style.cssText='display:flex;gap:6px;margin-bottom:8px;align-items:center';
+  div.innerHTML='<span style="flex:0 0 22px;font-weight:800;color:var(--abu)">'+(w.children.length+1)+'.</span>'+
+    '<input class="lgNama" placeholder="Nama langkah" value="'+esc(nama||'')+'" style="flex:1">'+
+    '<select class="lgApp" style="flex:1.2">'+opsiApprover(approver||'')+'</select>'+
+    '<button class="btn btn-sekunder btn-kecil" style="flex:0 0 auto" onclick="this.parentNode.remove();nomoriLangkah()">✕</button>';
+  w.appendChild(div);
+}
+function nomoriLangkah(){
+  var w=document.getElementById('alLangkah'); if(!w) return;
+  Array.prototype.forEach.call(w.children, function(d,i){ d.firstChild.textContent=(i+1)+'.'; });
+}
+function simpanAlur(id){
+  var nama=(document.getElementById('alNama')||{}).value.trim();
+  if(!nama) return toast('Nama alur wajib diisi.', true);
+  var langkah=[], gagal='';
+  document.querySelectorAll('#alLangkah > div').forEach(function(d){
+    var n=d.querySelector('.lgNama').value.trim();
+    var a=d.querySelector('.lgApp').value;
+    if(!n) gagal='Ada langkah yang belum diberi nama.';
+    else if(!a) gagal='Langkah "'+n+'" belum dipilih approver-nya.';
+    else langkah.push({ nama:n, approver:a });
+  });
+  if(gagal) return toast(gagal, true);
+  if(!langkah.length) return toast('Tambahkan minimal satu langkah.', true);
+  tampilLoader(true,'Menyimpan alur…');
+  callApi('saveWorkflowTemplate', { id:id||'', Nama:nama,
+    Jenis:document.getElementById('alJenis').value,
+    Aktif:document.getElementById('alAktif').checked, Langkah:langkah,
+    LevelMin:(document.getElementById('alLvMin')||{value:''}).value,
+    LevelMaks:(document.getElementById('alLvMaks')||{value:''}).value,
+    UntukJabatan:(document.getElementById('alJabatan')||{value:''}).value.trim() })
+    .then(function(){ tampilLoader(false); tutupLembar(); toast('Alur tersimpan ✓'); muatWorkflow(false); })
+    .catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+function hapusAlur(id){
+  if(!confirm('Hapus alur ini? Dokumen yang sudah berjalan tidak terpengaruh.')) return;
+  callApi('deleteWorkflowTemplate', { id:id }).then(function(){
+    toast('Alur dihapus ✓'); muatWorkflow(false);
+  }).catch(function(e){ toast(e.message, true); });
+}
+
+/* ==================== CADANGAN DATA (ADMIN) ==================== */
+function bukaCadangan(){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin yang dapat mencadangkan data.', true);
+  bukaLembar('<h3>💾 Cadangkan Data</h3>'+
+    '<div class="meta">Lindungi data kebun dari kesalahan hapus, kerusakan berkas, atau kehilangan akses akun.</div>'+
+    '<div id="cdRiwayat" style="margin-top:12px"></div>'+
+    '<div style="margin-top:16px;padding:14px;border-radius:12px;background:var(--hijau-50)">'+
+      '<b style="font-size:14px">1. Salinan ke Google Drive</b>'+
+      '<div class="meta" style="margin-top:4px;line-height:1.6">Menyalin seluruh spreadsheet ke folder '+
+        '<b>SawitGIS_Backup</b> di Drive Anda. Cara paling utuh — seluruh sheet, rumus, dan format ikut tersalin. '+
+        'Cadangan lama otomatis dibersihkan, 10 terakhir disimpan.</div>'+
+      '<button class="btn btn-utama btn-blok" style="margin-top:10px" onclick="jalankanBackup(\'drive\')">📁 Cadangkan ke Drive</button>'+
+    '</div>'+
+    '<div style="margin-top:12px;padding:14px;border-radius:12px;background:#F7F9F7;border:1px solid var(--garis)">'+
+      '<b style="font-size:14px">2. Unduh berkas JSON</b>'+
+      '<div class="meta" style="margin-top:4px;line-height:1.6">Mengunduh seluruh data sebagai satu berkas ke perangkat ini. '+
+        'Berguna untuk arsip di luar Google atau diserahkan ke bagian IT.</div>'+
+      '<button class="btn btn-sekunder btn-blok" style="margin-top:10px" onclick="jalankanBackup(\'json\')">⬇ Unduh JSON</button>'+
+    '</div>'+
+    '<div class="meta" style="margin-top:14px;line-height:1.6">'+
+      '<b>Saran:</b> cadangkan ke Drive setiap awal bulan, dan unduh JSON setiap akhir tahun. '+
+      'Untuk pencadangan otomatis harian, jalankan fungsi <span style="font-family:monospace">pasangBackupOtomatis()</span> '+
+      'sekali dari editor Apps Script.</div>');
+  muatRiwayatBackup();
+}
+function muatRiwayatBackup(){
+  var el=document.getElementById('cdRiwayat'); if(!el) return;
+  callApi('riwayatBackup', {}).then(function(r){
+    var t=r.terakhir;
+    if(!t){
+      el.innerHTML='<div style="padding:10px 12px;border-radius:8px;background:#FBEAE7;border-left:3px solid var(--merah);font-size:12.5px">'+
+        '⚠️ <b>Belum pernah dicadangkan.</b> Lakukan pencadangan pertama sekarang.</div>';
+      return;
+    }
+    var umur = Math.floor((new Date() - new Date(t.waktu.replace(' ','T')))/86400000);
+    var lama = umur>30;
+    el.innerHTML='<div style="padding:10px 12px;border-radius:8px;background:'+(lama?'#FFF4E5':'var(--hijau-50)')+
+      ';border-left:3px solid '+(lama?'#E8960C':'var(--hijau-700)')+';font-size:12.5px">'+
+      (lama?'⏳':'✅')+' Cadangan terakhir: <b>'+esc(t.waktu)+'</b> ('+(umur===0?'hari ini':umur+' hari lalu')+')<br>'+
+      'Cara: '+esc(t.cara)+' · oleh '+esc(t.oleh)+
+      (lama?'<br><b>Sudah lebih dari 30 hari — sebaiknya cadangkan lagi.</b>':'')+'</div>';
+  }).catch(function(){});
+}
+function jalankanBackup(cara){
+  tampilLoader(true, cara==='drive' ? 'Menyalin spreadsheet ke Drive…' : 'Mengumpulkan seluruh data…');
+  if(cara==='drive'){
+    callApi('backupDrive', { simpanTerakhir:10 }).then(function(r){
+      tampilLoader(false);
+      toast('Cadangan selesai ✓');
+      muatRiwayatBackup();
+      if(r.url && confirm('Cadangan berhasil dibuat:\n\n'+r.nama+'\n\nBuka berkasnya di Google Drive sekarang?'))
+        window.open(r.url,'_blank','noopener');
+    }).catch(function(e){ tampilLoader(false); toast('Gagal mencadangkan: '+e.message, true); });
+  } else {
+    callApi('backupJSON', {}).then(function(r){
+      tampilLoader(false);
+      var teks = JSON.stringify(r, null, 2);
+      var blob = new Blob([teks], { type:'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'sawitgis_backup_' + hariISO(new Date()) + '.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 1200);
+      toast('Berkas cadangan diunduh ✓ ('+(r.jumlahBaris||0)+' baris)');
+      muatRiwayatBackup();
+    }).catch(function(e){ tampilLoader(false); toast('Gagal: '+e.message, true); });
+  }
+}
+
+/* ---------------- Pengingat ke approver ---------------- */
+function kirimPengingat(docId){
+  tampilLoader(true,'Mengirim pengingat…');
+  callApi('remindWorkflow', { docId:docId }).then(function(r){
+    tampilLoader(false);
+    var lapor = 'Pengingat untuk ' + r.approver + ': ';
+    lapor += r.email ? ('email ke ' + r.email + ' ✓') : 'email tidak tersedia';
+    if(r.waTerkirim){
+      toast(lapor + ' · WhatsApp ✓');
+      return;
+    }
+    if(r.wa){
+      // gateway WA belum dipasang → buka WhatsApp agar tetap bisa dikirim manual
+      toast(lapor + ' · WhatsApp dibuka manual');
+      var url='https://wa.me/'+String(r.wa).replace(/[^0-9]/g,'')+'?text='+encodeURIComponent(r.pesan);
+      var w=window.open(url,'_blank','noopener');
+      if(!w) salinTeks(r.pesan);
+    } else {
+      toast(lapor + ' · nomor WhatsApp belum diisi', true);
+    }
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ---------------- Cetak PDF ---------------- */
+function cetakWf(mode){
+  var r=WF.detail; if(!r) return;
+  var d=r.doc, data=r.data||{}, steps=r.steps||[];
+  var umSaja = mode==='um';
+  var judul = umSaja ? 'PENGAJUAN UANG MUKA'
+    : ({ cuti:'SURAT PERMOHONAN CUTI', sppd:'SURAT PERJALANAN DINAS',
+         uangmuka:'PENGAJUAN UANG MUKA', deklarasi:'DEKLARASI REALISASI BIAYA',
+         aset:'PERMOHONAN PEMBELIAN ASET' }[d.Jenis] || 'DOKUMEN PERSETUJUAN');
+  var st=(S.settings||{});
+  var baris = Object.keys(data).filter(function(k){
+    return k!=='uangMuka' && k!=='total' && data[k]!=='' && data[k]!=null;
+  }).map(function(k){
+    return '<tr><td style="width:35%;color:#555">'+esc(k)+'</td><td><b>'+esc(data[k])+'</b></td></tr>';
+  }).join('');
+  var um='';
+  if(Array.isArray(data.uangMuka) && data.uangMuka.length){
+    var tot=data.uangMuka.reduce(function(a,x){ return a+(Number(x.nominal)||0); },0);
+    um='<h3 style="margin:16px 0 6px;font-size:13px">'+(d.Jenis==='deklarasi'?'REALISASI BIAYA':'RINCIAN UANG MUKA')+'</h3>'+
+      '<table style="width:100%;border-collapse:collapse" border="1" cellpadding="6">'+
+      '<tr style="background:#eee"><th align="left">Kategori</th><th align="right">Nominal</th></tr>'+
+      data.uangMuka.map(function(x){
+        return '<tr><td>'+esc(x.kategori)+'</td><td align="right">'+rp(x.nominal)+'</td></tr>'; }).join('')+
+      '<tr style="background:#f5f5f5"><td><b>TOTAL</b></td><td align="right"><b>'+rp(tot)+'</b></td></tr></table>';
+  }
+  var ttd = '<table style="width:100%;margin-top:24px;border-collapse:collapse">'+
+    '<tr>'+steps.map(function(s){
+      return '<td align="center" style="font-size:11px;padding:6px;vertical-align:top;width:'+(100/Math.max(1,steps.length))+'%">'+
+        esc(s.NamaLangkah)+'<br>'+
+        (s.TandaTangan ? '<img src="'+esc(s.TandaTangan)+'" style="height:52px;margin:6px 0">'
+                       : '<div style="height:52px"></div>')+
+        '<b>'+esc(s.ApproverNama||'-')+'</b><br>'+
+        '<span style="color:#666">'+esc(s.Status)+(s.Waktu?'<br>'+esc(String(s.Waktu).slice(0,16)):'')+'</span></td>'; }).join('')+
+    '</tr></table>';
+
+  var html='<html><head><meta charset="utf-8"><title>'+esc(d.NoDok)+'</title>'+
+    '<style>body{font-family:Arial,sans-serif;font-size:12px;padding:28px;color:#111}'+
+    'table{width:100%;border-collapse:collapse}td,th{padding:5px 6px;vertical-align:top}'+
+    'h1{font-size:16px;text-align:center;margin:0 0 2px}h2{font-size:12px;text-align:center;'+
+    'font-weight:normal;color:#555;margin:0 0 18px}</style></head><body>'+
+    '<div style="text-align:center;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:14px">'+
+    '<div style="font-size:15px;font-weight:bold">'+esc(st.judulAplikasi||'SawitGIS Mandiri')+'</div>'+
+    '<div style="font-size:11px;color:#555">'+esc(st.namaPerusahaan||st.subjudul||'')+'</div></div>'+
+    '<h1>'+judul+'</h1><h2>Nomor: '+esc(d.NoDok)+'</h2>'+
+    '<table border="1" cellpadding="6">'+
+    '<tr><td style="width:35%;color:#555">Pemohon</td><td><b>'+esc(d.PemohonNama)+'</b></td></tr>'+
+    '<tr><td style="color:#555">Perihal</td><td><b>'+esc(d.Judul)+'</b></td></tr>'+
+    '<tr><td style="color:#555">Tanggal Pengajuan</td><td>'+esc(String(d.Dibuat).slice(0,16))+'</td></tr>'+
+    '<tr><td style="color:#555">Status</td><td><b>'+esc(d.Status)+'</b></td></tr>'+
+    (umSaja?'':baris)+'</table>'+
+    (umSaja||d.Jenis!=='sppd' ? um : '')+
+    '<h3 style="margin:18px 0 6px;font-size:13px">PERSETUJUAN</h3>'+ttd+
+    '<div style="margin-top:26px;font-size:10px;color:#777;text-align:center">'+
+    'Dicetak '+new Date().toLocaleString('id-ID')+' oleh '+esc(SESI?(SESI.nama||SESI.username):'-')+
+    ' · Dokumen ini sah tanpa tanda tangan basah bila seluruh langkah berstatus Disetujui.</div>'+
+    '</body></html>';
+  var w=window.open('','_blank');
+  if(!w) return toast('Popup diblokir — izinkan popup untuk mencetak.', true);
+  w.document.write(html); w.document.close();
+  setTimeout(function(){ try{ w.print(); }catch(e){} }, 400);
+}
+
+
+/* ==================== EKSPOR SHAPEFILE & EXCEL ====================
+ * Shapefile ditulis dengan shp-write (MIT). Excel ditulis sebagai .xlsx asli
+ * memakai SheetJS (Apache-2.0) sehingga tidak memunculkan peringatan
+ * "format tidak sesuai ekstensi" seperti trik HTML-ber-ekstensi-.xls.
+ * Keduanya dimuat hanya saat dipakai agar tidak membebani proses masuk.
+ */
+function pastikanShpWrite(){
+  if(window.shpwrite) return Promise.resolve();
+  /* Memakai @mapbox/shp-write 0.4.3. Versi lama shp-write@0.3.2 tidak dapat
+     dipakai karena JSZip yang dibundelnya sudah 3.x, sehingga zip() melempar
+     galat "This method has been removed in JSZip 3.0". */
+  return muatSkrip('https://cdn.jsdelivr.net/npm/@mapbox/shp-write@0.4.3/shpwrite.js')
+    .catch(function(){ return muatSkrip('https://unpkg.com/@mapbox/shp-write@0.4.3/shpwrite.js'); });
+}
+function pastikanSheetJS(){
+  if(window.XLSX) return Promise.resolve();
+  return muatSkrip('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js')
+    .catch(function(){ return muatSkrip('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'); });
+}
+
+/** Unduh array objek sebagai berkas .xlsx sungguhan.
+ *  baris: array objek; kolom: array nama kolom (opsional, urutan tampil). */
+function unduhExcel(baris, namaFile, namaSheet, kolom){
+  if(!baris || !baris.length) return toast('Tidak ada data untuk diekspor.', true);
+  tampilLoader(true,'Menyiapkan berkas Excel…');
+  return pastikanSheetJS().then(function(){
+    if(!window.XLSX) throw new Error('Pustaka Excel gagal dimuat.');
+    var kol = kolom && kolom.length ? kolom : Object.keys(baris[0]);
+    var data = baris.map(function(r){
+      var o = {};
+      kol.forEach(function(k){
+        var v = r[k];
+        o[k] = (v===null||v===undefined) ? '' : v;
+      });
+      return o;
+    });
+    var ws = XLSX.utils.json_to_sheet(data, { header: kol });
+    // lebar kolom otomatis mengikuti isi terpanjang
+    ws['!cols'] = kol.map(function(k){
+      var maks = String(k).length;
+      data.forEach(function(r){ var p=String(r[k]==null?'':r[k]).length; if(p>maks) maks=p; });
+      return { wch: Math.min(42, Math.max(10, maks+2)) };
+    });
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, (namaSheet||'Data').slice(0,31));
+    XLSX.writeFile(wb, namaFile.replace(/\.xlsx?$/i,'') + '.xlsx');
+    tampilLoader(false);
+    toast('Excel diunduh ✓ ('+baris.length+' baris)');
+  }).catch(function(e){
+    tampilLoader(false);
+    toast('Gagal membuat Excel: '+e.message, true);
+  });
+}
+
+/** Unduh blok terpilih sebagai Shapefile (.zip berisi shp/shx/dbf/prj). */
+function unduhBlokSHP(){
+  var blok = blokTampil();
+  if(!blok.length) return toast('Tidak ada blok pada filter ini.', true);
+  tampilLoader(true,'Menyiapkan Shapefile…');
+  pastikanShpWrite().then(function(){
+    if(!window.shpwrite) throw new Error('Pustaka Shapefile gagal dimuat.');
+    var fitur = [];
+    blok.forEach(function(b){
+      var rings = parseKoord(b.Koordinat);
+      if(!rings.length) return;
+      // GeoJSON memakai urutan [lng,lat] dan ring harus tertutup
+      var koor = rings.map(function(r){
+        var out = r.map(function(c){ return [Number(c[1]), Number(c[0])]; });
+        var f=out[0], l=out[out.length-1];
+        if(f[0]!==l[0] || f[1]!==l[1]) out.push(f);
+        return out;
+      });
+      fitur.push({
+        type:'Feature',
+        geometry:{ type:'Polygon', coordinates:koor },
+        /* Nama field DBF dibatasi 10 karakter oleh format Shapefile,
+           jadi sengaja disingkat agar tidak terpotong sembarangan. */
+        properties:{
+          ID_BLOK: String(b.ID||''),
+          NAMA: String(b.Nama||''),
+          PERUSAHAAN: String(b.Perusahaan||''),
+          ESTATE: String(b.Estate||''),
+          DIVISI: String(b.Divisi||''),
+          LUAS_HA: Number(b.LuasHa)||0,
+          THN_TANAM: Number(b.TahunTanam)||0,
+          JML_POKOK: Number(b.JumlahPokok)||0,
+          SPH: Number(b.SPH)||0,
+          JNS_TANAH: String(b.JenisTanah||''),
+          KESEHATAN: String(b.KesehatanTanaman||''),
+          PUPUK_AKH: String(b.PemupukanTerakhir||''),
+          PUPUK_BRK: String(b.PemupukanBerikut||'')
+        }
+      });
+    });
+    if(!fitur.length) throw new Error('Blok yang tampil belum memiliki koordinat.');
+    /* Jangan memakai shpwrite.download(): fungsi itu mengarahkan halaman ke
+       URL 'data:', yang diblokir Chrome sehingga berkas tidak pernah terunduh.
+       Kita ambil isi zip-nya sendiri lalu unduh lewat Blob + <a download>. */
+    return Promise.resolve(shpwrite.zip({ type:'FeatureCollection', features:fitur }, {
+      folder: 'blok_sawit',
+      types: { polygon: 'blok_sawit' }
+    })).then(function(b64){
+    if(!b64) throw new Error('Isi Shapefile kosong.');
+    var biner = atob(b64);
+    var buf = new Uint8Array(biner.length);
+    for(var i=0;i<biner.length;i++) buf[i] = biner.charCodeAt(i);
+    var blob = new Blob([buf], { type:'application/zip' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'blok_sawit_' + hariISO(new Date()) + '.zip';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 1500);
+    tampilLoader(false);
+    toast('Shapefile diunduh ✓ ('+fitur.length+' blok, EPSG:4326)');
+    });
+  }).catch(function(e){
+    tampilLoader(false);
+    toast('Gagal membuat Shapefile: '+e.message, true);
+  });
+}
+
+/** Unduh register blok sebagai Excel. */
+function unduhBlokExcel(){
+  var blok = blokTampil();
+  var baris = blok.map(function(b){
+    return {
+      'ID Blok':b.ID, 'Nama':b.Nama, 'Perusahaan':b.Perusahaan, 'Estate':b.Estate, 'Divisi':b.Divisi,
+      'Luas (ha)':Number(b.LuasHa)||0, 'Tahun Tanam':b.TahunTanam, 'Jumlah Pokok':Number(b.JumlahPokok)||0,
+      'SPH':b.SPH, 'Jenis Tanah':b.JenisTanah, 'Kesehatan':b.KesehatanTanaman,
+      'Pemupukan Terakhir':b.PemupukanTerakhir, 'Pemupukan Berikut':b.PemupukanBerikut,
+      'Penyiangan Terakhir':b.PenyianganTerakhir, 'Penyiangan Berikut':b.PenyianganBerikut
+    };
+  });
+  unduhExcel(baris, 'register_blok_'+hariISO(new Date()), 'Register Blok');
+}
+
+/** Data panen yang sedang tampil — mengikuti seluruh filter aktif di halaman. */
+function panenTampil(){
+  var blok=(document.getElementById('filterPanenBlok')||{}).value||'';
+  var dari=(document.getElementById('filterPanenDari')||{}).value||'';
+  var sampai=(document.getElementById('filterPanenSampai')||{}).value||'';
+  var fP=(document.getElementById('pnPer')||{}).value||'',
+      fE=(document.getElementById('pnEst')||{}).value||'',
+      fD=(document.getElementById('pnDiv')||{}).value||'';
+  return (S.harvests||[]).filter(function(h){
+    var t=String(h.Tanggal).slice(0,10);
+    if(blok && h.IDBlok!==blok) return false;
+    if(dari && t<dari) return false;
+    if(sampai && t>sampai) return false;
+    if(!lolosUnit(h.IDBlok,fP,fE,fD)) return false;
+    return true;
+  }).sort(function(a,b){ return String(b.Tanggal).localeCompare(String(a.Tanggal)); });
+}
+
+/** Unduh data panen (mengikuti filter yang aktif) sebagai Excel. */
+function unduhPanenExcel(){
+  var data = panenTampil();
+  var baris = data.map(function(h){
+    var b = (S.blocks||[]).find(function(x){ return String(x.ID)===String(h.IDBlok); }) || {};
+    var ton = Number(h.EstimasiTon)||0;
+    return {
+      'Tanggal':h.Tanggal, 'ID Blok':h.IDBlok, 'Nama Blok':b.Nama||'',
+      'Perusahaan':b.Perusahaan||'', 'Estate':b.Estate||'', 'Divisi':b.Divisi||'',
+      'Pemanen':h.NamaPemanen||'',
+      'Jumlah Janjang':Number(h.JumlahJanjang)||0,
+      'BJR (kg)':Number(h.BJR)||0,
+      'Estimasi Ton':ton,
+      'Estimasi Kg':Math.round(ton*1000),
+      'Brondolan (kg)':Number(h.BrondolanKg)||0,
+      'Matang (%)':Number(h.PersenMatang)||0,
+      'Mentah (%)':Number(h.PersenMentah)||0,
+      'Lewat Matang (%)':Number(h.PersenLewatMatang)||0,
+      'Kendaraan':h.KendaraanID||'', 'Status':h.Status||''
+    };
+  });
+  unduhExcel(baris, 'data_panen_'+hariISO(new Date()), 'Panen');
+}
+
+/** Unduh salah satu sub-modul KTU sebagai Excel. */
+function unduhKtuExcel(jenis){
+  var peta = {
+    kas:   { data:S.kasbank,   nama:'kas_bank',           sheet:'Kas & Bank' },
+    upah:  { data:S.payrolls,  nama:'upah_karyawan',      sheet:'Upah' },
+    pb:    { data:S.purchases, nama:'permintaan_barang',  sheet:'Permintaan Barang' },
+    aset:  { data:S.assets,    nama:'inventaris_aset',    sheet:'Inventaris' },
+    surat: { data:S.letters,   nama:'agenda_surat',       sheet:'Agenda Surat' }
+  }[jenis];
+  if(!peta || !(peta.data||[]).length) return toast('Tidak ada data untuk diekspor.', true);
+  // buang kolom berisi tautan gambar agar berkas tetap ringkas
+  var kolom = Object.keys(peta.data[0]).filter(function(k){
+    return ['Bukti','Foto','Lampiran'].indexOf(k)<0;
+  });
+  unduhExcel(peta.data, peta.nama+'_'+hariISO(new Date()), peta.sheet, kolom);
+}
+
 /* ==================== MULAI ==================== */
 window.addEventListener('load', function(){
   initThemeOnLoad();
@@ -11157,6 +12776,7 @@ window.addEventListener('load', function(){
   document.getElementById('lapDari').value = hariISO(new Date(kini.getFullYear(), kini.getMonth(), 1));
   document.getElementById('lapSampai').value = hariISO(kini);
   terapkanMerekLogin();
+  tampilkanVersiApp();
 
   if(MODE_DEMO){
     // demo: langsung masuk sebagai admin
@@ -11176,7 +12796,7 @@ window.addEventListener('load', function(){
       if(c && sesiSimpan){
         SESI = sesiSimpan; OFFLINE = true;
         pastikanPustaka().catch(function(){}).then(function(){
-          S = c; terapkanPengaturan(); terapkanPeran(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline();
+          S = c; batasiDataAkses(); terapkanPengaturan(); terapkanPeran(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline();
           toast('Offline — masuk dengan data tersimpan. Akan sinkron saat online.', true);
         });
       } else {
