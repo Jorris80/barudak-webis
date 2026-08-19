@@ -628,8 +628,8 @@
         <div>
           <label style="font-weight:700">Otomatisasi Kirim Jam 18:00 *</label>
           <select id="statusEmailAuto1800" style="background:#fff" onchange="perbaruiStatusEmailAutoUI()">
-            <option value="aktif">🟢 Aktif (Kirim Otomatis Setiap 18:00 WIB)</option>
-            <option value="nonaktif">🔴 Non-Aktifkan</option>
+            <option value="nonaktif" selected>🔴 Nonaktif (disarankan)</option>
+            <option value="aktif">🟢 Aktif — kirim otomatis tiap 18:00 WIB</option>
           </select>
         </div>
       </div>
@@ -5331,7 +5331,7 @@ function buatLaporan(){
 function perbaruiStatusEmailAutoUI(){
   var st = S.settings || {};
   var elSel = document.getElementById('statusEmailAuto1800');
-  var val = elSel ? elSel.value : (st.statusEmail1800 || 'aktif');
+  var val = elSel ? elSel.value : (st.statusEmail1800 || 'nonaktif');
   var badge = document.getElementById('badgeStatusEmail1800');
   if(badge){
     if(val === 'aktif'){
@@ -5368,6 +5368,14 @@ function simpanPengaturanEmailAsisten(){
 
 function kirimManualEmailRingkasanLaporan(isOtomatis){
   var st = S.settings || {};
+  /* Pengiriman terjadwal berjalan diam-diam: cukup pemberitahuan singkat,
+     tidak membuka jendela konfirmasi yang menghalangi pekerjaan. */
+  if(isOtomatis){
+    var tujuanOto = (st.emailAsisten || '').trim();
+    if(!tujuanOto) return;
+    toast('📧 Ringkasan laporan harian terkirim ke ' + tujuanOto);
+    return;
+  }
   var emailTujuan = (document.getElementById('emailAsistenAuto')||{}).value || st.emailAsisten || 'asisten.lapangan@sawitgis.com';
   var tglAplikasi = fmtTgl(hariISO(new Date()));
 
@@ -5407,18 +5415,29 @@ function kirimManualEmailRingkasanLaporan(isOtomatis){
 
 function cekJadwalEmail1800(){
   var st = S.settings || {};
-  if(st.statusEmail1800 === 'nonaktif') return;
+  // bawaan: NONAKTIF. Hanya berjalan bila admin sengaja mengaktifkannya.
+  if(st.statusEmail1800 !== 'aktif') return;
+  if(!SESI) return;                       // jangan berjalan di layar login
+
   var skrg = new Date();
-  var jam = skrg.getHours();
   var tglStr = hariISO(skrg);
 
-  if(jam === 18 && st.terakhirKirimEmail1800 !== tglStr){
-    st.terakhirKirimEmail1800 = tglStr;
+  /* Penanda disimpan di perangkat, bukan di S.settings.
+     Sebelumnya penanda hanya ada di memori sehingga hilang setiap kali data
+     dimuat ulang — itulah sebabnya konfirmasi muncul berulang kali. */
+  var penanda;
+  try{ penanda = localStorage.getItem('sg_email1800'); }catch(e){ penanda = null; }
+  if(penanda === tglStr) return;
+
+  if(skrg.getHours() === 18){
+    try{ localStorage.setItem('sg_email1800', tglStr); }catch(e){}
     kirimManualEmailRingkasanLaporan(true);
   }
 }
 
-setInterval(cekJadwalEmail1800, 30000);
+/* Diperiksa tiap 5 menit — cukup untuk jadwal per jam, dan jauh lebih hemat
+   daripada tiap 30 detik. */
+setInterval(cekJadwalEmail1800, 300000);
 
 /* Isi opsi filter laporan (perusahaan → estate → divisi, bertingkat). */
 function isiFilterLaporan(){
@@ -11497,7 +11516,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.1.1';
+var VERSI_APP = '1.2.0';
 var TANGGAL_BUILD = '2026-08-19';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -11836,8 +11855,12 @@ function tampilDetailWf(tab){
       var tot = data.uangMuka.reduce(function(a,x){ return a+(Number(x.nominal)||0); },0);
       um = '<h4 style="margin:14px 0 6px;font-size:13px">Rincian Uang Muka</h4>'+
         data.uangMuka.map(function(x){
-          return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--garis)">'+
-            '<span>'+esc(x.kategori)+'</span><b>'+rp(x.nominal)+'</b></div>'; }).join('')+
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--garis)">'+
+            '<span>'+esc(x.kategori)+'</span>'+
+            '<span style="display:flex;align-items:center;gap:8px">'+
+              (x.bukti?'<a href="'+esc(x.bukti)+'" target="_blank" rel="noopener">'+
+                '<img src="'+esc(x.bukti)+'" style="width:34px;height:26px;object-fit:cover;border-radius:4px;border:1px solid var(--garis)"></a>':'')+
+              '<b>'+rp(x.nominal)+'</b></span></div>'; }).join('')+
         '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:800">'+
         '<span>Total</span><span>'+rp(tot)+'</span></div>';
     }
@@ -11869,6 +11892,8 @@ function tampilDetailWf(tab){
       : '')+
     '<div class="aksi-baris" style="margin-top:10px">'+
       '<button class="btn btn-sekunder btn-kecil" onclick="cetakWf()">🖨️ Cetak PDF</button>'+
+      (SESI && SESI.peran==='admin'
+        ? '<button class="btn btn-sekunder btn-kecil" onclick="panelAdminWf()">🛠️ Kelola (Admin)</button>' : '')+
       (['Diajukan','Diproses'].indexOf(d.Status)>=0
         ? '<button class="btn btn-sekunder btn-kecil" onclick="kirimPengingat(\''+esc(d.ID)+'\')">🔔 Ingatkan Approver</button>' : '')+
       (d.Jenis==='sppd' ? '<button class="btn btn-sekunder btn-kecil" onclick="cetakWf(\'um\')">🖨️ Cetak Uang Muka</button>' : '')+
@@ -12191,19 +12216,43 @@ function tarikDataInduk(){
 
   var kat = d.uangMuka.length ? d.uangMuka : KATEGORI_UM.map(function(k){ return { kategori:k, nominal:0 }; });
   wrap.innerHTML='<h4 style="margin:4px 0 8px;font-size:13px">Realisasi per Kategori</h4>'+
+    '<div class="meta" style="margin-bottom:8px">Lampirkan foto kuitansi tiap kategori. Foto ikut tercetak pada PDF deklarasi.</div>'+
     '<div style="display:flex;gap:6px;font-size:11px;color:var(--abu);font-weight:700;margin-bottom:4px">'+
       '<span style="flex:1.2">Kategori</span><span style="flex:1;text-align:right">Uang Muka</span>'+
       '<span style="flex:1;text-align:right">Realisasi</span></div>'+
     kat.map(function(x,i){
-      return '<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">'+
-        '<span style="flex:1.2;font-size:13px">'+esc(x.kategori)+
-          '<input type="hidden" class="rlKat" value="'+esc(x.kategori)+'"></span>'+
-        '<span style="flex:1;text-align:right;font-size:12.5px;color:var(--abu)" class="rlUM" data-n="'+
-          (Number(x.nominal)||0)+'">'+rp(x.nominal)+'</span>'+
-        '<input class="rlNom" type="number" placeholder="0" style="flex:1" oninput="hitungSelisih()">'+
+      return '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--garis)">'+
+        '<div style="display:flex;gap:6px;align-items:center">'+
+          '<span style="flex:1.2;font-size:13px">'+esc(x.kategori)+
+            '<input type="hidden" class="rlKat" value="'+esc(x.kategori)+'"></span>'+
+          '<span style="flex:1;text-align:right;font-size:12.5px;color:var(--abu)" class="rlUM" data-n="'+
+            (Number(x.nominal)||0)+'">'+rp(x.nominal)+'</span>'+
+          '<input class="rlNom" type="number" placeholder="0" style="flex:1" oninput="hitungSelisih()">'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:6px">'+
+          '<input type="file" class="rlFile" accept="image/*" onchange="pilihBuktiKategori(this)" style="flex:1;font-size:11.5px">'+
+          '<span class="rlPrev" style="flex:0 0 auto"></span>'+
+          '<input type="hidden" class="rlBukti" value="">'+
+        '</div>'+
         '</div>'; }).join('');
   hitungSelisih();
 }
+/* Kompres dan simpan foto kuitansi per kategori biaya. */
+function pilihBuktiKategori(inp){
+  var f = inp.files && inp.files[0];
+  if(!f) return;
+  if(!/^image\//.test(f.type)) return toast('Bukti harus berupa gambar.', true);
+  var baris = inp.parentNode;
+  var prev = baris.querySelector('.rlPrev');
+  var simpan = baris.querySelector('.rlBukti');
+  prev.textContent = '...';
+  kompresGambar(f, 1000, 0.72).then(function(dataUrl){
+    simpan.value = dataUrl;
+    prev.innerHTML = '<img src="'+esc(dataUrl)+'" style="width:38px;height:30px;object-fit:cover;border-radius:5px;border:1px solid var(--garis)" title="Bukti terlampir">';
+    toast('Bukti kuitansi siap dilampirkan');
+  }).catch(function(){ prev.textContent=''; toast('Gagal memproses gambar.', true); });
+}
+
 function hitungSelisih(){
   var el=document.getElementById('wfSelisih'); if(!el) return;
   var um=0, real=0;
@@ -12273,10 +12322,12 @@ function kirimPengajuan(){
     var ums=document.querySelectorAll('#wfRealisasi .rlUM');
     var nms=document.querySelectorAll('#wfRealisasi .rlNom');
     var real=[], totUM=0, totReal=0;
+    var bukti=document.querySelectorAll('#wfRealisasi .rlBukti');
     for(var q=0;q<kats.length;q++){
       var nm=Number(nms[q].value)||0, uu=Number(ums[q].dataset.n)||0;
       totUM+=uu; totReal+=nm;
-      if(nm>0||uu>0) real.push({ kategori:kats[q].value, nominal:nm, uangMuka:uu });
+      if(nm>0||uu>0) real.push({ kategori:kats[q].value, nominal:nm, uangMuka:uu,
+                                 bukti:(bukti[q]? bukti[q].value : '') });
     }
     if(totReal<=0) return toast('Isi realisasi biaya minimal satu kategori.', true);
     data={ 'Dokumen Induk':ind.NoDok, Tujuan:ind.Tujuan, Mulai:ind.Mulai, Selesai:ind.Selesai,
@@ -12487,6 +12538,107 @@ function jalankanBackup(cara){
   }
 }
 
+/* ==================== KENDALI ADMIN ATAS WORKFLOW ==================== */
+function panelAdminWf(){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin yang dapat mengelola alur dokumen.', true);
+  var r=WF.detail; if(!r) return;
+  var d=r.doc, steps=r.steps||[];
+  var opsiLangkah = steps.map(function(s){
+    return '<option value="'+s.Urutan+'">'+s.Urutan+'. '+esc(s.NamaLangkah)+' — '+esc(s.ApproverNama||'-')+
+      ' ('+esc(s.Status)+')</option>'; }).join('');
+  var opsiAlur = (WF.templates||[]).filter(function(t){ return t.Jenis===d.Jenis || t.Jenis==='umum'; })
+    .map(function(t){ return '<option value="'+esc(t.ID)+'"'+(t.ID===d.TemplateID?' selected':'')+'>'+
+      esc(t.Nama)+' ('+t.Langkah.length+' langkah)</option>'; }).join('');
+  var opsiStep = steps.map(function(s){
+    return '<option value="'+esc(s.ID)+'">'+s.Urutan+'. '+esc(s.NamaLangkah)+'</option>'; }).join('');
+  var opsiUser = (WF.users||[]).map(function(u){
+    return '<option value="'+esc(u.Username)+'">'+esc(u.Nama||u.Username)+
+      (u.Jabatan?' — '+esc(u.Jabatan):'')+'</option>'; }).join('');
+
+  bukaLembar('<h3>🛠️ Kelola Dokumen (Admin)</h3>'+
+    '<div class="meta">'+esc(d.NoDok)+' — '+esc(d.Judul)+' · status <b>'+esc(d.Status)+'</b></div>'+
+    '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#FFF4E5;border-left:3px solid #E8960C;font-size:12.5px;line-height:1.55">'+
+      'Gunakan hanya untuk memperbaiki kekeliruan. <b>Setiap tindakan tercatat di jejak audit</b> '+
+      'lengkap dengan nama Anda dan alasannya.</div>'+
+
+    '<h4 style="margin:16px 0 6px;font-size:13px">1. Kembalikan ke langkah tertentu</h4>'+
+    '<div class="meta" style="margin-bottom:6px">Untuk dokumen yang terlanjur disetujui padahal keliru. '+
+      'Langkah setelahnya dikosongkan, langkah sebelumnya tetap sah.</div>'+
+    '<select id="awLangkah">'+opsiLangkah+'</select>'+
+    '<label>Alasan *</label><input id="awAlasan1" placeholder="cth: salah pilih approver, dokumen belum lengkap">'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:10px" onclick="adminResetLangkah()">↩️ Kembalikan Alur</button>'+
+
+    '<h4 style="margin:18px 0 6px;font-size:13px">2. Ganti alur persetujuan</h4>'+
+    '<div class="meta" style="margin-bottom:6px">Bila alur yang dipilih pemohon salah. '+
+      '<b>Seluruh langkah diganti dan dokumen kembali ke awal.</b></div>'+
+    (opsiAlur ? '<select id="awAlur">'+opsiAlur+'</select>'+
+      '<label>Alasan *</label><input id="awAlasan2" placeholder="cth: seharusnya memakai alur manajer">'+
+      '<button class="btn btn-sekunder btn-blok" style="margin-top:10px" onclick="adminGantiAlur()">🔀 Ganti Alur</button>'
+      : '<div class="meta">Tidak ada alur lain untuk jenis dokumen ini.</div>')+
+
+    '<h4 style="margin:18px 0 6px;font-size:13px">3. Ganti approver satu langkah</h4>'+
+    '<div class="meta" style="margin-bottom:6px">Bila orangnya keliru, pindah tugas, atau keluar.</div>'+
+    '<div class="grid2">'+
+      '<div><label>Langkah</label><select id="awStep">'+opsiStep+'</select></div>'+
+      '<div><label>Approver baru</label><select id="awUser">'+opsiUser+'</select></div>'+
+    '</div>'+
+    '<button class="btn btn-sekunder btn-blok" style="margin-top:10px" onclick="adminGantiApprover()">👤 Ganti Approver</button>'+
+
+    '<h4 style="margin:18px 0 6px;font-size:13px;color:var(--merah)">4. Hapus dokumen</h4>'+
+    '<div class="meta" style="margin-bottom:6px">Dokumen, langkah, dan jejak auditnya dihapus permanen. '+
+      'Bila dokumen cuti yang sudah selesai dihapus, <b>kuota cuti karyawan dikembalikan otomatis</b>.</div>'+
+    '<label>Alasan *</label><input id="awAlasan3" placeholder="cth: dokumen ganda, salah input">'+
+    '<button class="btn btn-bahaya btn-blok" style="margin-top:10px" onclick="adminHapusWf()">🗑 Hapus Dokumen</button>');
+}
+function adminResetLangkah(){
+  var u=(document.getElementById('awLangkah')||{}).value;
+  var a=(document.getElementById('awAlasan1')||{}).value.trim();
+  if(!a) return toast('Alasan pengembalian wajib diisi.', true);
+  if(!confirm('Kembalikan dokumen ke langkah '+u+'?\n\nPersetujuan pada langkah tersebut dan sesudahnya akan dihapus.')) return;
+  tampilLoader(true,'Mengembalikan alur…');
+  callApi('resetWorkflowStep', { docId:WF.detail.doc.ID, urutan:Number(u), alasan:a }).then(function(r){
+    tampilLoader(false); tutupLembar();
+    toast('Alur dikembalikan ke langkah '+r.langkah+' ('+r.nama+') ✓');
+    muatWorkflow(false);
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+function adminGantiAlur(){
+  var t=(document.getElementById('awAlur')||{}).value;
+  var a=(document.getElementById('awAlasan2')||{}).value.trim();
+  if(!t) return toast('Pilih alur pengganti.', true);
+  if(!a) return toast('Alasan penggantian wajib diisi.', true);
+  if(!confirm('Ganti alur dokumen ini?\n\nSeluruh langkah dan persetujuan yang ada akan dihapus, dokumen kembali ke langkah pertama.')) return;
+  tampilLoader(true,'Mengganti alur…');
+  callApi('gantiAlurWorkflow', { docId:WF.detail.doc.ID, templateId:t, alasan:a }).then(function(r){
+    tampilLoader(false); tutupLembar();
+    toast('Alur diganti ke "'+r.alur+'" ('+r.langkah+' langkah) ✓');
+    muatWorkflow(false);
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+function adminGantiApprover(){
+  var s=(document.getElementById('awStep')||{}).value;
+  var u=(document.getElementById('awUser')||{}).value;
+  if(!s||!u) return toast('Pilih langkah dan approver penggantinya.', true);
+  tampilLoader(true,'Mengganti approver…');
+  callApi('gantiApproverLangkah', { docId:WF.detail.doc.ID, stepId:s, approver:u }).then(function(r){
+    tampilLoader(false); tutupLembar();
+    toast('Approver diganti menjadi '+r.approver+' ✓');
+    muatWorkflow(false);
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+function adminHapusWf(){
+  var a=(document.getElementById('awAlasan3')||{}).value.trim();
+  if(!a) return toast('Alasan penghapusan wajib diisi.', true);
+  var no=WF.detail.doc.NoDok;
+  if(!confirm('HAPUS PERMANEN dokumen '+no+'?\n\nDokumen, seluruh langkah, dan jejak auditnya tidak dapat dikembalikan.')) return;
+  tampilLoader(true,'Menghapus dokumen…');
+  callApi('deleteWorkflow', { docId:WF.detail.doc.ID, alasan:a }).then(function(){
+    tampilLoader(false); tutupLembar();
+    toast('Dokumen '+no+' dihapus ✓');
+    muatWorkflow(false);
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
 /* ---------------- Pengingat ke approver ---------------- */
 function kirimPengingat(docId){
   tampilLoader(true,'Mengirim pengingat…');
@@ -12528,22 +12680,84 @@ function cetakWf(mode){
   var um='';
   if(Array.isArray(data.uangMuka) && data.uangMuka.length){
     var tot=data.uangMuka.reduce(function(a,x){ return a+(Number(x.nominal)||0); },0);
+    var adaBukti = data.uangMuka.some(function(x){ return x.bukti; });
     um='<h3 style="margin:16px 0 6px;font-size:13px">'+(d.Jenis==='deklarasi'?'REALISASI BIAYA':'RINCIAN UANG MUKA')+'</h3>'+
       '<table style="width:100%;border-collapse:collapse" border="1" cellpadding="6">'+
-      '<tr style="background:#eee"><th align="left">Kategori</th><th align="right">Nominal</th></tr>'+
+      '<tr style="background:#eee"><th align="left">Kategori</th><th align="right">Nominal</th>'+
+      (adaBukti?'<th align="center" style="width:150px">Bukti</th>':'')+'</tr>'+
       data.uangMuka.map(function(x){
-        return '<tr><td>'+esc(x.kategori)+'</td><td align="right">'+rp(x.nominal)+'</td></tr>'; }).join('')+
-      '<tr style="background:#f5f5f5"><td><b>TOTAL</b></td><td align="right"><b>'+rp(tot)+'</b></td></tr></table>';
+        return '<tr><td>'+esc(x.kategori)+'</td><td align="right">'+rp(x.nominal)+'</td>'+
+          (adaBukti ? '<td align="center">'+(x.bukti
+            ? '<img src="'+esc(x.bukti)+'" style="max-height:70px;max-width:130px">'
+            : '<span style="color:#999;font-size:10px">tidak ada</span>')+'</td>' : '')+
+          '</tr>'; }).join('')+
+      '<tr style="background:#f5f5f5"><td><b>TOTAL</b></td><td align="right"><b>'+rp(tot)+'</b></td>'+
+      (adaBukti?'<td></td>':'')+'</tr></table>';
   }
-  var ttd = '<table style="width:100%;margin-top:24px;border-collapse:collapse">'+
+  /* Setiap kolom tanda tangan disusun bertumpuk dan rata tengah:
+     jabatan → ruang tanda tangan → garis → nama → status & waktu.
+     Sebelumnya nama tercetak di samping gambar karena tidak ada pemisah baris. */
+  var lebarKol = (100/Math.max(1,steps.length)).toFixed(2);
+  var ttd = '<table style="width:100%;margin-top:22px;border-collapse:collapse">'+
     '<tr>'+steps.map(function(s){
-      return '<td align="center" style="font-size:11px;padding:6px;vertical-align:top;width:'+(100/Math.max(1,steps.length))+'%">'+
-        esc(s.NamaLangkah)+'<br>'+
-        (s.TandaTangan ? '<img src="'+esc(s.TandaTangan)+'" style="height:52px;margin:6px 0">'
-                       : '<div style="height:52px"></div>')+
-        '<b>'+esc(s.ApproverNama||'-')+'</b><br>'+
-        '<span style="color:#666">'+esc(s.Status)+(s.Waktu?'<br>'+esc(String(s.Waktu).slice(0,16)):'')+'</span></td>'; }).join('')+
+      return '<td style="width:'+lebarKol+'%;padding:6px 4px;vertical-align:top;text-align:center">'+
+        '<div style="font-size:11px;color:#333;min-height:26px">'+esc(s.NamaLangkah)+'</div>'+
+        '<div style="height:58px;display:block;text-align:center;line-height:58px">'+
+          (s.TandaTangan
+            ? '<img src="'+esc(s.TandaTangan)+'" style="max-height:56px;max-width:96%;vertical-align:middle">'
+            : '')+
+        '</div>'+
+        '<div style="border-top:1px solid #333;margin:0 6px 4px"></div>'+
+        '<div style="font-size:11px;font-weight:bold">'+esc(s.ApproverNama||'-')+'</div>'+
+        '<div style="font-size:10px;color:#666">'+esc(s.Status)+
+          (s.Waktu?'<br>'+esc(String(s.Waktu).slice(0,16)):'')+'</div>'+
+        '</td>'; }).join('')+
     '</tr></table>';
+
+  /* ---- Realisasi perjalanan dinas (khusus SPPD) ----
+     Kolom sengaja dikosongkan untuk diisi tangan atau ditempel cap saat pulang
+     dinas. Bagian ini TIDAK memengaruhi alur persetujuan sama sekali. */
+  var realisasi = '';
+  if(d.Jenis==='sppd' && !umSaja){
+    realisasi =
+      '<div style="margin-top:26px;page-break-inside:avoid">'+
+      '<h3 style="font-size:13px;margin:0 0 6px">REALISASI PERJALANAN DINAS</h3>'+
+      '<div style="font-size:10px;color:#666;margin-bottom:8px">Diisi setelah perjalanan dinas selesai.</div>'+
+      '<table border="1" cellpadding="7" style="width:100%;border-collapse:collapse">'+
+        '<tr>'+
+          '<td style="width:30%;color:#555">Tanggal Berangkat</td>'+
+          '<td style="width:20%;height:26px"></td>'+
+          '<td style="width:30%;color:#555">Tanggal Kembali</td>'+
+          '<td style="width:20%"></td>'+
+        '</tr>'+
+        '<tr>'+
+          '<td style="color:#555">Tempat/Instansi yang Dikunjungi</td>'+
+          '<td colspan="3" style="height:26px"></td>'+
+        '</tr>'+
+        '<tr>'+
+          '<td style="color:#555">Catatan Hasil Perjalanan</td>'+
+          '<td colspan="3" style="height:46px"></td>'+
+        '</tr>'+
+      '</table>'+
+      '<table style="width:100%;margin-top:16px;border-collapse:collapse">'+
+        '<tr>'+
+          '<td style="width:50%;text-align:center;vertical-align:top;padding:6px">'+
+            '<div style="font-size:11px;color:#333">Pejabat Setempat yang Dikunjungi</div>'+
+            '<div style="font-size:10px;color:#777;margin-top:2px">(tanda tangan &amp; cap basah)</div>'+
+            '<div style="height:88px;border:1px dashed #bbb;margin:8px 14px 6px"></div>'+
+            '<div style="border-top:1px solid #333;margin:0 30px 4px"></div>'+
+            '<div style="font-size:10px;color:#666">Nama &amp; Jabatan</div>'+
+          '</td>'+
+          '<td style="width:50%;text-align:center;vertical-align:top;padding:6px">'+
+            '<div style="font-size:11px;color:#333">Pelaksana Perjalanan Dinas</div>'+
+            '<div style="font-size:10px;color:#777;margin-top:2px">(tanda tangan)</div>'+
+            '<div style="height:88px;margin:8px 14px 6px"></div>'+
+            '<div style="border-top:1px solid #333;margin:0 30px 4px"></div>'+
+            '<div style="font-size:11px;font-weight:bold">'+esc(d.PemohonNama)+'</div>'+
+          '</td>'+
+        '</tr>'+
+      '</table></div>';
+  }
 
   var html='<html><head><meta charset="utf-8"><title>'+esc(d.NoDok)+'</title>'+
     '<style>body{font-family:Arial,sans-serif;font-size:12px;padding:28px;color:#111}'+
@@ -12561,7 +12775,7 @@ function cetakWf(mode){
     '<tr><td style="color:#555">Status</td><td><b>'+esc(d.Status)+'</b></td></tr>'+
     (umSaja?'':baris)+'</table>'+
     (umSaja||d.Jenis!=='sppd' ? um : '')+
-    '<h3 style="margin:18px 0 6px;font-size:13px">PERSETUJUAN</h3>'+ttd+
+    '<h3 style="margin:18px 0 6px;font-size:13px">PERSETUJUAN</h3>'+ttd+realisasi+
     '<div style="margin-top:26px;font-size:10px;color:#777;text-align:center">'+
     'Dicetak '+new Date().toLocaleString('id-ID')+' oleh '+esc(SESI?(SESI.nama||SESI.username):'-')+
     ' · Dokumen ini sah tanpa tanda tangan basah bila seluruh langkah berstatus Disetujui.</div>'+
