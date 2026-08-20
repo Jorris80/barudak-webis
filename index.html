@@ -720,6 +720,7 @@
       <button onclick="bukaHalaman('traksi')"><span class="ic">🚜</span>Traksi &amp; Alat Berat</button>
       <button onclick="bukaHalaman('gudang')"><span class="ic">📦</span>Gudang &amp; Stok</button>
       <button onclick="bukaHalaman('budget')"><span class="ic">💰</span>Budgeting Kebun</button>
+      <button onclick="bukaHalaman('rekap')"><span class="ic">📈</span>Rekap Bulanan</button>
       <button onclick="bukaHalaman('workflow')"><span class="ic">✅</span>Workflow Persetujuan</button>
       <button onclick="bukaHalaman('ktu')"><span class="ic">🗂️</span>KTU (Administrasi)</button>
       <button onclick="bukaAktivasiLisensi()"><span class="ic">🔑</span>Lisensi</button>
@@ -1158,6 +1159,44 @@
     <div id="daftarWf"></div>
     <div id="panelAlur" style="display:none"></div>
   </section>
+  <!-- ================= REKAP BULANAN & ASISTEN AI ================= -->
+  <section class="halaman" id="hal-rekap">
+    <h2 class="judul">Rekap Bulanan <small id="ringkasRekap"></small></h2>
+    <div class="filter-bar">
+      <input type="month" id="rkBulan" onchange="muatRekap()">
+      <select id="rkPer" onchange="isiCascade('rkPer','rkEst','rkDiv');muatRekap();"><option value="">Semua Perusahaan</option></select>
+      <select id="rkEst" onchange="isiCascade('rkPer','rkEst','rkDiv');muatRekap();"><option value="">Semua Estate</option></select>
+      <select id="rkDiv" onchange="muatRekap()"><option value="">Semua Divisi</option></select>
+      <button class="btn btn-sekunder btn-kecil" onclick="cetakRekap()">🖨️ Cetak PDF</button>
+      <button class="btn btn-sekunder btn-kecil" onclick="unduhRekapExcel()">⬇ Excel</button>
+    </div>
+    <div id="isiRekap"><div class="kosong">Pilih bulan untuk menampilkan rekap.</div></div>
+  </section>
+
+  <!-- Panel Asisten AI -->
+  <div id="panelAI" style="display:none;position:fixed;inset:auto 0 0 0;z-index:1400;background:var(--kartu,#fff);
+       border-top-left-radius:18px;border-top-right-radius:18px;box-shadow:0 -8px 30px rgba(0,0,0,.25);
+       max-height:82vh;display:none;flex-direction:column">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--garis);display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div><b style="font-size:15px">🤖 Asisten Kebun</b>
+        <div class="meta" id="aiStatusTeks">Menyiapkan…</div></div>
+      <button class="btn btn-sekunder btn-kecil" onclick="tutupAI()">Tutup</button>
+    </div>
+    <div id="aiPercakapan" style="flex:1;overflow-y:auto;padding:14px 16px;min-height:180px"></div>
+    <div style="padding:10px 12px;border-top:1px solid var(--garis)">
+      <div id="aiSaran" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px">
+        <input id="aiInput" placeholder="Tanya tentang data kebun…" style="flex:1"
+               onkeydown="if(event.key==='Enter')kirimAI()">
+        <button class="btn btn-utama" style="flex:0 0 auto" onclick="kirimAI()">Kirim</button>
+      </div>
+    </div>
+  </div>
+  <button id="fabAI" onclick="bukaAI()" title="Asisten AI"
+    style="display:none;position:fixed;right:16px;bottom:150px;z-index:900;width:52px;height:52px;border-radius:50%;
+           background:linear-gradient(135deg,#2E7D46,#123B22);color:#fff;border:none;font-size:23px;
+           box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer">🤖</button>
+
 
 
   <!-- ================= ABSENSI BKM & PREMI ================= -->
@@ -3061,7 +3100,7 @@ function bukaHalaman(nama){
   if(el) el.classList.add('aktif');
   document.querySelectorAll('#navBawah button').forEach(function(b){
     b.classList.toggle('aktif', b.dataset.hal === nama ||
-      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu','workflow'].indexOf(nama)>=0));
+      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu','workflow','rekap'].indexOf(nama)>=0));
   });
   // FAB per halaman (hanya untuk yang boleh edit)
   var fabPeta = { blok:'＋', panen:'＋', spb:'＋', pupuk:'＋', sensus:'＋', bkm:'＋', masalah:'＋', jadwal:'＋', alat:'＋', hujan:'＋', sensusbuah:'＋', audit:'＋', traksi:'＋', gudang:'＋', budget:'＋', landclearing:'＋', ktu:'＋', workflow:'＋' };
@@ -3092,6 +3131,15 @@ function bukaHalaman(nama){
   });
   if(nama === 'ktu') gantiTabKtu(tabKtuAktif);
   if(nama === 'workflow') muatWorkflow(false);
+  if(nama === 'rekap'){
+    var eb=document.getElementById('rkBulan');
+    if(eb && !eb.value) eb.value = hariISO(new Date()).slice(0,7);
+    isiCascade('rkPer','rkEst','rkDiv');
+    muatRekap();
+  }
+  // tombol asisten AI tampil di halaman yang relevan
+  var fab=document.getElementById('fabAI');
+  if(fab) fab.style.display = ['dasbor','rekap','laporan','peta'].indexOf(nama)>=0 ? 'block' : 'none';
   if(nama === 'pengguna') renderPengguna();
   if(nama === 'lacak'){
     isiOpsiLacak();
@@ -10886,8 +10934,12 @@ function isiOpsiKtu(){
    halaman workflow gagal dimuat.) */
 function rp(n){ return 'Rp ' + angka(Math.round(Number(n)||0), 0); }
 function kpiKotak(judul, nilai, warna){
+  /* Memakai kelas .nilai dan .label yang sudah didefinisikan di CSS aplikasi.
+     Sebelumnya memakai <b> dan <span> polos, sehingga angka dan labelnya
+     tercetak menempel dalam satu baris. */
   return '<div class="kpi" style="border-left-color:'+(warna||'var(--hijau-700)')+'">'+
-    '<b>'+nilai+'</b><span>'+judul+'</span></div>';
+    '<div class="nilai" style="color:'+(warna||'var(--hijau-700)')+'">'+nilai+'</div>'+
+    '<div class="label">'+judul+'</div></div>';
 }
 
 /* ---------------- KAS & BANK ---------------- */
@@ -11516,7 +11568,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.2.0';
+var VERSI_APP = '1.3.0';
 var TANGGAL_BUILD = '2026-08-19';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -12980,6 +13032,291 @@ function unduhKtuExcel(jenis){
     return ['Bukti','Foto','Lampiran'].indexOf(k)<0;
   });
   unduhExcel(peta.data, peta.nama+'_'+hariISO(new Date()), peta.sheet, kolom);
+}
+
+
+/* ==================== REKAP BULANAN ==================== */
+var REKAP = null;
+
+function muatRekap(){
+  var b=(document.getElementById('rkBulan')||{}).value;
+  if(!b){ document.getElementById('isiRekap').innerHTML='<div class="kosong">Pilih bulan terlebih dahulu.</div>'; return; }
+  document.getElementById('isiRekap').innerHTML='<div class="kosong">Menghitung rekap…</div>';
+  callApi('rekapBulanan', { bulan:b,
+    perusahaan:(document.getElementById('rkPer')||{}).value||'',
+    estate:(document.getElementById('rkEst')||{}).value||'',
+    divisi:(document.getElementById('rkDiv')||{}).value||'' })
+  .then(function(r){ REKAP=r; gambarRekap(r); })
+  .catch(function(e){ document.getElementById('isiRekap').innerHTML=
+    '<div class="kosong" style="color:var(--merah)">Gagal: '+esc(e.message)+'</div>'; });
+}
+
+function namaBulan(b){
+  var n=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  var p=String(b).split('-'); return (n[Number(p[1])-1]||'') + ' ' + p[0];
+}
+function barisRekap(label, nilai, ket){
+  return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--garis)">'+
+    '<span style="color:var(--abu);font-size:12.5px">'+esc(label)+'</span>'+
+    '<span style="text-align:right"><b>'+nilai+'</b>'+
+    (ket?'<div class="meta" style="font-size:11px">'+ket+'</div>':'')+'</span></div>';
+}
+function kartuRekap(judul, isi){
+  return '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">'+judul+'</b>'+
+    '<div style="margin-top:8px">'+isi+'</div></div>';
+}
+
+function gambarRekap(r){
+  var pr=r.produksi, ki=r.pengiriman, tk=r.tenagaKerja, pw=r.perawatan, by=r.biaya, ph=r.perhatian;
+  var arah = pr.perubahanPersen===null ? '' :
+    (pr.perubahanPersen>=0 ? '<span style="color:var(--hijau-700)">▲ '+pr.perubahanPersen+'%</span>'
+                           : '<span style="color:var(--merah)">▼ '+Math.abs(pr.perubahanPersen)+'%</span>');
+  var el=document.getElementById('ringkasRekap');
+  if(el) el.textContent = namaBulan(r.bulan)+' · '+r.blok.jumlah+' blok · '+angka(r.blok.luasHa,1)+' ha';
+
+  var kpi = kpiKotak('Produksi', angka(pr.totalTon,2)+' t', '#2E7D46') +
+            kpiKotak('Produktivitas', angka(pr.tonPerHa,3)+' t/ha', '#1565C0') +
+            kpiKotak('BJR Rata-rata', angka(pr.bjrRata,2)+' kg', '#E8960C') +
+            kpiKotak('Susut Kirim', angka(ki.susutPersen,1)+'%', ki.susutPersen>3?'#C62828':'#2E7D46');
+
+  var html = '<div class="kpi-grid" style="margin-bottom:12px">'+kpi+'</div>';
+
+  html += kartuRekap('🧺 Produksi',
+    barisRekap('Total tonase', angka(pr.totalTon,2)+' ton', arah ? 'vs '+namaBulan(r.bulanSebelumnya)+': '+angka(pr.tonBulanSebelumnya,2)+' t &nbsp;'+arah : '') +
+    barisRekap('Jumlah janjang', angka(pr.totalJanjang,0)) +
+    barisRekap('Brondolan', angka(pr.brondolanKg,0)+' kg') +
+    barisRekap('Mutu buah', angka(pr.persenMatang,1)+'% matang', 'mentah '+angka(pr.persenMentah,1)+'%') +
+    barisRekap('Catatan panen', angka(pr.jumlahCatatan,0)+' entri'));
+
+  if((pr.blokTertinggi||[]).length){
+    html += kartuRekap('🏆 Blok Produksi Tertinggi',
+      pr.blokTertinggi.map(function(b,i){
+        return barisRekap((i+1)+'. '+esc(b.idBlok)+' — '+esc(b.nama||''),
+          angka(b.ton,2)+' t', angka(b.tonPerHa,3)+' t/ha · '+angka(b.luasHa,1)+' ha'); }).join(''));
+  }
+
+  html += kartuRekap('🚛 Pengiriman ke Pabrik',
+    barisRekap('Jumlah SPB', angka(ki.jumlahSPB,0)) +
+    barisRekap('Dikirim dari kebun', angka(ki.estimasiKg,0)+' kg') +
+    barisRekap('Diterima pabrik', angka(ki.diterimaKg,0)+' kg') +
+    barisRekap('Susut', angka(ki.susutKg,0)+' kg',
+      '<span style="color:'+(ki.susutPersen>3?'var(--merah)':'var(--hijau-700)')+'">'+angka(ki.susutPersen,1)+'%'+
+      (ki.susutPersen>3?' — perlu ditelusuri':'')+'</span>'));
+
+  html += kartuRekap('👷 Tenaga Kerja',
+    barisRekap('Pemanen tercatat', angka(tk.jumlahPemanen,0)+' orang') +
+    barisRekap('Hari hadir (BKM)', angka(tk.hariHadir,0)) +
+    barisRekap('Total premi', rp(tk.totalPremiRp)) +
+    barisRekap('Total denda', rp(tk.totalDendaRp)) +
+    barisRekap('Total upah', rp(tk.totalUpahRp), angka(tk.jumlahSlipUpah,0)+' slip'));
+
+  var jp=pw.jenisPupuk||{};
+  html += kartuRekap('🌱 Perawatan & Cuaca',
+    barisRekap('Kegiatan pemupukan', angka(pw.kegiatanPemupukan,0)+' kali', angka(pw.totalPupukKg,0)+' kg') +
+    (Object.keys(jp).length ? barisRekap('Jenis pupuk',
+       Object.keys(jp).map(function(k){ return esc(k)+' '+angka(jp[k],0)+' kg'; }).join('<br>')) : '') +
+    barisRekap('Sensus hama', angka(pw.kegiatanSensus,0)+' kali', 'rata serangan '+angka(pw.rataSeranganPersen,1)+'%') +
+    barisRekap('Curah hujan', angka(r.cuaca.totalHujanMm,0)+' mm', r.cuaca.hariHujan+' hari hujan'));
+
+  html += kartuRekap('💰 Kas & Bank',
+    barisRekap('Penerimaan', rp(by.kasMasukRp)) +
+    barisRekap('Pengeluaran', rp(by.kasKeluarRp)) +
+    barisRekap('Saldo periode', rp(by.saldoRp), angka(by.jumlahTransaksi,0)+' transaksi'));
+
+  var adaPerhatian = ph.masalahTerbuka || ph.stokKritis || ph.jadwalTerlambat;
+  html += '<div class="kartu" style="margin-bottom:12px;border-left:4px solid '+(adaPerhatian?'var(--merah)':'var(--hijau-700)')+'">'+
+    '<b style="font-size:14px">'+(adaPerhatian?'⚠️':'✅')+' Perlu Perhatian</b><div style="margin-top:8px">'+
+    (adaPerhatian
+      ? barisRekap('Masalah terbuka', angka(ph.masalahTerbuka,0),
+          ph.daftarMasalah.map(function(m){ return esc(m.blok)+': '+esc(m.jenis)+' ('+esc(m.tingkat)+')'; }).join('<br>')) +
+        barisRekap('Stok kritis', angka(ph.stokKritis,0),
+          ph.daftarStok.map(function(s){ return esc(s.barang)+': sisa '+angka(s.sisa,0)+' '+esc(s.satuan||''); }).join('<br>')) +
+        barisRekap('Jadwal terlambat', angka(ph.jadwalTerlambat,0),
+          ph.daftarJadwal.map(function(j){ return esc(j.blok)+': '+esc(j.kegiatan)+' ('+esc(j.tanggal)+')'; }).join('<br>'))
+      : '<div class="meta">Tidak ada masalah terbuka, stok kritis, maupun jadwal terlambat pada periode ini.</div>')+
+    '</div></div>';
+
+  document.getElementById('isiRekap').innerHTML = html;
+}
+
+function unduhRekapExcel(){
+  if(!REKAP) return toast('Muat rekap terlebih dahulu.', true);
+  var r=REKAP;
+  var baris=[
+    {Bagian:'Periode', Uraian:'Bulan', Nilai:namaBulan(r.bulan)},
+    {Bagian:'Periode', Uraian:'Unit', Nilai:[r.unit.perusahaan,r.unit.estate,r.unit.divisi].join(' / ')},
+    {Bagian:'Blok', Uraian:'Jumlah blok', Nilai:r.blok.jumlah},
+    {Bagian:'Blok', Uraian:'Luas (ha)', Nilai:r.blok.luasHa},
+    {Bagian:'Produksi', Uraian:'Total tonase (ton)', Nilai:r.produksi.totalTon},
+    {Bagian:'Produksi', Uraian:'Produktivitas (ton/ha)', Nilai:r.produksi.tonPerHa},
+    {Bagian:'Produksi', Uraian:'Jumlah janjang', Nilai:r.produksi.totalJanjang},
+    {Bagian:'Produksi', Uraian:'Brondolan (kg)', Nilai:r.produksi.brondolanKg},
+    {Bagian:'Produksi', Uraian:'BJR rata-rata (kg)', Nilai:r.produksi.bjrRata},
+    {Bagian:'Produksi', Uraian:'Matang (%)', Nilai:r.produksi.persenMatang},
+    {Bagian:'Produksi', Uraian:'Tonase bulan sebelumnya', Nilai:r.produksi.tonBulanSebelumnya},
+    {Bagian:'Pengiriman', Uraian:'Jumlah SPB', Nilai:r.pengiriman.jumlahSPB},
+    {Bagian:'Pengiriman', Uraian:'Dikirim (kg)', Nilai:r.pengiriman.estimasiKg},
+    {Bagian:'Pengiriman', Uraian:'Diterima (kg)', Nilai:r.pengiriman.diterimaKg},
+    {Bagian:'Pengiriman', Uraian:'Susut (%)', Nilai:r.pengiriman.susutPersen},
+    {Bagian:'Tenaga Kerja', Uraian:'Jumlah pemanen', Nilai:r.tenagaKerja.jumlahPemanen},
+    {Bagian:'Tenaga Kerja', Uraian:'Total premi (Rp)', Nilai:r.tenagaKerja.totalPremiRp},
+    {Bagian:'Tenaga Kerja', Uraian:'Total upah (Rp)', Nilai:r.tenagaKerja.totalUpahRp},
+    {Bagian:'Perawatan', Uraian:'Total pupuk (kg)', Nilai:r.perawatan.totalPupukKg},
+    {Bagian:'Perawatan', Uraian:'Rata serangan hama (%)', Nilai:r.perawatan.rataSeranganPersen},
+    {Bagian:'Cuaca', Uraian:'Curah hujan (mm)', Nilai:r.cuaca.totalHujanMm},
+    {Bagian:'Kas', Uraian:'Penerimaan (Rp)', Nilai:r.biaya.kasMasukRp},
+    {Bagian:'Kas', Uraian:'Pengeluaran (Rp)', Nilai:r.biaya.kasKeluarRp},
+    {Bagian:'Perhatian', Uraian:'Masalah terbuka', Nilai:r.perhatian.masalahTerbuka},
+    {Bagian:'Perhatian', Uraian:'Stok kritis', Nilai:r.perhatian.stokKritis},
+    {Bagian:'Perhatian', Uraian:'Jadwal terlambat', Nilai:r.perhatian.jadwalTerlambat}
+  ];
+  (r.produksi.blokTertinggi||[]).forEach(function(b,i){
+    baris.push({Bagian:'Blok Tertinggi', Uraian:(i+1)+'. '+b.idBlok+' — '+(b.nama||''), Nilai:b.ton+' ton'});
+  });
+  unduhExcel(baris, 'rekap_bulanan_'+r.bulan, 'Rekap '+r.bulan);
+}
+
+function cetakRekap(){
+  if(!REKAP) return toast('Muat rekap terlebih dahulu.', true);
+  var r=REKAP, st=S.settings||{};
+  function tabel(judul, isi){
+    return '<h3 style="font-size:13px;margin:14px 0 5px">'+judul+'</h3>'+
+      '<table border="1" cellpadding="6" style="width:100%;border-collapse:collapse">'+isi+'</table>';
+  }
+  function br(l,v,k){ return '<tr><td style="width:48%;color:#555">'+l+'</td><td><b>'+v+'</b>'+
+    (k?'<div style="font-size:10px;color:#777">'+k+'</div>':'')+'</td></tr>'; }
+  var ph=r.perhatian;
+  var html='<html><head><meta charset="utf-8"><title>Rekap '+esc(r.bulan)+'</title>'+
+    '<style>body{font-family:Arial,sans-serif;font-size:12px;padding:26px;color:#111}'+
+    'table{width:100%;border-collapse:collapse}td,th{padding:5px 6px;vertical-align:top}'+
+    'h1{font-size:16px;text-align:center;margin:0 0 2px}h2{font-size:12px;text-align:center;color:#555;font-weight:normal;margin:0 0 14px}'+
+    '</style></head><body>'+
+    '<div style="text-align:center;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:14px">'+
+    '<div style="font-size:15px;font-weight:bold">'+esc(st.judulAplikasi||'SawitGIS Mandiri')+'</div>'+
+    '<div style="font-size:11px;color:#555">'+esc(st.namaPerusahaan||st.subjudul||'')+'</div></div>'+
+    '<h1>REKAP LAPORAN BULANAN</h1>'+
+    '<h2>'+esc(namaBulan(r.bulan))+' &nbsp;·&nbsp; '+esc([r.unit.perusahaan,r.unit.estate,r.unit.divisi].join(' / '))+'</h2>'+
+    tabel('RINGKASAN',
+      br('Jumlah blok', angka(r.blok.jumlah,0)+' blok', angka(r.blok.luasHa,1)+' ha')+
+      br('Total produksi', angka(r.produksi.totalTon,2)+' ton',
+         r.produksi.perubahanPersen===null?'':'bulan sebelumnya '+angka(r.produksi.tonBulanSebelumnya,2)+' ton ('+
+         (r.produksi.perubahanPersen>=0?'+':'')+r.produksi.perubahanPersen+'%)')+
+      br('Produktivitas', angka(r.produksi.tonPerHa,3)+' ton/ha')+
+      br('BJR rata-rata', angka(r.produksi.bjrRata,2)+' kg')+
+      br('Susut pengiriman', angka(r.pengiriman.susutPersen,1)+'%', angka(r.pengiriman.susutKg,0)+' kg'))+
+    tabel('PRODUKSI & PENGIRIMAN',
+      br('Jumlah janjang', angka(r.produksi.totalJanjang,0))+
+      br('Brondolan', angka(r.produksi.brondolanKg,0)+' kg')+
+      br('Mutu buah', angka(r.produksi.persenMatang,1)+'% matang', 'mentah '+angka(r.produksi.persenMentah,1)+'%')+
+      br('Jumlah SPB', angka(r.pengiriman.jumlahSPB,0))+
+      br('Dikirim / diterima', angka(r.pengiriman.estimasiKg,0)+' kg / '+angka(r.pengiriman.diterimaKg,0)+' kg'))+
+    tabel('TENAGA KERJA & BIAYA',
+      br('Pemanen tercatat', angka(r.tenagaKerja.jumlahPemanen,0)+' orang')+
+      br('Total premi', rp(r.tenagaKerja.totalPremiRp))+
+      br('Total upah', rp(r.tenagaKerja.totalUpahRp))+
+      br('Kas masuk / keluar', rp(r.biaya.kasMasukRp)+' / '+rp(r.biaya.kasKeluarRp))+
+      br('Saldo periode', rp(r.biaya.saldoRp)))+
+    tabel('PERAWATAN & CUACA',
+      br('Pemupukan', angka(r.perawatan.kegiatanPemupukan,0)+' kegiatan', angka(r.perawatan.totalPupukKg,0)+' kg')+
+      br('Sensus hama', angka(r.perawatan.kegiatanSensus,0)+' kegiatan', 'rata serangan '+angka(r.perawatan.rataSeranganPersen,1)+'%')+
+      br('Curah hujan', angka(r.cuaca.totalHujanMm,0)+' mm', r.cuaca.hariHujan+' hari hujan'))+
+    ((r.produksi.blokTertinggi||[]).length ? tabel('BLOK PRODUKSI TERTINGGI',
+      '<tr style="background:#eee"><th align="left">Blok</th><th align="right">Tonase</th><th align="right">Ton/ha</th></tr>'+
+      r.produksi.blokTertinggi.map(function(b){
+        return '<tr><td>'+esc(b.idBlok)+' — '+esc(b.nama||'')+'</td><td align="right">'+angka(b.ton,2)+'</td>'+
+               '<td align="right">'+angka(b.tonPerHa,3)+'</td></tr>'; }).join('')) : '')+
+    tabel('PERLU PERHATIAN',
+      br('Masalah terbuka', angka(ph.masalahTerbuka,0),
+         ph.daftarMasalah.map(function(m){ return esc(m.blok)+': '+esc(m.jenis)+' ('+esc(m.tingkat)+')'; }).join('<br>'))+
+      br('Stok kritis', angka(ph.stokKritis,0),
+         ph.daftarStok.map(function(s){ return esc(s.barang)+' — sisa '+angka(s.sisa,0)+' '+esc(s.satuan||''); }).join('<br>'))+
+      br('Jadwal terlambat', angka(ph.jadwalTerlambat,0),
+         ph.daftarJadwal.map(function(j){ return esc(j.blok)+': '+esc(j.kegiatan)+' ('+esc(j.tanggal)+')'; }).join('<br>')))+
+    '<table style="width:100%;margin-top:26px"><tr>'+
+      '<td align="center" style="width:50%">Disusun oleh,<div style="height:56px"></div>'+
+      '<div style="border-top:1px solid #333;margin:0 40px 4px"></div>'+
+      '<b>'+esc(SESI?(SESI.nama||SESI.username):'-')+'</b></td>'+
+      '<td align="center" style="width:50%">Mengetahui,<div style="height:56px"></div>'+
+      '<div style="border-top:1px solid #333;margin:0 40px 4px"></div>'+
+      '<span style="font-size:10px;color:#666">Manajer Kebun</span></td>'+
+    '</tr></table>'+
+    '<div style="margin-top:18px;font-size:10px;color:#777;text-align:center">Dicetak '+
+      new Date().toLocaleString('id-ID')+'</div></body></html>';
+  var w=window.open('','_blank');
+  if(!w) return toast('Popup diblokir — izinkan popup untuk mencetak.', true);
+  w.document.write(html); w.document.close();
+  setTimeout(function(){ try{ w.print(); }catch(e){} }, 400);
+}
+
+/* ==================== ASISTEN AI ==================== */
+var AI_RIWAYAT = [];
+var AI_SIAP = null;
+
+function bukaAI(){
+  var p=document.getElementById('panelAI');
+  p.style.display='flex';
+  if(AI_SIAP===null){
+    callApi('aiStatus', {}).then(function(s){
+      AI_SIAP=s.siap;
+      document.getElementById('aiStatusTeks').textContent = s.siap
+        ? 'Siap · membaca data kebun Anda' : 'Belum diaktifkan admin';
+      if(!s.siap) tampilPesanAI('ai',
+        'Asisten AI belum diaktifkan.\n\nAdmin perlu mengisi kunci API pada Apps Script: '+
+        'Project Settings → Script Properties → tambahkan **AI_API_KEY**. '+
+        'Kunci gratis dapat dibuat di aistudio.google.com.');
+      else if(!AI_RIWAYAT.length) tampilSaranAI();
+    }).catch(function(){ document.getElementById('aiStatusTeks').textContent='Status tidak diketahui'; });
+  }
+  setTimeout(function(){ var i=document.getElementById('aiInput'); if(i) i.focus(); }, 200);
+}
+function tutupAI(){ document.getElementById('panelAI').style.display='none'; }
+
+function tampilSaranAI(){
+  var saran=['Bagaimana produksi bulan ini?','Blok mana yang produksinya paling rendah?',
+             'Apa yang perlu segera ditindaklanjuti?','Berapa susut pengiriman bulan lalu?'];
+  var el=document.getElementById('aiSaran');
+  el.innerHTML = saran.map(function(s){
+    return '<button class="btn btn-sekunder btn-kecil" onclick="tanyaCepat(\''+esc(s).replace(/'/g,"\\'")+'\')">'+esc(s)+'</button>';
+  }).join('');
+}
+function tanyaCepat(t){ document.getElementById('aiInput').value=t; kirimAI(); }
+
+function tampilPesanAI(peran, teks, alat){
+  var el=document.getElementById('aiPercakapan');
+  var kanan = peran==='user';
+  var isi = esc(teks).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
+  el.innerHTML += '<div style="display:flex;justify-content:'+(kanan?'flex-end':'flex-start')+';margin-bottom:10px">'+
+    '<div style="max-width:86%;padding:9px 12px;border-radius:12px;font-size:13px;line-height:1.55;'+
+      (kanan?'background:var(--hijau-700);color:#fff;border-bottom-right-radius:3px'
+            :'background:var(--hijau-50);color:var(--tinta);border-bottom-left-radius:3px')+'">'+
+      isi+
+      (alat && alat.length ? '<div style="margin-top:6px;font-size:10.5px;opacity:.75">🔧 memeriksa: '+esc(alat.join(', '))+'</div>' : '')+
+    '</div></div>';
+  el.scrollTop = el.scrollHeight;
+}
+
+function kirimAI(){
+  var inp=document.getElementById('aiInput');
+  var teks=(inp.value||'').trim();
+  if(!teks) return;
+  if(AI_SIAP===false) return toast('Asisten AI belum diaktifkan admin.', true);
+  inp.value='';
+  document.getElementById('aiSaran').innerHTML='';
+  tampilPesanAI('user', teks);
+  AI_RIWAYAT.push({ peran:'user', teks:teks });
+
+  var el=document.getElementById('aiPercakapan');
+  el.innerHTML += '<div id="aiTunggu" style="padding:8px 12px;font-size:12.5px;color:var(--abu)">Sedang memeriksa data kebun…</div>';
+  el.scrollTop = el.scrollHeight;
+
+  callApi('aiTanya', { pesan:teks, riwayat:AI_RIWAYAT.slice(-8) }).then(function(r){
+    var t=document.getElementById('aiTunggu'); if(t) t.remove();
+    tampilPesanAI('ai', r.jawaban, r.alat);
+    AI_RIWAYAT.push({ peran:'ai', teks:r.jawaban });
+  }).catch(function(e){
+    var t=document.getElementById('aiTunggu'); if(t) t.remove();
+    tampilPesanAI('ai', '⚠️ ' + e.message);
+  });
 }
 
 /* ==================== MULAI ==================== */
