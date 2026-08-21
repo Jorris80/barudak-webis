@@ -5,7 +5,7 @@
  *
  *  Naikkan VERSI setiap kali index.html diubah agar cache diperbarui.
  * ============================================================ */
-var VERSI = 'sawitgis-v1.6.0';
+var VERSI = 'sawitgis-v1.7.0';
 var INTI = [
   './',
   './index.html',

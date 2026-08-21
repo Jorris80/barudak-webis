@@ -370,7 +370,7 @@
 <div id="barLisensi" style="display:none;position:sticky;top:0;z-index:1200;color:#fff;padding:8px 12px;font-size:12.5px;font-weight:700;display:none;align-items:center;justify-content:space-between;gap:10px"></div>
 <header id="hdr">
   <div class="baris">
-    <img id="hdLogo" alt="Logo" onerror="this.style.display='none';document.getElementById('hdEmoji').style.display='block'">
+    <img id="hdLogo" alt="Logo" style="cursor:zoom-in" title="Ketuk untuk memperbesar" onclick="zoomLogoAplikasi()" onerror="this.style.display='none';document.getElementById('hdEmoji').style.display='block'">
     <span class="emoji" id="hdEmoji">🌴</span>
     <div>
       <h1 id="hdJudul">SawitGIS Mandiri</h1>
@@ -721,6 +721,8 @@
       <button onclick="bukaHalaman('gudang')"><span class="ic">📦</span>Gudang &amp; Stok</button>
       <button onclick="bukaHalaman('budget')"><span class="ic">💰</span>Budgeting Kebun</button>
       <button onclick="bukaProfil()"><span class="ic">🪪</span>Profil Saya</button>
+      <button onclick="formGantiSandi()"><span class="ic">🔑</span>Ganti Kata Sandi</button>
+      <button class="adminOnly" onclick="formKunciAI()"><span class="ic">🤖</span>Kunci Asisten AI</button>
       <button onclick="bukaHalaman('rekap')"><span class="ic">📈</span>Rekap Bulanan</button>
       <button onclick="bukaHalaman('workflow')"><span class="ic">✅</span>Workflow Persetujuan</button>
       <button onclick="bukaHalaman('ktu')"><span class="ic">🗂️</span>KTU (Administrasi)</button>
@@ -6295,6 +6297,8 @@ function renderPengguna(){
         '<div class="meta" style="color:var(--hijau-900);margin-top:2px">🔒 Akses Wilayah: <b>'+esc(aksText)+'</b></div></div>'+
         '<div class="kanan"><span class="chip '+chip+'">'+esc(u.Peran)+'</span></div></div>'+
         '<div class="aksi-baris"><button class="btn btn-sekunder btn-kecil" onclick="formPengguna(\''+esc(u.Username)+'\')">✏️ Edit</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="formResetSandi(\''+esc(u.Username)+'\',\''+esc(u.Nama||u.Username)+'\')">🔓 Reset Sandi</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="bukaProfil(\''+esc(u.Username)+'\')">🪪 Profil</button>'+
         '<button class="btn btn-bahaya btn-kecil" onclick="hapusPengguna(\''+esc(u.Username)+'\')">Hapus</button></div></div>';
     }).join('');
     document.getElementById('daftarPengguna').innerHTML = html || '<div class="kosong">Belum ada pengguna.</div>';
@@ -11812,7 +11816,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.6.0';
+var VERSI_APP = '1.7.0';
 var TANGGAL_BUILD = '2026-08-19';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -13816,12 +13820,13 @@ function gambarProfil(){
       (SESI.peran==='admin'?'<button class="btn btn-sekunder" onclick="tutupLembar();bukaHalaman(\'pengguna\')">Kelola Pengguna</button>':'')+
     '</div>');
 }
-function zoomFoto(src){
+function zoomFoto(src, keterangan){
   var d=document.createElement('div');
   d.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.9);display:flex;'+
-    'align-items:center;justify-content:center;cursor:zoom-out;padding:20px';
-  d.innerHTML='<img src="'+esc(src)+'" style="max-width:100%;max-height:100%;border-radius:12px;'+
-    'box-shadow:0 8px 40px rgba(0,0,0,.6)">'+
+    'flex-direction:column;align-items:center;justify-content:center;cursor:zoom-out;padding:20px;gap:12px';
+  d.innerHTML='<img src="'+esc(src)+'" style="max-width:100%;max-height:82%;object-fit:contain;'+
+    'border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.6)">'+
+    (keterangan?'<div style="color:#fff;font-size:14px;font-weight:600;text-align:center">'+esc(keterangan)+'</div>':'')+
     '<div style="position:absolute;top:18px;right:20px;color:#fff;font-size:26px">✕</div>';
   d.onclick=function(){ d.remove(); };
   document.body.appendChild(d);
@@ -14216,6 +14221,154 @@ function jalankanResetCuti(){
     toast('Reset selesai — '+r.jumlah+' karyawan diperbarui ✓');
     bukaKelolaHakCuti();
   }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+
+/* ==================== KATA SANDI ==================== */
+function formGantiSandi(){
+  bukaLembar('<h3>🔑 Ganti Kata Sandi</h3>'+
+    '<div class="meta">Kata sandi berlaku untuk akun <b>@'+esc(SESI.username)+'</b>.</div>'+
+    '<label>Kata Sandi Lama *</label><input type="password" id="psLama" autocomplete="current-password">'+
+    '<label>Kata Sandi Baru *</label><input type="password" id="psBaru" autocomplete="new-password" oninput="nilaiKekuatanSandi()">'+
+    '<div id="psKuat" class="meta" style="margin-top:4px">Minimal 6 karakter.</div>'+
+    '<label>Ulangi Kata Sandi Baru *</label><input type="password" id="psUlang" autocomplete="new-password">'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="simpanGantiSandi()">💾 Simpan Kata Sandi</button>');
+}
+function nilaiKekuatanSandi(){
+  var v=(document.getElementById('psBaru')||{}).value||'';
+  var el=document.getElementById('psKuat'); if(!el) return;
+  var skor=0;
+  if(v.length>=6) skor++;
+  if(v.length>=10) skor++;
+  if(/[A-Z]/.test(v) && /[a-z]/.test(v)) skor++;
+  if(/[0-9]/.test(v)) skor++;
+  if(/[^A-Za-z0-9]/.test(v)) skor++;
+  var label=['Terlalu pendek','Lemah','Cukup','Baik','Kuat','Sangat kuat'][Math.min(skor,5)];
+  var warna=['var(--merah)','var(--merah)','#E8960C','#E8960C','var(--hijau-700)','var(--hijau-700)'][Math.min(skor,5)];
+  el.innerHTML = v.length<6
+    ? 'Minimal 6 karakter.'
+    : 'Kekuatan: <b style="color:'+warna+'">'+label+'</b>';
+}
+function simpanGantiSandi(){
+  var lama=(document.getElementById('psLama')||{}).value||'';
+  var baru=(document.getElementById('psBaru')||{}).value||'';
+  var ulang=(document.getElementById('psUlang')||{}).value||'';
+  if(!lama||!baru) return toast('Kata sandi lama dan baru wajib diisi.', true);
+  if(baru.length<6) return toast('Kata sandi baru minimal 6 karakter.', true);
+  if(baru!==ulang) return toast('Ulangan kata sandi tidak sama.', true);
+  tampilLoader(true,'Menyimpan kata sandi…');
+  callApi('ubahSandiSendiri', { lama:lama, baru:baru }).then(function(){
+    tampilLoader(false); tutupLembar();
+    toast('Kata sandi berhasil diganti ✓ Gunakan yang baru saat masuk berikutnya.');
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+function formResetSandi(username, nama){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin yang dapat mereset kata sandi.', true);
+  bukaLembar('<h3>🔓 Reset Kata Sandi</h3>'+
+    '<div class="meta">Akun <b>'+esc(nama||username)+'</b> (@'+esc(username)+')</div>'+
+    '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#FFF4E5;border-left:3px solid #E8960C;font-size:12.5px;line-height:1.6">'+
+      'Kata sandi lama akan langsung tidak berlaku. Sampaikan kata sandi baru kepada '+
+      'yang bersangkutan lewat jalur pribadi, dan minta ia menggantinya sendiri setelah masuk.'+
+    '</div>'+
+    '<label>Kata Sandi Baru *</label><input type="text" id="rsBaru" value="'+esc(sandiAcak())+'">'+
+    '<div class="aksi-baris" style="margin-top:6px">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="document.getElementById(\'rsBaru\').value=sandiAcak()">🎲 Acak lagi</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="salinTeks(document.getElementById(\'rsBaru\').value).then(function(){toast(\'Kata sandi disalin.\')})">Salin</button>'+
+    '</div>'+
+    '<button class="btn btn-bahaya btn-blok" style="margin-top:16px" onclick="jalankanResetSandi(\''+esc(username)+'\')">🔓 Reset Kata Sandi</button>');
+}
+function sandiAcak(){
+  var abjad='abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  var buf=new Uint32Array(10); crypto.getRandomValues(buf);
+  var s=''; for(var i=0;i<buf.length;i++) s+=abjad[buf[i]%abjad.length];
+  return s;
+}
+function jalankanResetSandi(username){
+  var baru=(document.getElementById('rsBaru')||{}).value||'';
+  if(baru.length<6) return toast('Kata sandi minimal 6 karakter.', true);
+  if(!confirm('Reset kata sandi @'+username+'?\n\nKata sandi lama langsung tidak berlaku.')) return;
+  tampilLoader(true,'Mereset kata sandi…');
+  callApi('resetSandi', { username:username, baru:baru }).then(function(r){
+    tampilLoader(false); tutupLembar();
+    salinTeks(baru);
+    alert('Kata sandi '+r.nama+' berhasil direset.\n\nKata sandi baru: '+baru+
+          '\n\n(Sudah disalin ke papan klip. Sampaikan lewat jalur pribadi.)');
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ==================== KUNCI AI ==================== */
+function formKunciAI(){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin yang dapat mengatur kunci AI.', true);
+  bukaLembar('<h3>🔑 Kunci Asisten AI</h3>'+
+    '<div id="aiStatusKunci" class="meta">Memeriksa…</div>'+
+    '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px;line-height:1.65">'+
+      '<b>Cara memperoleh kunci:</b><br>'+
+      '1. Buka <b>aistudio.google.com/apikey</b><br>'+
+      '2. Tekan <b>Create API key</b><br>'+
+      '3. Salin kuncinya — selalu diawali <b>AIza</b><br>'+
+      '4. Tempel di bawah ini, lalu Simpan &amp; Uji'+
+    '</div>'+
+    '<label>Kunci API *</label><input id="aiKunciInput" placeholder="AIza…" autocomplete="off" spellcheck="false">'+
+    '<label>Model</label><select id="aiModelInput">'+
+      ['gemini-2.0-flash','gemini-2.0-flash-lite','gemini-1.5-flash','gemini-1.5-pro']
+      .map(function(m){ return '<option>'+m+'</option>'; }).join('')+'</select>'+
+    '<div class="meta" style="margin-top:4px">Model <b>flash</b> paling cepat dan hemat kuota — disarankan.</div>'+
+    '<div class="aksi-baris" style="margin-top:14px">'+
+      '<button class="btn btn-utama" style="flex:1" onclick="simpanKunciAI()">💾 Simpan &amp; Uji</button>'+
+      '<button class="btn btn-sekunder" onclick="ujiKunciAI()">Uji Saja</button>'+
+    '</div>'+
+    '<div id="aiHasilUji" style="margin-top:12px"></div>');
+  ujiKunciAI();
+}
+function tampilHasilUjiAI(r){
+  var el=document.getElementById('aiHasilUji'); if(!el) return;
+  el.innerHTML='<div style="padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.6;background:'+
+    (r.siap?'var(--hijau-50)':'#FBEAE7')+';border-left:3px solid '+(r.siap?'var(--hijau-700)':'var(--merah)')+'">'+
+    (r.siap?'✅ ':'⚠️ ')+esc(r.pesan)+
+    (r.contohModel && r.contohModel.length
+      ? '<div class="meta" style="margin-top:6px">Model tersedia: '+esc(r.contohModel.join(', '))+'</div>' : '')+
+    '</div>';
+  var s=document.getElementById('aiStatusKunci');
+  if(s) s.textContent = r.siap ? ('Aktif · model '+(r.model||'-')) : 'Belum aktif';
+}
+function ujiKunciAI(){
+  var el=document.getElementById('aiHasilUji');
+  if(el) el.innerHTML='<div class="meta">Menguji kunci…</div>';
+  callApi('aiUjiKunci', {}).then(tampilHasilUjiAI)
+    .catch(function(e){ tampilHasilUjiAI({siap:false,pesan:e.message}); });
+}
+function simpanKunciAI(){
+  var k=(document.getElementById('aiKunciInput')||{}).value.trim();
+  if(!k) return toast('Tempel kunci API terlebih dahulu.', true);
+  tampilLoader(true,'Menyimpan & menguji kunci…');
+  callApi('aiSimpanKunci', { kunci:k, model:(document.getElementById('aiModelInput')||{}).value })
+    .then(function(r){
+      tampilLoader(false);
+      document.getElementById('aiKunciInput').value='';
+      AI_SIAP = r.siap;
+      tampilHasilUjiAI(r);
+      toast(r.siap ? 'Kunci tersimpan dan sah ✓' : 'Kunci tersimpan, tetapi belum sah.', !r.siap);
+    }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ==================== ZOOM LOGO ==================== */
+function zoomLogoAplikasi(){
+  var st=S.settings||{};
+  var src=st.logoUrl||'';
+  if(!src){
+    // tanpa logo: tampilkan emoji besar sebagai gantinya
+    var d=document.createElement('div');
+    d.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.88);display:flex;'+
+      'flex-direction:column;align-items:center;justify-content:center;cursor:zoom-out;gap:14px';
+    d.innerHTML='<div style="font-size:120px">'+esc(st.emoji||'🌴')+'</div>'+
+      '<div style="color:#fff;font-size:20px;font-weight:800">'+esc(st.judulAplikasi||'SawitGIS Mandiri')+'</div>'+
+      '<div style="color:#C6D6C8;font-size:13px">'+esc(st.namaPerusahaan||st.subjudul||'')+'</div>';
+    d.onclick=function(){ d.remove(); };
+    document.body.appendChild(d);
+    return;
+  }
+  zoomFoto(src, (st.judulAplikasi||'') + (st.namaPerusahaan?' — '+st.namaPerusahaan:''));
 }
 
 /* ==================== MULAI ==================== */
