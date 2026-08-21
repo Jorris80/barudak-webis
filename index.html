@@ -1396,6 +1396,35 @@ var MODE_DEMO = !ADA_GAS && !API_URL;         // file lokal → demo
 var TOKEN = '';
 var SESI = null; // {username, nama, peran}
 var OFFLINE = false; // status koneksi terkini (deteksi dari kegagalan/onLine)
+var GALAT_TERAKHIR = '';   // galat terakhir dari server, untuk diagnosa
+var WAKTU_LOGIN = 0;       // penanda kapan login terakhir berhasil
+
+/* Diagnosa cepat — ketik diagnosa() di Konsol peramban bila aplikasi
+   bermasalah. Menampilkan versi, mode, status sesi, dan galat terakhir. */
+function diagnosa(){
+  var d = {
+    versiAplikasi: (typeof VERSI_APP!=='undefined'?VERSI_APP:'?'),
+    versiBackend: (S && S.license && S.license.versiBackend) || '(tidak terbaca)',
+    mode: (typeof ADA_GAS!=='undefined' && ADA_GAS) ? 'Apps Script'
+          : ((typeof MODE_API!=='undefined' && MODE_API) ? 'PWA' : 'Demo'),
+    adaToken: !!TOKEN,
+    sesi: SESI ? (SESI.username+' / '+SESI.peran) : null,
+    hakAkses: SESI ? [SESI.AksesPerusahaan,SESI.AksesEstate,SESI.AksesDivisi].filter(Boolean).join(' / ')||'penuh' : '-',
+    offline: OFFLINE,
+    lisensi: (S && S.license) ? S.license.mode+' — '+S.license.pesan : '(tidak terbaca)',
+    jumlahBlok: (S && S.blocks) ? S.blocks.length : 0,
+    adaCache: !!bacaCache(),
+    antreTertunda: (typeof jumlahAntre==='function') ? jumlahAntre() : '-',
+    galatTerakhir: GALAT_TERAKHIR || '(tidak ada)'
+  };
+  console.table(d);
+  try{
+    var teks = Object.keys(d).map(function(k){ return k+': '+d[k]; }).join('\n');
+    salinTeks('DIAGNOSA SawitGIS\n'+teks);
+    toast('Hasil diagnosa disalin — tempel ke chat dukungan.');
+  }catch(e){}
+  return d;
+}
 try{ TOKEN = localStorage.getItem('sg_token') || ''; }catch(e){}
 
 // Daftarkan Service Worker HANYA saat di-host statis (tak bisa di iframe GAS)
@@ -1671,7 +1700,25 @@ function perbaruiStatusOffline(){
   }
 }
 
-function sesiHabis(){ bersihkanSesi(); }
+function sesiHabis(){
+  /* Token yang ditolak SEGERA setelah login berarti bukan sesi kedaluwarsa,
+     melainkan server tidak mengenali token yang baru saja diterbitkannya —
+     hampir selalu karena Code.gs belum diterbitkan ulang sebagai versi baru,
+     sehingga frontend baru berbicara dengan backend lama. */
+  var barusanLogin = WAKTU_LOGIN && (Date.now() - WAKTU_LOGIN) < 30000;
+  bersihkanSesi();
+  var el = document.getElementById('loginPesan');
+  if(!el) return;
+  el.className = 'galat';
+  if(barusanLogin){
+    el.innerHTML = '<b>Server menolak sesi yang baru dibuat.</b><br>' +
+      'Biasanya karena <b>Code.gs belum diterbitkan ulang</b>. Di editor Apps Script: ' +
+      'Deploy → Manage deployments → ikon pensil → Version: <b>New version</b> → Deploy. ' +
+      'Setelah itu muat ulang halaman ini.';
+  } else {
+    el.textContent = 'Sesi Anda telah berakhir. Silakan masuk kembali.';
+  }
+}
 
 /* ---------- Data contoh untuk mode demo (di luar GAS) ---------- */
 function dataDemo(){
@@ -2078,20 +2125,27 @@ function tampilLoader(on, teks){
 function muatData(ulang){
   if(ulang) tampilLoader(true, 'Menyegarkan data…');
   callApi('getAllData').then(function(d){
-    S = d; batasiDataAkses();
-    if(d.sesi) SESI = d.sesi;
-    simpanCache();
-    terapkanPengaturan();
-    terapkanPeran();
-    isiOpsiBlok();
-    renderSemua();
-    perbaruiStatusOffline();
+    /* Kegagalan saat menggambar TIDAK boleh dianggap gagal memuat data.
+       Sebelumnya galat kecil di salah satu render membuat aliran jatuh ke
+       blok catch, memunculkan pesan offline, lalu memantul ke layar login. */
+    S = d;
+    try{ batasiDataAkses(); }catch(e1){ console.error('batasiDataAkses:', e1); }
+    if(d && d.sesi) SESI = d.sesi;
+    try{ simpanCache(); }catch(e2){}
+    var gagal = [];
+    [['terapkanPengaturan',terapkanPengaturan],['terapkanPeran',terapkanPeran],
+     ['isiOpsiBlok',isiOpsiBlok],['renderSemua',renderSemua],
+     ['perbaruiStatusOffline',perbaruiStatusOffline]].forEach(function(f){
+      try{ f[1](); }catch(err){ gagal.push(f[0]+': '+err.message); console.error(f[0], err); }
+    });
     tampilLoader(false);
-    if(ulang) toast('Data terbaru dimuat ✓');
-    // bila ada antrean & kini online, tawarkan sinkron
+    if(gagal.length) toast('Sebagian tampilan gagal dimuat — ' + gagal[0], true);
+    else if(ulang) toast('Data terbaru dimuat ✓');
     if(!OFFLINE && jumlahAntre()>0) sinkronAntre(true);
   }).catch(function(e){
     if(e && e.sesiHabis){ tampilLoader(false); return; }   // sudah ditangani sesiHabis()
+    console.error('muatData gagal:', e);
+    GALAT_TERAKHIR = (e && e.message) ? e.message : String(e);
     // gagal & ada cache → buka mode offline
     var c = bacaCache();
     if(c){
@@ -2099,7 +2153,8 @@ function muatData(ulang){
       try{ SESI = JSON.parse(localStorage.getItem('sg_sesi')||'null') || SESI; }catch(er){}
       terapkanPengaturan(); terapkanPeran(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline();
       tampilLoader(false);
-      toast('Offline — menampilkan data tersimpan terakhir.', true);
+      toast('Tidak dapat menghubungi server — menampilkan data tersimpan. Penyebab: ' +
+            String(GALAT_TERAKHIR).slice(0,90), true);
     } else {
       tampilLoader(false);
       toast('Gagal memuat: ' + e.message, true);
@@ -6143,6 +6198,7 @@ function prosesLogin(){
   pesan.className=''; pesan.textContent='';
   callApi('login', { username:u, password:p }).then(function(r){
     TOKEN = r.token;
+    WAKTU_LOGIN = Date.now();   // untuk mengenali token yang ditolak seketika
     SESI = { username:r.username, nama:r.nama, peran:r.peran, AksesPerusahaan:r.AksesPerusahaan, AksesEstate:r.AksesEstate, AksesDivisi:r.AksesDivisi };
     try{ localStorage.setItem('sg_token', TOKEN); }catch(e){}
     document.getElementById('layarLogin').style.display='none';
@@ -6267,6 +6323,63 @@ function formPengguna(username){
         '</select></div>'+
       '<div><label>Hak Cuti Tahunan (hari)</label><input type="number" id="puHakCuti" value="'+esc(u&&u.HakCutiTahunan!==undefined?u.HakCutiTahunan:12)+'"></div>'+
     '</div>'+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Data Pribadi &amp; Identitas</h4>'+
+    '<div class="grid2">'+
+      '<div><label>Nama Panggilan</label><input id="puPanggilan" value="'+esc(u?u.NamaPanggilan:'')+'"></div>'+
+      '<div><label>NIK (KTP)</label><input id="puNIK" value="'+esc(u?u.NIK:'')+'" inputmode="numeric" maxlength="16"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Tempat Lahir</label><input id="puTmpLahir" value="'+esc(u?u.TempatLahir:'')+'"></div>'+
+      '<div><label>Tanggal Lahir</label><input type="date" id="puTglLahir" value="'+esc(u?u.TanggalLahir:'')+'"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Jenis Kelamin</label><select id="puGender">'+
+        ['','Laki-laki','Perempuan'].map(function(x){ return '<option'+((u&&u.JenisKelamin===x)?' selected':'')+'>'+x+'</option>'; }).join('')+'</select></div>'+
+      '<div><label>Agama</label><select id="puAgama">'+
+        ['','Islam','Kristen Protestan','Katolik','Hindu','Buddha','Konghucu','Lainnya']
+        .map(function(x){ return '<option'+((u&&u.Agama===x)?' selected':'')+'>'+x+'</option>'; }).join('')+'</select></div>'+
+    '</div>'+
+    '<label>Alamat sesuai KTP</label><textarea id="puAlamatKTP" rows="2">'+esc(u?u.AlamatKTP:'')+'</textarea>'+
+    '<label>Alamat Domisili</label><textarea id="puAlamatDom" rows="2">'+esc(u?u.AlamatDomisili:'')+'</textarea>'+
+    '<div class="grid2">'+
+      '<div><label>Status Pernikahan</label><select id="puNikah">'+
+        ['','Belum Menikah','Menikah','Cerai Hidup','Cerai Mati']
+        .map(function(x){ return '<option'+((u&&u.StatusPernikahan===x)?' selected':'')+'>'+x+'</option>'; }).join('')+'</select></div>'+
+      '<div><label>Jumlah Tanggungan</label><input type="number" id="puTanggungan" value="'+esc(u&&u.JumlahTanggungan!==undefined?u.JumlahTanggungan:'')+'" min="0"></div>'+
+    '</div>'+
+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Kontak Darurat</h4>'+
+    '<div class="grid2">'+
+      '<div><label>Nama</label><input id="puKdNama" value="'+esc(u?u.KontakDaruratNama:'')+'"></div>'+
+      '<div><label>Hubungan</label><input id="puKdHub" value="'+esc(u?u.KontakDaruratHubungan:'')+'" placeholder="cth: Istri, Kakak"></div>'+
+    '</div>'+
+    '<label>Nomor Telepon Darurat</label><input id="puKdTelp" value="'+esc(u?u.KontakDaruratTelepon:'')+'" inputmode="tel">'+
+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Informasi Pekerjaan</h4>'+
+    '<div class="grid2">'+
+      '<div><label>NIK / ID Pegawai</label><input id="puNIP" value="'+esc(u?u.NIP:'')+'"></div>'+
+      '<div><label>Departemen / Divisi</label><input id="puDept" value="'+esc(u?u.Departemen:'')+'"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Tanggal Bergabung</label><input type="date" id="puGabung" value="'+esc(u?u.TanggalBergabung:'')+'"></div>'+
+      '<div><label>Status Kepegawaian</label><select id="puStatusPeg">'+
+        ['','Tetap','Kontrak','Paruh Waktu','Harian Lepas','Magang']
+        .map(function(x){ return '<option'+((u&&u.StatusKepegawaian===x)?' selected':'')+'>'+x+'</option>'; }).join('')+'</select></div>'+
+    '</div>'+
+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Administratif &amp; Keuangan</h4>'+
+    '<div class="meta" style="margin-bottom:6px">🔒 Data ini hanya terlihat oleh pemiliknya sendiri dan admin.</div>'+
+    '<label>NPWP</label><input id="puNPWP" value="'+esc(u?u.NPWP:'')+'">'+
+    '<div class="grid2">'+
+      '<div><label>Nama Bank</label><input id="puBank" value="'+esc(u?u.BankNama:'')+'" placeholder="cth: BRI"></div>'+
+      '<div><label>Nomor Rekening</label><input id="puRek" value="'+esc(u?u.BankRekening:'')+'" inputmode="numeric"></div>'+
+    '</div>'+
+    '<label>Rekening Atas Nama</label><input id="puRekNama" value="'+esc(u?u.BankAtasNama:'')+'">'+
+    '<div class="grid2">'+
+      '<div><label>BPJS Kesehatan</label><input id="puBpjsKes" value="'+esc(u?u.BPJSKesehatan:'')+'" inputmode="numeric"></div>'+
+      '<div><label>BPJS Ketenagakerjaan</label><input id="puBpjsTk" value="'+esc(u?u.BPJSKetenagakerjaan:'')+'" inputmode="numeric"></div>'+
+    '</div>'+
+
     '<h4 style="margin:14px 0 6px;font-size:13px">Cuti Khusus / Tambahan</h4>'+
     '<div class="meta" style="margin-bottom:6px">Jatah di luar cuti tahunan — misalnya penghargaan masa kerja. '+
       'Dipakai lebih dulu sebelum cuti tahunan, dan hangus bila melewati batas berlaku.</div>'+
@@ -6350,6 +6463,18 @@ function simpanPengguna(existing){
     CutiKhusus: Number((document.getElementById('puCutiKhusus')||{value:0}).value)||0,
     CutiKhususBerlakuSampai: (document.getElementById('puCutiKhususSampai')||{value:''}).value,
     CutiKhususKeterangan: (document.getElementById('puCutiKhususKet')||{value:''}).value.trim(),
+    NamaPanggilan: nilaiEl('puPanggilan'), NIK: nilaiEl('puNIK'),
+    TempatLahir: nilaiEl('puTmpLahir'), TanggalLahir: nilaiEl('puTglLahir'),
+    JenisKelamin: nilaiEl('puGender'), Agama: nilaiEl('puAgama'),
+    AlamatKTP: nilaiEl('puAlamatKTP'), AlamatDomisili: nilaiEl('puAlamatDom'),
+    StatusPernikahan: nilaiEl('puNikah'), JumlahTanggungan: nilaiEl('puTanggungan'),
+    KontakDaruratNama: nilaiEl('puKdNama'), KontakDaruratHubungan: nilaiEl('puKdHub'),
+    KontakDaruratTelepon: nilaiEl('puKdTelp'),
+    NIP: nilaiEl('puNIP'), Departemen: nilaiEl('puDept'),
+    TanggalBergabung: nilaiEl('puGabung'), StatusKepegawaian: nilaiEl('puStatusPeg'),
+    NPWP: nilaiEl('puNPWP'), BankNama: nilaiEl('puBank'),
+    BankRekening: nilaiEl('puRek'), BankAtasNama: nilaiEl('puRekNama'),
+    BPJSKesehatan: nilaiEl('puBpjsKes'), BPJSKetenagakerjaan: nilaiEl('puBpjsTk'),
     password: document.getElementById('puPass').value
   };
   if(!p.Username) return toast('Username wajib diisi.', true);
@@ -8878,6 +9003,9 @@ function renderMonMasalah(){
               (x.Status !== 'Selesai' ? '<button class="btn btn-utama btn-kecil" onclick="ubahStatusMonMasalah(\'' + x.ID + '\',\'Selesai\')">🟢 Set Selesai</button>' : '') +
             '</div>' +
             '<button class="btn btn-sekunder btn-kecil" onclick="formMasalah(\'' + x.ID + '\')">✏️ Edit Detail</button>' +
+          (SESI && SESI.peran === 'admin'
+            ? '<button class="btn btn-bahaya btn-kecil" onclick="hapusMonMasalah(\'' + x.ID + '\')">🗑 Hapus</button>'
+            : '') +
           '</div>'
         : '') +
       '</div>';
@@ -8888,13 +9016,45 @@ function renderMonMasalah(){
 }
 
 function ubahStatusMonMasalah(id, statusBaru){
-  var e = S.issues.find(function(x){ return String(x.ID) === String(id); });
+  var e = (S.issues||[]).find(function(x){ return String(x.ID) === String(id); });
   if(!e) return;
-  e.Status = statusBaru;
-  callApi('addIssue', e).then(function(){
+  /* Sebelumnya memakai 'addIssue' yang MENAMBAH baris baru, sehingga laporan
+     lama tetap muncul dan datanya berganda. Yang benar 'updateIssue'. */
+  tampilLoader(true, 'Memperbarui status…');
+  callApi('updateIssue', {
+    id: e.ID, Status: statusBaru,
+    DiselesaikanPada: statusBaru === 'Selesai' ? hariISO(new Date()) : ''
+  }).then(function(){
+    e.Status = statusBaru;
+    tampilLoader(false);
     toast('Status masalah diperbarui ke: ' + statusBaru + ' ✓');
     renderMonMasalah();
+    try{ renderMasalah(); }catch(err){}
     perbaruiBadge();
+  }).catch(function(err){
+    tampilLoader(false);
+    toast('Gagal memperbarui: ' + err.message, true);
+  });
+}
+
+/** Hapus laporan masalah — khusus admin. */
+function hapusMonMasalah(id){
+  if(!SESI || SESI.peran !== 'admin') return toast('Hanya admin yang dapat menghapus laporan.', true);
+  var e = (S.issues||[]).find(function(x){ return String(x.ID) === String(id); });
+  if(!e) return;
+  if(!confirm('Hapus laporan masalah ini?\n\n' + (e.JenisMasalah||'') + ' — blok ' + (e.IDBlok||'') +
+              '\nTanggal ' + (e.Tanggal||'') + '\n\nTindakan ini tidak dapat dibatalkan.')) return;
+  tampilLoader(true, 'Menghapus laporan…');
+  callApi('deleteIssue', { id: id }).then(function(){
+    S.issues = (S.issues||[]).filter(function(x){ return String(x.ID) !== String(id); });
+    tampilLoader(false);
+    toast('Laporan masalah dihapus ✓');
+    renderMonMasalah();
+    try{ renderMasalah(); }catch(err){}
+    perbaruiBadge();
+  }).catch(function(err){
+    tampilLoader(false);
+    toast('Gagal menghapus: ' + err.message, true);
   });
 }
 
@@ -11651,7 +11811,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.4.1';
+var VERSI_APP = '1.5.1';
 var TANGGAL_BUILD = '2026-08-19';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -12865,38 +13025,38 @@ function cetakWf(mode){
   var realisasi = '';
   if(d.Jenis==='sppd' && !umSaja){
     realisasi =
-      '<div style="margin-top:26px;page-break-inside:avoid">'+
-      '<h3 style="font-size:13px;margin:0 0 6px">REALISASI PERJALANAN DINAS</h3>'+
-      '<div style="font-size:10px;color:#666;margin-bottom:8px">Diisi setelah perjalanan dinas selesai.</div>'+
-      '<table border="1" cellpadding="7" style="width:100%;border-collapse:collapse">'+
+      '<div style="margin-top:12px;page-break-inside:avoid">'+
+      '<h3 class="bagian" style="margin:0 0 4px">REALISASI PERJALANAN DINAS</h3>'+
+      '<div style="font-size:8.4px;color:#777;margin-bottom:5px">Diisi setelah perjalanan dinas selesai.</div>'+
+      '<table class="isian" style="width:100%">'+
         '<tr>'+
-          '<td style="width:30%;color:#555">Tanggal Berangkat</td>'+
-          '<td style="width:20%;height:26px"></td>'+
-          '<td style="width:30%;color:#555">Tanggal Kembali</td>'+
-          '<td style="width:20%"></td>'+
+          '<td class="lbl" style="width:26%">Tanggal Berangkat</td>'+
+          '<td style="width:24%;height:20px"></td>'+
+          '<td class="lbl" style="width:26%">Tanggal Kembali</td>'+
+          '<td style="width:24%"></td>'+
         '</tr>'+
         '<tr>'+
-          '<td style="color:#555">Tempat/Instansi yang Dikunjungi</td>'+
-          '<td colspan="3" style="height:26px"></td>'+
+          '<td class="lbl">Tempat / Instansi yang Dikunjungi</td>'+
+          '<td colspan="3" style="height:20px"></td>'+
         '</tr>'+
         '<tr>'+
-          '<td style="color:#555">Catatan Hasil Perjalanan</td>'+
-          '<td colspan="3" style="height:46px"></td>'+
+          '<td class="lbl">Catatan Hasil Perjalanan</td>'+
+          '<td colspan="3" style="height:34px"></td>'+
         '</tr>'+
       '</table>'+
-      '<table style="width:100%;margin-top:16px;border-collapse:collapse">'+
+      '<table style="width:100%;margin-top:8px;border-collapse:collapse">'+
         '<tr>'+
           '<td style="width:50%;text-align:center;vertical-align:top;padding:6px">'+
             '<div style="font-size:11px;color:#333">Pejabat Setempat yang Dikunjungi</div>'+
             '<div style="font-size:10px;color:#777;margin-top:2px">(tanda tangan &amp; cap basah)</div>'+
-            '<div style="height:88px;border:1px dashed #bbb;margin:8px 14px 6px"></div>'+
+            '<div style="height:56px;border:1px dashed #bbb;margin:5px 12px 4px"></div>'+
             '<div style="border-top:1px solid #333;margin:0 30px 4px"></div>'+
             '<div style="font-size:10px;color:#666">Nama &amp; Jabatan</div>'+
           '</td>'+
           '<td style="width:50%;text-align:center;vertical-align:top;padding:6px">'+
             '<div style="font-size:11px;color:#333">Pelaksana Perjalanan Dinas</div>'+
             '<div style="font-size:10px;color:#777;margin-top:2px">(tanda tangan)</div>'+
-            '<div style="height:88px;margin:8px 14px 6px"></div>'+
+            '<div style="height:56px;margin:5px 12px 4px"></div>'+
             '<div style="border-top:1px solid #333;margin:0 30px 4px"></div>'+
             '<div style="font-size:11px;font-weight:bold">'+esc(d.PemohonNama)+'</div>'+
           '</td>'+
@@ -12933,7 +13093,9 @@ function cetakWf(mode){
       'berstatus Disetujui dan tercatat pada sistem.</div>'+
     kakiCetak(d.NoDok);
 
-  bukaCetak(d.NoDok, isi);
+  /* SPPD dicetak dalam mode ringkas agar seluruh isinya — termasuk kolom
+     realisasi dan cap basah — muat dalam SATU lembar A4. */
+  bukaCetak(d.NoDok, isi, d.Jenis==='sppd' && !umSaja ? 'ringkas' : '');
 }
 
 
@@ -13526,23 +13688,38 @@ function keteranganLibur(iso){
 }
 
 /* ==================== PROFIL PENGGUNA ==================== */
-function bukaProfil(){
+function bukaProfil(username){
   if(!SESI) return;
   tampilLoader(true,'Memuat profil…');
-  Promise.all([
-    callApi('listUsers', {}).catch(function(){ return []; }),
-    callApi('previewCuti', {}).catch(function(){ return null; })
-  ]).then(function(h){
+  callApi('getProfil', username?{username:username}:{}).then(function(u){
     tampilLoader(false);
-    var users=h[0]||[], cuti=h[1];
-    var u=users.filter(function(x){
-      return String(x.Username).toLowerCase()===String(SESI.username).toLowerCase(); })[0] || {
-      Username:SESI.username, Nama:SESI.nama, Peran:SESI.peran };
-    PROFIL={ user:u, cuti:cuti&&cuti.ringkas ? cuti.ringkas : null };
+    PROFIL={ user:u, cuti:u.cuti||null };
     gambarProfil();
   }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
 }
 var PROFIL=null;
+
+/* Kartu profil hanya ditampilkan bila ada isinya, supaya tidak penuh baris kosong. */
+function kartuProfil(judul, pasangan, catatan){
+  var isi = pasangan.map(function(p){ return barisProfil(p[0], p[1]?esc(p[1]):''); }).join('');
+  if(!isi) return '';
+  return '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">'+judul+'</b>'+
+    '<div style="margin-top:6px">'+isi+'</div>'+
+    (catatan?'<div class="meta" style="margin-top:8px">🔒 '+esc(catatan)+'</div>':'')+'</div>';
+}
+function masaKerja(tglMulai){
+  if(!tglMulai) return '';
+  var a=new Date(String(tglMulai).slice(0,10)+'T00:00:00');
+  if(isNaN(a)) return '';
+  var kini=new Date();
+  var bulan=(kini.getFullYear()-a.getFullYear())*12 + (kini.getMonth()-a.getMonth());
+  if(kini.getDate() < a.getDate()) bulan--;
+  if(bulan<0) return '';
+  var th=Math.floor(bulan/12), bl=bulan%12;
+  return (th?th+' tahun':'') + (th&&bl?' ':'') + (bl?bl+' bulan':'') || 'kurang dari 1 bulan';
+}
+
+function nilaiEl(id){ var e=document.getElementById(id); return e ? String(e.value||'').trim() : ''; }
 
 function barisProfil(label, nilai){
   if(nilai===''||nilai===null||nilai===undefined) return '';
@@ -13570,18 +13747,6 @@ function gambarProfil(){
       (u.Jabatan?'<div style="margin-top:6px"><span class="chip hijau">'+esc(u.Jabatan)+'</span></div>':'')+
     '</div>'+
 
-    '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Data Kepegawaian</b><div style="margin-top:6px">'+
-      barisProfil('Nama lengkap', esc(u.Nama||'-'))+
-      barisProfil('Jabatan', esc(u.Jabatan||'-'))+
-      barisProfil('Level struktur', u.Level?esc(u.Level):'-')+
-      barisProfil('Lokasi kerja', esc(u.LokasiKerja||'Kebun')+
-        '<div class="meta" style="font-size:11px">'+((u.LokasiKerja==='HO')
-          ? 'Sabtu &amp; Minggu tidak memotong cuti' : 'Hanya Minggu yang tidak memotong cuti')+'</div>')+
-      barisProfil('Atasan', esc(u.Atasan||'-'))+
-      barisProfil('Peran aplikasi', esc(peran))+
-      barisProfil('Cakupan akses', akses ? esc(akses) : 'Seluruh unit')+
-    '</div></div>'+
-
     (c ? '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Hak Cuti '+esc(c.tahun)+'</b>'+
       '<div class="kpi-grid" style="margin-top:8px;grid-template-columns:repeat(3,1fr)">'+
         kpiKotak('Jatah', c.hak+' hari', '#1565C0')+
@@ -13603,9 +13768,39 @@ function gambarProfil(){
         : '')+
       '</div>' : '')+
 
+    kartuProfil('Data Pribadi &amp; Identitas', [
+      ['Nama lengkap', u.Nama], ['Nama panggilan', u.NamaPanggilan],
+      ['NIK (KTP)', u.NIK], ['Tempat, tanggal lahir',
+        [u.TempatLahir, u.TanggalLahir?fmtTgl(u.TanggalLahir):''].filter(Boolean).join(', ')],
+      ['Jenis kelamin', u.JenisKelamin], ['Agama', u.Agama],
+      ['Alamat sesuai KTP', u.AlamatKTP], ['Alamat domisili', u.AlamatDomisili],
+      ['Status pernikahan', u.StatusPernikahan],
+      ['Jumlah tanggungan', u.JumlahTanggungan!==''&&u.JumlahTanggungan!==undefined?u.JumlahTanggungan+' orang':'']
+    ])+
+    kartuProfil('Informasi Pekerjaan', [
+      ['NIK / ID Pegawai', u.NIP], ['Jabatan', u.Jabatan], ['Departemen / divisi', u.Departemen],
+      ['Level struktur', u.Level],
+      ['Lokasi kerja', u.LokasiKerja ? u.LokasiKerja +
+        (u.LokasiKerja==='HO' ? ' — Sabtu & Minggu tidak memotong cuti'
+                              : ' — hanya Minggu yang tidak memotong cuti') : ''],
+      ['Tanggal bergabung', u.TanggalBergabung?fmtTgl(u.TanggalBergabung):''],
+      ['Masa kerja', masaKerja(u.TanggalBergabung)],
+      ['Status kepegawaian', u.StatusKepegawaian], ['Atasan langsung', u.Atasan],
+      ['Peran aplikasi', peran], ['Cakupan akses', akses||'Seluruh unit']
+    ])+
+    kartuProfil('Administratif &amp; Keuangan', [
+      ['NPWP', u.NPWP], ['Bank', u.BankNama], ['Nomor rekening', u.BankRekening],
+      ['Atas nama', u.BankAtasNama],
+      ['BPJS Kesehatan', u.BPJSKesehatan], ['BPJS Ketenagakerjaan', u.BPJSKetenagakerjaan]
+    ], u.bolehPenuh ? '' : 'Sebagian nomor disamarkan karena bukan profil Anda sendiri.')+
+
     '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Kontak</b><div style="margin-top:6px">'+
       barisProfil('Email', u.Email?esc(u.Email):'<span style="color:var(--merah)">belum diisi</span>')+
       barisProfil('WhatsApp', u.NomorWA?esc(u.NomorWA):'<span style="color:var(--merah)">belum diisi</span>')+
+      barisProfil('Kontak darurat', u.KontakDaruratNama
+        ? esc(u.KontakDaruratNama)+(u.KontakDaruratHubungan?' ('+esc(u.KontakDaruratHubungan)+')':'')+
+          (u.KontakDaruratTelepon?'<div class="meta" style="font-size:11px">'+esc(u.KontakDaruratTelepon)+'</div>':'')
+        : '')+
       ((u.Email||u.NomorWA)?'':'<div class="meta" style="margin-top:6px;color:var(--merah)">Lengkapi kontak agar dapat menerima pemberitahuan persetujuan dokumen.</div>')+
     '</div></div>'+
 
@@ -13679,6 +13874,26 @@ function gayaCetak(){
       'font-size:8.5px;color:#7A857D;display:flex;justify-content:space-between}'+
     '.catatan{background:#F5F8F5;border-left:3px solid #2E7D46;padding:7px 10px;'+
       'font-size:10px;border-radius:0 5px 5px 0;margin:8px 0;page-break-inside:avoid}'+
+    /* Mode ringkas: dipakai dokumen yang wajib muat dalam satu halaman A4,
+       mis. Surat Perjalanan Dinas yang harus ditandatangani sebagai satu lembar. */
+    'body.ringkas{font-size:9.6px}'+
+    'body.ringkas @page{margin:10mm}'+
+    'body.ringkas .kop{padding-bottom:6px;margin-bottom:9px}'+
+    'body.ringkas .kop .nm{font-size:14px}'+
+    'body.ringkas .judul{font-size:13px}'+
+    'body.ringkas .subjudul{margin-bottom:8px}'+
+    'body.ringkas .unitbar{margin-bottom:9px}'+
+    'body.ringkas .unitbar div{padding:4px 8px}'+
+    'body.ringkas .unitbar .v{font-size:9.6px}'+
+    'body.ringkas h3.bagian{margin:9px 0 4px;font-size:10px;padding-bottom:2px}'+
+    'body.ringkas table.data td{padding:3px 7px}'+
+    'body.ringkas table.data th{padding:4px 7px;font-size:8.5px}'+
+    'body.ringkas .catatan{padding:5px 8px;font-size:8.6px;margin:6px 0}'+
+    'body.ringkas .kaki{margin-top:10px;padding-top:5px;font-size:7.6px}'+
+    /* Tabel isian: seluruh sel bergaris supaya jelas mana yang harus diisi tangan. */
+    'table.isian{border:1px solid #333;border-collapse:collapse}'+
+    'table.isian td{border:1px solid #333;padding:5px 8px;vertical-align:middle}'+
+    'table.isian td.lbl{background:#F5F8F5;color:#333;font-size:9.6px}'+
     '</style>';
 }
 
@@ -13715,11 +13930,11 @@ function kakiCetak(catatan){
 }
 
 /** Buka jendela cetak berisi dokumen lengkap. */
-function bukaCetak(judulTab, isiHTML){
+function bukaCetak(judulTab, isiHTML, kelasBadan){
   var w = window.open('','_blank');
   if(!w){ toast('Popup diblokir — izinkan popup untuk mencetak.', true); return null; }
   w.document.write('<html><head><meta charset="utf-8"><title>'+esc(judulTab)+'</title>'+
-    gayaCetak()+'</head><body>'+isiHTML+'</body></html>');
+    gayaCetak()+'</head><body'+(kelasBadan?' class="'+kelasBadan+'"':'')+'>'+isiHTML+'</body></html>');
   w.document.close();
   setTimeout(function(){ try{ w.print(); }catch(e){} }, 450);
   return w;
@@ -13736,32 +13951,71 @@ function cetakProfil(){
   function br(l,v){ return v?('<tr><td class="lbl">'+l+'</td><td class="val">'+v+'</td></tr>'):''; }
   var kh = c && c.khusus ? c.khusus : null;
 
-  var isi = kopCetak('KARTU PROFIL KARYAWAN', '', null)+
+  var isi = kopCetak('DATA KARYAWAN',
+      (u.NIP ? 'Nomor Induk Pegawai: '+u.NIP : '@'+u.Username), null)+
     '<div class="blokhindar" style="display:flex;gap:16px;align-items:center;margin-bottom:14px;'+
       'border:1px solid #C9D6CD;border-radius:8px;padding:12px 14px;background:#F5F8F5">'+
       foto+
-      '<div><div style="font-size:17px;font-weight:800;color:#123B22">'+esc(u.Nama||u.Username)+'</div>'+
-      '<div style="font-size:11px;color:#5F6B63;margin-top:2px">@'+esc(u.Username)+' · '+esc(peran)+'</div>'+
-      (u.Jabatan?'<div style="font-size:12px;font-weight:700;color:#2E7D46;margin-top:4px">'+esc(u.Jabatan)+'</div>':'')+
+      '<div style="flex:1"><div style="font-size:17px;font-weight:800;color:#123B22">'+esc(u.Nama||u.Username)+
+        (u.NamaPanggilan?' <span style="font-size:11px;font-weight:400;color:#5F6B63">('+esc(u.NamaPanggilan)+')</span>':'')+'</div>'+
+      (u.Jabatan?'<div style="font-size:12.5px;font-weight:700;color:#2E7D46;margin-top:3px">'+esc(u.Jabatan)+
+        (u.Departemen?' — '+esc(u.Departemen):'')+'</div>':'')+
+      '<div style="font-size:10px;color:#5F6B63;margin-top:4px">'+
+        [u.NIP?'NIP '+esc(u.NIP):'', u.StatusKepegawaian?esc(u.StatusKepegawaian):'',
+         u.LokasiKerja?esc(u.LokasiKerja):'', masaKerja(u.TanggalBergabung)?'Masa kerja '+esc(masaKerja(u.TanggalBergabung)):'']
+        .filter(Boolean).join(' &nbsp;·&nbsp; ')+'</div>'+
       '</div></div>'+
 
-    '<h3 class="bagian">DATA KEPEGAWAIAN</h3>'+
+    '<h3 class="bagian">DATA PRIBADI &amp; IDENTITAS</h3>'+
     '<table class="data">'+
       br('Nama lengkap', esc(u.Nama||'-'))+
-      br('Nama pengguna', esc(u.Username))+
-      br('Jabatan', esc(u.Jabatan||'-'))+
-      br('Level struktur', u.Level?esc(u.Level):'-')+
-      br('Lokasi kerja', esc(u.LokasiKerja||'Kebun'))+
-      br('Atasan langsung', esc(u.Atasan||'-'))+
-      br('Peran aplikasi', esc(peran))+
-      br('Cakupan akses', esc([u.AksesPerusahaan,u.AksesEstate,u.AksesDivisi].filter(Boolean).join(' / ')||'Seluruh unit'))+
+      br('Nama panggilan', esc(u.NamaPanggilan))+
+      br('NIK (KTP)', esc(u.NIK))+
+      br('Tempat, tanggal lahir', esc([u.TempatLahir, u.TanggalLahir?fmtTgl(u.TanggalLahir):''].filter(Boolean).join(', ')))+
+      br('Jenis kelamin', esc(u.JenisKelamin))+
+      br('Agama', esc(u.Agama))+
+      br('Alamat sesuai KTP', esc(u.AlamatKTP))+
+      br('Alamat domisili', esc(u.AlamatDomisili))+
+      br('Status pernikahan', esc(u.StatusPernikahan))+
+      br('Jumlah tanggungan', u.JumlahTanggungan!==''&&u.JumlahTanggungan!==undefined?esc(u.JumlahTanggungan)+' orang':'')+
     '</table>'+
 
     '<h3 class="bagian">KONTAK</h3>'+
     '<table class="data">'+
       br('Email', esc(u.Email||'-'))+
       br('WhatsApp', esc(u.NomorWA||'-'))+
+      br('Kontak darurat', esc([u.KontakDaruratNama, u.KontakDaruratHubungan?'('+u.KontakDaruratHubungan+')':'',
+          u.KontakDaruratTelepon].filter(Boolean).join(' ')))+
     '</table>'+
+
+    '<h3 class="bagian">INFORMASI PEKERJAAN</h3>'+
+    '<table class="data">'+
+      br('NIK / ID Pegawai', esc(u.NIP))+
+      br('Jabatan', esc(u.Jabatan||'-'))+
+      br('Departemen / divisi', esc(u.Departemen))+
+      br('Level struktur', u.Level?esc(u.Level):'')+
+      br('Lokasi kerja', esc(u.LokasiKerja||'Kebun'))+
+      br('Tanggal bergabung', u.TanggalBergabung?esc(fmtTgl(u.TanggalBergabung)):'')+
+      br('Masa kerja', esc(masaKerja(u.TanggalBergabung)))+
+      br('Status kepegawaian', esc(u.StatusKepegawaian))+
+      br('Atasan langsung', esc(u.Atasan||'-'))+
+      br('Peran aplikasi', esc(peran))+
+      br('Cakupan akses', esc([u.AksesPerusahaan,u.AksesEstate,u.AksesDivisi].filter(Boolean).join(' / ')||'Seluruh unit'))+
+    '</table>'+
+
+    ((u.NPWP||u.BankRekening||u.BPJSKesehatan||u.BPJSKetenagakerjaan)
+      ? '<h3 class="bagian">ADMINISTRATIF &amp; KEUANGAN</h3>'+
+        '<table class="data">'+
+          br('NPWP', esc(u.NPWP))+
+          br('Bank', esc(u.BankNama))+
+          br('Nomor rekening', esc(u.BankRekening))+
+          br('Atas nama', esc(u.BankAtasNama))+
+          br('BPJS Kesehatan', esc(u.BPJSKesehatan))+
+          br('BPJS Ketenagakerjaan', esc(u.BPJSKetenagakerjaan))+
+        '</table>'+
+        '<div class="catatan">Berkas ini memuat data pribadi dan keuangan karyawan. '+
+        'Simpan dan edarkan hanya kepada pihak yang berkepentingan.</div>'
+      : '')+
 
     (c ? '<h3 class="bagian">HAK CUTI TAHUN '+esc(c.tahun)+'</h3>'+
       '<div class="kpirow">'+
@@ -13784,15 +14038,26 @@ function cetakProfil(){
         ' Tanggal merah nasional tidak memotong hak cuti.</div>'
       : '')+
 
-    '<div class="ttdrow">'+
+    '<div class="catatan" style="margin-top:14px">Data pada dokumen ini dihimpun dari sistem kepegawaian '+
+      esc((S.settings||{}).namaPerusahaan||'perusahaan')+' dan dinyatakan benar sesuai catatan pada tanggal pencetakan.</div>'+
+    '<table style="width:100%;margin-top:14px;page-break-inside:avoid"><tr>'+
+      '<td style="width:50%"></td>'+
+      '<td style="width:50%;text-align:center;font-size:10.5px">'+
+        esc((S.settings||{}).kotaSurat||'……………………')+', '+
+        new Date().toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})+'</td>'+
+    '</tr></table>'+
+    '<div class="ttdrow" style="margin-top:4px">'+
       '<div class="ttdkol"><div style="font-size:10.5px">Karyawan yang bersangkutan</div>'+
-        '<div class="ttdgaris"></div><b>'+esc(u.Nama||u.Username)+'</b></div>'+
+        '<div class="ttdgaris"></div><b>'+esc(u.Nama||u.Username)+'</b>'+
+        (u.NIP?'<div style="font-size:9.5px;color:#5F6B63">NIP '+esc(u.NIP)+'</div>':'')+'</div>'+
       '<div class="ttdkol"><div style="font-size:10.5px">Bagian Kepegawaian / HRD</div>'+
-        '<div class="ttdgaris"></div><span style="font-size:10px;color:#5F6B63">Nama &amp; tanda tangan</span></div>'+
+        '<div class="ttdgaris"></div><span style="font-size:10px;color:#5F6B63">Nama, jabatan &amp; cap perusahaan</span></div>'+
     '</div>'+
-    kakiCetak('Kartu profil karyawan — bersifat internal perusahaan.');
+    kakiCetak('Data karyawan — bersifat rahasia dan hanya untuk keperluan internal.');
 
-  bukaCetak('Profil — '+(u.Nama||u.Username), isi);
+  /* Mode ringkas agar dokumen data karyawan padat — biasanya cukup 2 lembar
+     meski seluruh bagian terisi. */
+  bukaCetak('Data Karyawan — '+(u.Nama||u.Username), isi, 'ringkas');
 }
 
 /* ==================== MULAI ==================== */
