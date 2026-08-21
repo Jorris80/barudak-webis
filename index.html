@@ -733,6 +733,7 @@
       <button onclick="bukaHalaman('lacak')"><span class="ic">🛰️</span>Lacak GPS</button>
       <button class="adminOnly" onclick="bukaHalaman('pengaturan')"><span class="ic">⚙️</span>Pengaturan</button>
       <button class="adminOnly" id="menuPengguna" onclick="bukaHalaman('pengguna')"><span class="ic">👥</span>Pengguna</button>
+      <button class="adminOnly" onclick="bukaKelolaHakCuti()"><span class="ic">🌴</span>Kelola Hak Cuti</button>
       <button class="adminOnly" onclick="bukaHariLibur()"><span class="ic">📅</span>Hari Libur Nasional</button>
       <button class="adminOnly" onclick="bukaCadangan()"><span class="ic">💾</span>Cadangkan Data</button>
     </div>
@@ -11811,7 +11812,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.5.1';
+var VERSI_APP = '1.6.0';
 var TANGGAL_BUILD = '2026-08-19';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -14058,6 +14059,163 @@ function cetakProfil(){
   /* Mode ringkas agar dokumen data karyawan padat — biasanya cukup 2 lembar
      meski seluruh bagian terisi. */
   bukaCetak('Data Karyawan — '+(u.Nama||u.Username), isi, 'ringkas');
+}
+
+
+/* ==================== KELOLA HAK CUTI (ADMIN) ==================== */
+var HAKCUTI = [];
+
+function bukaKelolaHakCuti(){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin yang dapat mengelola hak cuti.', true);
+  bukaLembar('<h3>🌴 Kelola Hak Cuti Karyawan</h3>'+
+    '<div class="meta">Koreksi saldo yang keliru, beri jatah tambahan, atau reset kuota saat pergantian tahun. '+
+    'Setiap perubahan tercatat di Log Aktivitas beserta nilai sebelum dan sesudahnya.</div>'+
+    '<div class="filter-bar" style="margin-top:12px">'+
+      '<input type="search" id="hcCari" placeholder="Cari nama karyawan…" oninput="gambarHakCuti()">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="muatHakCuti()">⟳ Segarkan</button>'+
+      '<button class="btn btn-bahaya btn-kecil" onclick="formResetCuti()">🔄 Reset Tahun Baru</button>'+
+    '</div>'+
+    '<div id="ringkasHakCuti"></div>'+
+    '<div id="daftarHakCuti"><div class="kosong">Memuat…</div></div>');
+  muatHakCuti();
+}
+
+function muatHakCuti(){
+  callApi('daftarHakCuti', {}).then(function(r){
+    HAKCUTI = r||[];
+    gambarHakCuti();
+  }).catch(function(e){
+    document.getElementById('daftarHakCuti').innerHTML =
+      '<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+  });
+}
+
+function gambarHakCuti(){
+  var q=((document.getElementById('hcCari')||{}).value||'').toLowerCase();
+  var list=HAKCUTI.filter(function(u){
+    return !q || (u.Nama+' '+u.Username+' '+(u.Jabatan||'')).toLowerCase().indexOf(q)>=0; });
+
+  var perluReset=HAKCUTI.filter(function(u){ return u.perluReset; }).length;
+  var adaKhusus=HAKCUTI.filter(function(u){ return u.khusus>0; }).length;
+  var hangus=HAKCUTI.filter(function(u){ return u.khususHangus; }).length;
+  var el=document.getElementById('ringkasHakCuti');
+  if(el) el.innerHTML='<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin:10px 0">'+
+    kpiKotak('Karyawan Aktif', HAKCUTI.length+'', '#1565C0')+
+    kpiKotak('Punya Cuti Khusus', adaKhusus+'', '#2E7D46')+
+    kpiKotak(hangus?'Cuti Khusus Hangus':'Saldo Tahun Lalu', (hangus||perluReset)+'', (hangus||perluReset)?'#C62828':'#9E9E9E')+
+    '</div>';
+
+  var d=document.getElementById('daftarHakCuti'); if(!d) return;
+  if(!list.length){ d.innerHTML='<div class="kosong">Tidak ada karyawan yang cocok.</div>'; return; }
+
+  d.innerHTML=list.map(function(u){
+    var warnaSisa = u.sisa===0 ? 'var(--merah)' : (u.sisa<=3 ? '#E8960C' : 'var(--hijau-700)');
+    return '<div class="item"><div class="kepala"><div><b>'+esc(u.Nama)+'</b>'+
+      '<div class="meta">'+esc(u.Jabatan||'-')+(u.Departemen?' · '+esc(u.Departemen):'')+
+        ' · '+esc(u.LokasiKerja)+'</div></div>'+
+      '<div class="kanan"><b style="font-size:16px;color:'+warnaSisa+'">'+u.sisa+'</b>'+
+        '<div class="meta" style="font-size:10.5px">sisa hari</div></div></div>'+
+      '<div style="display:flex;gap:14px;margin-top:6px;font-size:12px;color:var(--abu);flex-wrap:wrap">'+
+        '<span>Jatah <b style="color:var(--tinta)">'+u.hak+'</b></span>'+
+        '<span>Terpakai <b style="color:var(--tinta)">'+u.terpakai+'</b></span>'+
+        (u.khusus>0
+          ? '<span style="color:'+(u.khususHangus?'var(--merah)':'#1565C0')+'">Khusus <b>'+u.khususSisa+'/'+u.khusus+'</b>'+
+            (u.khususBerlakuSampai?' s/d '+esc(fmtTgl(u.khususBerlakuSampai)):'')+
+            (u.khususHangus?' (hangus)':'')+'</span>'
+          : '')+
+        (u.perluReset?'<span style="color:var(--merah)">saldo tahun '+esc(u.tahunTercatat)+'</span>':'')+
+      '</div>'+
+      '<div class="aksi-baris">'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="formAturHakCuti(\''+esc(u.Username)+'\')">✏️ Ubah</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="bukaProfil(\''+esc(u.Username)+'\')">🪪 Profil</button>'+
+      '</div></div>';
+  }).join('');
+}
+
+function formAturHakCuti(username){
+  var u=HAKCUTI.filter(function(x){ return x.Username===username; })[0];
+  if(!u) return;
+  bukaLembar('<h3>Ubah Hak Cuti</h3>'+
+    '<div class="meta"><b>'+esc(u.Nama)+'</b> · '+esc(u.Jabatan||'-')+' · '+esc(u.LokasiKerja)+'</div>'+
+    '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px;line-height:1.6">'+
+      'Saat ini: jatah <b>'+u.hak+'</b> hari, terpakai <b>'+u.terpakai+'</b> hari, sisa <b>'+u.sisa+'</b> hari.'+
+      (u.khusus>0?'<br>Cuti khusus: <b>'+u.khususSisa+'</b> dari <b>'+u.khusus+'</b> hari'+
+        (u.khususBerlakuSampai?' (berlaku s/d '+esc(fmtTgl(u.khususBerlakuSampai))+')':''):'')+
+    '</div>'+
+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Cuti Tahunan</h4>'+
+    '<div class="grid2">'+
+      '<div><label>Jatah per Tahun (hari)</label><input type="number" id="hcHak" value="'+u.hak+'" min="0"></div>'+
+      '<div><label>Sudah Terpakai (hari)</label><input type="number" id="hcPakai" value="'+u.terpakai+'" min="0"></div>'+
+    '</div>'+
+    '<div class="aksi-baris" style="margin-top:6px">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="document.getElementById(\'hcPakai\').value=0">Nolkan terpakai</button>'+
+      '<span class="meta" style="align-self:center">Untuk mengoreksi saldo yang keliru.</span>'+
+    '</div>'+
+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Cuti Khusus / Tambahan</h4>'+
+    '<div class="grid2">'+
+      '<div><label>Jatah Khusus (hari)</label><input type="number" id="hcKh" value="'+(u.khusus||'')+'" min="0" placeholder="0"></div>'+
+      '<div><label>Khusus Terpakai</label><input type="number" id="hcKhPakai" value="'+(u.khususTerpakai||'')+'" min="0" placeholder="0"></div>'+
+    '</div>'+
+    '<label>Berlaku Sampai</label><input type="date" id="hcKhSampai" value="'+esc(u.khususBerlakuSampai||'')+'">'+
+    '<label>Keterangan Cuti Khusus</label>'+
+    '<input id="hcKhKet" value="'+esc(u.khususKeterangan||'')+'" placeholder="cth: Penghargaan masa kerja 10 tahun">'+
+
+    '<label>Alasan Perubahan *</label>'+
+    '<input id="hcAlasan" placeholder="cth: koreksi saldo, pemberian jatah tambahan">'+
+    '<div class="meta" style="margin-top:4px">Wajib diisi — tercatat di Log Aktivitas agar dapat ditelusuri.</div>'+
+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="simpanHakCuti(\''+esc(username)+'\')">💾 Simpan Perubahan</button>');
+}
+
+function simpanHakCuti(username){
+  var alasan=(document.getElementById('hcAlasan')||{}).value.trim();
+  if(!alasan) return toast('Alasan perubahan wajib diisi.', true);
+  tampilLoader(true,'Menyimpan…');
+  callApi('aturHakCuti', {
+    username: username, alasan: alasan,
+    HakCutiTahunan: nilaiEl('hcHak'), CutiTerpakai: nilaiEl('hcPakai'),
+    CutiKhusus: nilaiEl('hcKh')||0, CutiKhususTerpakai: nilaiEl('hcKhPakai')||0,
+    CutiKhususBerlakuSampai: nilaiEl('hcKhSampai'),
+    CutiKhususKeterangan: nilaiEl('hcKhKet')
+  }).then(function(r){
+    tampilLoader(false);
+    toast(r.perubahan.length ? 'Hak cuti '+r.nama+' diperbarui ✓' : 'Tidak ada nilai yang berubah.');
+    bukaKelolaHakCuti();
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+function formResetCuti(){
+  var thn=new Date().getFullYear();
+  var adaSaldo=HAKCUTI.filter(function(u){ return u.terpakai>0; }).length;
+  bukaLembar('<h3>🔄 Reset Cuti Tahun Baru</h3>'+
+    '<div style="margin-top:8px;padding:12px;border-radius:8px;background:#FFF4E5;border-left:3px solid #E8960C;font-size:12.5px;line-height:1.6">'+
+      'Mengembalikan <b>jumlah terpakai</b> seluruh karyawan menjadi nol untuk tahun baru. '+
+      '<b>Jatah tahunan tidak diubah.</b> Cuti khusus yang masa berlakunya sudah lewat ikut dihapus.'+
+      '<br><br>Saat ini <b>'+adaSaldo+' karyawan</b> memiliki saldo terpakai.'+
+    '</div>'+
+    '<label>Tahun Berlaku</label>'+
+    '<select id="rcTahun">'+[thn,thn+1].map(function(t){
+      return '<option'+(t===thn?' selected':'')+'>'+t+'</option>'; }).join('')+'</select>'+
+    '<label>Alasan *</label>'+
+    '<input id="rcAlasan" value="Reset kuota cuti awal tahun '+thn+'">'+
+    '<div class="meta" style="margin-top:10px">Tindakan ini tidak dapat dibatalkan. Sebaiknya '+
+      '<b>cadangkan data</b> terlebih dahulu lewat menu Cadangkan Data.</div>'+
+    '<button class="btn btn-bahaya btn-blok" style="margin-top:16px" onclick="jalankanResetCuti()">🔄 Jalankan Reset</button>');
+}
+
+function jalankanResetCuti(){
+  var thn=(document.getElementById('rcTahun')||{}).value;
+  var alasan=(document.getElementById('rcAlasan')||{}).value.trim();
+  if(!alasan) return toast('Alasan reset wajib diisi.', true);
+  if(!confirm('Reset saldo cuti seluruh karyawan untuk tahun '+thn+'?\n\nJumlah terpakai dikembalikan ke nol. Tindakan ini tidak dapat dibatalkan.')) return;
+  tampilLoader(true,'Mereset saldo cuti…');
+  callApi('resetCutiTahunan', { tahun:thn, alasan:alasan }).then(function(r){
+    tampilLoader(false);
+    toast('Reset selesai — '+r.jumlah+' karyawan diperbarui ✓');
+    bukaKelolaHakCuti();
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
 }
 
 /* ==================== MULAI ==================== */
