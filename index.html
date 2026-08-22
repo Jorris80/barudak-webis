@@ -276,6 +276,12 @@
   #ttdKanvas{width:100%;height:150px;border:2px dashed var(--garis);border-radius:10px;
     background:#fff;touch-action:none;cursor:crosshair}
   .wf-chip{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}
+  /* Penandaan hari libur pada Kalender Kebun */
+  .kalender-tgl.libur-nasional{background:#FDECEA;border-color:#F3C6C0}
+  .kalender-tgl.libur-nasional .angka-tgl{color:#C0392B;font-weight:800}
+  .kalender-tgl.hari-minggu .angka-tgl{color:#C0392B}
+  .kalender-badge.libur{background:#FBEAE7;color:#C0392B;font-weight:700}
+
   #barLisensi{display:none}
   #barLisensi[style*="display:block"],#barLisensi[style*="display: block"]{display:flex!important}
   #barLisensi button{background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.5);
@@ -1400,6 +1406,7 @@ var TOKEN = '';
 var SESI = null; // {username, nama, peran}
 var OFFLINE = false; // status koneksi terkini (deteksi dari kegagalan/onLine)
 var GALAT_TERAKHIR = '';   // galat terakhir dari server, untuk diagnosa
+var PULIH_HALAMAN = false; // halaman terakhir hanya dipulihkan sekali per sesi
 var WAKTU_LOGIN = 0;       // penanda kapan login terakhir berhasil
 
 /* Diagnosa cepat — ketik diagnosa() di Konsol peramban bila aplikasi
@@ -2142,6 +2149,7 @@ function muatData(ulang){
       try{ f[1](); }catch(err){ gagal.push(f[0]+': '+err.message); console.error(f[0], err); }
     });
     tampilLoader(false);
+    if(!ulang && !PULIH_HALAMAN){ PULIH_HALAMAN = true; pulihkanHalamanTerakhir(); }
     if(gagal.length) toast('Sebagian tampilan gagal dimuat — ' + gagal[0], true);
     else if(ulang) toast('Data terbaru dimuat ✓');
     if(!OFFLINE && jumlahAntre()>0) sinkronAntre(true);
@@ -3226,6 +3234,10 @@ function bukaHalaman(nama){
     try{ if(typeof f==='function') f(); }catch(e){}
   });
   if(nama === 'ktu') gantiTabKtu(tabKtuAktif);
+  /* Ingat halaman terakhir supaya setelah refresh pengguna kembali ke tempat
+     yang sama — bukan dilempar ke Dasbor yang perlu memuat ulang grafiknya. */
+  try{ localStorage.setItem('sg_halaman', nama); }catch(e){}
+
   if(nama === 'workflow') muatWorkflow(false);
   if(nama === 'rekap'){
     var eb=document.getElementById('rkBulan');
@@ -6299,6 +6311,8 @@ function bersihkanSesi(){
         kasbank:[], payrolls:[], purchases:[], assets:[], letters:[] };
   try{ if(typeof WF!=='undefined'){ WF={ docs:[], templates:[], users:[], detail:null }; } }catch(e){}
   MODUL_DIMUAT = {};
+  PULIH_HALAMAN = false;
+  try{ localStorage.removeItem('sg_halaman'); }catch(e){}
 
   // kosongkan isian login lalu tampilkan layar login
   var u=document.getElementById('loginUser'), p=document.getElementById('loginPass');
@@ -6338,6 +6352,20 @@ function mulaiApp(){
   pastikanPustaka().catch(function(){}).then(function(){
     muatData(false);
   });
+}
+
+/* Buka kembali halaman terakhir yang dilihat pengguna. Dipanggil setelah data
+   selesai dimuat agar isinya sudah siap saat halaman ditampilkan. */
+function pulihkanHalamanTerakhir(){
+  var nama;
+  try{ nama = localStorage.getItem('sg_halaman'); }catch(e){}
+  if(!nama || nama === 'dasbor') return;
+  // halaman khusus admin dilewati bila peran tidak mencukupi
+  var khususAdmin = ['pengguna','pengaturan','log'];
+  if(khususAdmin.indexOf(nama) >= 0 && (!SESI || SESI.peran !== 'admin')) return;
+  var el = document.getElementById('hal-' + nama);
+  if(!el) return;
+  try{ bukaHalaman(nama); }catch(e){}
 }
 
 /* ==================== MANAJEMEN PENGGUNA (admin) ==================== */
@@ -8575,6 +8603,12 @@ function hariIniKalender(){
 }
 
 function renderKalender(){
+  /* Data hari libur dimuat sekali lalu disimpan di memori. Bila belum ada,
+     ambil dulu baru gambar ulang — supaya penandaan liburnya ikut muncul. */
+  if(LIBUR_CACHE === null){
+    muatLiburKalender().then(function(){ renderKalender(); });
+    LIBUR_CACHE = [];      // cegah permintaan berulang selama menunggu
+  }
   var fP = (document.getElementById('kalPer')||{}).value || '';
   var fE = (document.getElementById('kalEst')||{}).value || '';
   var fD = (document.getElementById('kalDiv')||{}).value || '';
@@ -8641,7 +8675,14 @@ function renderKalender(){
     if(jdwT.length > 0) badges += '<span class="kalender-badge jadwal">📅 ' + jdwT.length + ' Jadwal</span>';
     if(isuT.length > 0) badges += '<span class="kalender-badge masalah">⚠️ ' + isuT.length + ' Masalah</span>';
 
-    var cls = 'kalender-tgl' + (isHariIni ? ' hari-ini' : '') + (isPilihan ? ' pilihan' : '');
+    /* Hari libur nasional dan Minggu ditandai agar terlihat jelas —
+       inilah tanggal yang TIDAK memotong hak cuti karyawan. */
+    var ketLibur = keteranganLibur(dStr);
+    var hariKe = new Date(thn, bln, d).getDay();
+    if(ketLibur) badges = '<span class="kalender-badge libur">🎌 ' + esc(ketLibur) + '</span>' + badges;
+
+    var cls = 'kalender-tgl' + (isHariIni ? ' hari-ini' : '') + (isPilihan ? ' pilihan' : '') +
+              (ketLibur ? ' libur-nasional' : '') + (hariKe === 0 ? ' hari-minggu' : '');
     gridHtml += '<div class="' + cls + '" onclick="pilihTanggalKalender(\'' + dStr + '\')">' +
       '<div class="angka-tgl">' + d + '</div>' +
       badges +
@@ -11871,7 +11912,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.7.1';
+var VERSI_APP = '1.8.0';
 var TANGGAL_BUILD = '2026-08-19';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -13707,13 +13748,15 @@ function simpanHariLibur(){
   callApi('saveHariLibur', { Tanggal:t, Keterangan:k||'Libur Nasional' }).then(function(){
     toast('Hari libur tersimpan ✓');
     document.getElementById('hlTgl').value=''; document.getElementById('hlKet').value='';
-    muatHariLibur(); muatLiburKalender(true);
+    muatHariLibur();
+    muatLiburKalender(true).then(function(){ try{ renderKalender(); }catch(e){} });
   }).catch(function(e){ toast(e.message, true); });
 }
 function hapusHariLibur(tgl){
   if(!confirm('Hapus hari libur '+fmtTgl(tgl)+'?')) return;
   callApi('saveHariLibur', { Tanggal:tgl, hapus:true }).then(function(){
-    toast('Dihapus ✓'); muatHariLibur(); muatLiburKalender(true);
+    toast('Dihapus ✓'); muatHariLibur();
+    muatLiburKalender(true).then(function(){ try{ renderKalender(); }catch(e){} });
   }).catch(function(e){ toast(e.message, true); });
 }
 /* Libur nasional yang tanggalnya tetap tiap tahun — sisanya diisi manual
@@ -13731,7 +13774,8 @@ function isiLiburBawaan(){
       return callApi('saveHariLibur', { Tanggal:thn+'-'+x[0], Keterangan:x[1] }).catch(function(){});
     });
   }, Promise.resolve());
-  urut.then(function(){ tampilLoader(false); toast('Hari libur bawaan ditambahkan ✓'); muatHariLibur(); muatLiburKalender(true); });
+  urut.then(function(){ tampilLoader(false); toast('Hari libur bawaan ditambahkan ✓'); muatHariLibur();
+    muatLiburKalender(true).then(function(){ try{ renderKalender(); }catch(e){} }); });
 }
 
 /* Cache hari libur untuk penandaan di Kalender Kebun. */
