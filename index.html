@@ -6157,13 +6157,68 @@ function hapusLayer(id){
 }
 
 
+/* ==================== TOMBOL KEMBALI (ANDROID) ====================
+ * Tanpa penanganan khusus, tombol kembali langsung menutup seluruh aplikasi
+ * meski ada jendela yang sedang terbuka. Setiap lapisan (lembar, panel AI,
+ * pembesar foto) mendaftarkan diri ke tumpukan ini, sehingga tombol kembali
+ * menutup satu lapisan setiap kali ditekan.
+ */
+var LAPIS_NAV = [];
+
+function dorongLapis(nama, fnTutup){
+  LAPIS_NAV.push({ nama:nama, tutup:fnTutup });
+  try{ history.pushState({ lapis: LAPIS_NAV.length, nama:nama }, ''); }catch(e){}
+}
+
+/** Tutup lapisan teratas. Mengembalikan true bila ada yang ditutup. */
+function tutupLapisTeratas(){
+  var l = LAPIS_NAV.pop();
+  if(!l) return false;
+  try{ l.tutup(); }catch(e){}
+  return true;
+}
+
+/** Lepas pendaftaran tanpa memanggil fungsi tutup — dipakai bila lapisan
+ *  ditutup lewat tombol di layar, bukan lewat tombol kembali. */
+function lepasLapis(nama){
+  for(var i=LAPIS_NAV.length-1;i>=0;i--){
+    if(LAPIS_NAV[i].nama===nama){
+      LAPIS_NAV.splice(i,1);
+      NAV_ABAIKAN++;                     // jangan tutup lapisan lain saat history.back
+      try{ history.back(); }catch(e){ NAV_ABAIKAN--; }
+      return true;
+    }
+  }
+  return false;
+}
+
+var NAV_ABAIKAN = 0;
+window.addEventListener('popstate', function(){
+  if(NAV_ABAIKAN > 0){ NAV_ABAIKAN--; return; }   // dipicu lepasLapis, bukan pengguna
+  if(LAPIS_NAV.length){ tutupLapisTeratas(); return; }
+  /* Tidak ada lapisan terbuka. Bila sedang tidak di Dasbor, kembali ke Dasbor
+     lebih dulu — tekanan berikutnya baru menutup aplikasi. */
+  if(typeof halAktif!=='undefined' && halAktif && halAktif!=='dasbor'){
+    try{ history.pushState({ halaman:'dasbor' }, ''); }catch(e){}
+    bukaHalaman('dasbor');
+  }
+});
+
+// satu entri awal supaya tekanan pertama tidak langsung menutup aplikasi
+try{ history.replaceState({ awal:true }, ''); history.pushState({ akar:true }, ''); }catch(e){}
+
 function bukaLembar(html){
   document.getElementById('lembar').innerHTML = '<div class="pegangan"></div>' + html;
   document.getElementById('tirai').classList.add('tampil');
+  dorongLapis('lembar', function(){
+    document.getElementById('tirai').classList.remove('tampil');
+    if(petaPick){ try{ petaPick.remove(); }catch(e){} petaPick=null; penandaPick=null; }
+  });
 }
 function tutupLembar(){
   document.getElementById('tirai').classList.remove('tampil');
   if(petaPick){ try{ petaPick.remove(); }catch(e){} petaPick=null; penandaPick=null; }
+  lepasLapis('lembar');
 }
 
 /** Kirim aksi tulis ke server lalu muat ulang data.
@@ -11816,7 +11871,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.7.0';
+var VERSI_APP = '1.7.1';
 var TANGGAL_BUILD = '2026-08-19';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -13542,6 +13597,7 @@ var AI_SIAP = null;
 
 function bukaAI(){
   var p=document.getElementById('panelAI');
+  if(p.style.display!=='flex') dorongLapis('ai', function(){ p.style.display='none'; });
   p.style.display='flex';
   if(AI_SIAP===null){
     callApi('aiStatus', {}).then(function(s){
@@ -13557,7 +13613,7 @@ function bukaAI(){
   }
   setTimeout(function(){ var i=document.getElementById('aiInput'); if(i) i.focus(); }, 200);
 }
-function tutupAI(){ document.getElementById('panelAI').style.display='none'; }
+function tutupAI(){ document.getElementById('panelAI').style.display='none'; lepasLapis('ai'); }
 
 function tampilSaranAI(){
   var saran=['Bagaimana produksi bulan ini?','Blok mana yang produksinya paling rendah?',
@@ -13828,8 +13884,9 @@ function zoomFoto(src, keterangan){
     'border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.6)">'+
     (keterangan?'<div style="color:#fff;font-size:14px;font-weight:600;text-align:center">'+esc(keterangan)+'</div>':'')+
     '<div style="position:absolute;top:18px;right:20px;color:#fff;font-size:26px">✕</div>';
-  d.onclick=function(){ d.remove(); };
+  d.onclick=function(){ d.remove(); lepasLapis('zoom'); };
   document.body.appendChild(d);
+  dorongLapis('zoom', function(){ d.remove(); });
 }
 
 
@@ -14364,8 +14421,9 @@ function zoomLogoAplikasi(){
     d.innerHTML='<div style="font-size:120px">'+esc(st.emoji||'🌴')+'</div>'+
       '<div style="color:#fff;font-size:20px;font-weight:800">'+esc(st.judulAplikasi||'SawitGIS Mandiri')+'</div>'+
       '<div style="color:#C6D6C8;font-size:13px">'+esc(st.namaPerusahaan||st.subjudul||'')+'</div>';
-    d.onclick=function(){ d.remove(); };
+    d.onclick=function(){ d.remove(); lepasLapis('zoom'); };
     document.body.appendChild(d);
+    dorongLapis('zoom', function(){ d.remove(); });
     return;
   }
   zoomFoto(src, (st.judulAplikasi||'') + (st.namaPerusahaan?' — '+st.namaPerusahaan:''));
