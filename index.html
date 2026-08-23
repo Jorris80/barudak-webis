@@ -2176,6 +2176,7 @@ function muatData(ulang){
 function terapkanPengaturan(){
   if(S && S.license) terapkanLisensi(S.license);
   tampilkanCakupanAkses();
+  try{ terapkanAksesModul(); }catch(e){}
   var st = S.settings || {};
   document.getElementById('hdJudul').textContent = st.judulAplikasi || 'SawitGIS Mandiri';
   document.getElementById('hdSub').textContent = st.subjudul || '';
@@ -3198,6 +3199,13 @@ function eksporPetaPDF(){
  *  NAVIGASI
  * ===================================================================*/
 function bukaHalaman(nama){
+  /* Pengguna dengan pembatasan modul tidak dapat membuka halaman di luar
+     jatahnya, termasuk lewat tautan lama atau pemulihan halaman terakhir. */
+  if(typeof bolehBukaModul==='function' && !bolehBukaModul(nama)){
+    toast('Modul ini tidak termasuk hak akses Anda.', true);
+    if(nama!=='dasbor') return bukaHalaman('dasbor');
+    return;
+  }
   halAktif = nama;
   document.querySelectorAll('.halaman').forEach(function(h){ h.classList.remove('aktif'); });
   var el = document.getElementById('hal-'+nama);
@@ -6411,6 +6419,27 @@ function formPengguna(username){
         '</select></div>'+
       '<div><label>Hak Cuti Tahunan (hari)</label><input type="number" id="puHakCuti" value="'+esc(u&&u.HakCutiTahunan!==undefined?u.HakCutiTahunan:12)+'"></div>'+
     '</div>'+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Hak Akses Modul</h4>'+
+    '<div class="meta" style="margin-bottom:8px">Centang modul yang boleh dibuka. '+
+      '<b>Biarkan semua kosong bila boleh mengakses seluruh modul.</b> '+
+      'Dasbor selalu dapat dibuka. Admin tidak terpengaruh pembatasan ini.</div>'+
+    '<div class="aksi-baris" style="margin-bottom:8px">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="pilihSemuaModul(true)">Centang semua</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="pilihSemuaModul(false)">Kosongkan</button>'+
+    '</div>'+
+    '<div id="puModulKotak" style="border:1px solid var(--garis);border-radius:10px;padding:10px;max-height:230px;overflow-y:auto">'+
+      DAFTAR_MODUL.map(function(g){
+        return '<div style="font-size:11px;font-weight:700;color:var(--abu);text-transform:uppercase;'+
+          'letter-spacing:.05em;margin:8px 0 4px">'+esc(g.grup)+'</div>'+
+          g.item.map(function(it){
+            var dipilih = u && String(u.ModulDiizinkan||'').split(',').map(function(x){return x.trim();}).indexOf(it[0])>=0;
+            return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;cursor:pointer">'+
+              '<input type="checkbox" class="puModul" value="'+it[0]+'" style="width:auto;margin:0"'+
+              (dipilih?' checked':'')+'> '+esc(it[1])+'</label>';
+          }).join('');
+      }).join('')+
+    '</div>'+
+
     '<h4 style="margin:16px 0 6px;font-size:13px">Data Pribadi &amp; Identitas</h4>'+
     '<div class="grid2">'+
       '<div><label>Nama Panggilan</label><input id="puPanggilan" value="'+esc(u?u.NamaPanggilan:'')+'"></div>'+
@@ -6551,6 +6580,10 @@ function simpanPengguna(existing){
     CutiKhusus: Number((document.getElementById('puCutiKhusus')||{value:0}).value)||0,
     CutiKhususBerlakuSampai: (document.getElementById('puCutiKhususSampai')||{value:''}).value,
     CutiKhususKeterangan: (document.getElementById('puCutiKhususKet')||{value:''}).value.trim(),
+    ModulDiizinkan: (function(){
+      var t=[]; document.querySelectorAll('.puModul:checked').forEach(function(x){ t.push(x.value); });
+      return t.length===SEMUA_MODUL.length ? '' : t.join(',');   // semua = tanpa batas
+    })(),
     NamaPanggilan: nilaiEl('puPanggilan'), NIK: nilaiEl('puNIK'),
     TempatLahir: nilaiEl('puTmpLahir'), TanggalLahir: nilaiEl('puTglLahir'),
     JenisKelamin: nilaiEl('puGender'), Agama: nilaiEl('puAgama'),
@@ -10668,7 +10701,56 @@ function bukaScannerQR(){
     '<button class="btn btn-sekunder btn-blok" style="margin-top:14px" onclick="hentikanScannerQR();tutupLembar()">Batal</button>'
   );
 
-  pastikanScannerQR().catch(function(){}).then(function(){
+  /* Kamera diuji LEBIH DULU sebelum scanner dijalankan. Sebelumnya badge
+     langsung ditandai hijau padahal aliran kamera bisa gagal diam-diam —
+     hasilnya kotak hitam tanpa keterangan apa pun. */
+  function gagalKamera(judul, penjelasan){
+    var bdg = document.getElementById('qrStatusBadge');
+    if(bdg){ bdg.className='chip oranye'; bdg.innerHTML = '⚠️ ' + judul; }
+    var elR = document.getElementById('qr-reader');
+    if(elR) elR.innerHTML = '<div style="padding:18px;color:#fff;font-size:12.5px;line-height:1.6;text-align:left">'+
+      penjelasan + '</div>';
+  }
+
+  if(typeof ADA_GAS !== 'undefined' && ADA_GAS){
+    gagalKamera('Kamera tidak tersedia di mode ini',
+      '<b>Aplikasi sedang berjalan di dalam bingkai Apps Script.</b><br>'+
+      'Browser tidak mengizinkan akses kamera dari sini — sama seperti GPS dan notifikasi.<br><br>'+
+      'Gunakan <b>versi PWA</b> yang dipasang di layar utama agar kamera berfungsi. '+
+      'Untuk sementara, silakan <b>unggah gambar QR</b> atau ketik ID secara manual di bawah.');
+    return;
+  }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    gagalKamera('Kamera tidak didukung peramban',
+      'Peramban ini tidak menyediakan akses kamera. Gunakan Chrome pada Android atau Safari iOS 11+.<br><br>'+
+      'Anda tetap dapat mengunggah gambar QR atau mengetik ID di bawah.');
+    return;
+  }
+
+  // minta izin kamera dulu; bila ditolak, jangan tampilkan kotak hitam
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    .then(function(stream){
+      stream.getTracks().forEach(function(t){ t.stop(); });   // lepas, biar dipakai pustaka
+      return pastikanScannerQR();
+    })
+    .catch(function(err){
+      var nm = err && err.name ? err.name : '';
+      if(nm === 'NotAllowedError' || nm === 'SecurityError'){
+        gagalKamera('Izin kamera ditolak',
+          'Izin kamera pernah ditolak untuk situs ini.<br><br>'+
+          'Ketuk ikon <b>gembok</b> di samping alamat situs → <b>Setelan situs</b> → '+
+          '<b>Kamera</b> → ubah menjadi <b>Izinkan</b>, lalu buka ulang pemindai.');
+      } else if(nm === 'NotFoundError'){
+        gagalKamera('Kamera tidak ditemukan', 'Perangkat ini tidak memiliki kamera yang dapat diakses.');
+      } else if(nm === 'NotReadableError'){
+        gagalKamera('Kamera sedang dipakai aplikasi lain',
+          'Tutup aplikasi lain yang memakai kamera (mis. WhatsApp atau Kamera), lalu coba lagi.');
+      } else {
+        gagalKamera('Kamera tidak dapat diakses', 'Penyebab: ' + esc(String(err && err.message || nm || err)));
+      }
+      throw err;
+    })
+    .then(function(){
   setTimeout(function(){
     var bdg = document.getElementById('qrStatusBadge');
     if(typeof Html5QrcodeScanner !== 'undefined'){
@@ -10681,7 +10763,7 @@ function bukaScannerQR(){
         }, function(error){});
         if(bdg){
           bdg.className = 'chip hijau';
-          bdg.innerHTML = '🟢 Status: Akses Kamera Aktif &amp; Siap Pindai';
+          bdg.innerHTML = '🟢 Status: Kamera aktif — arahkan ke kode QR';
         }
       } catch(e) {
         if(bdg){
@@ -11912,7 +11994,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.8.0';
+var VERSI_APP = '1.9.0';
 var TANGGAL_BUILD = '2026-08-19';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -13824,6 +13906,10 @@ function masaKerja(tglMulai){
   return (th?th+' tahun':'') + (th&&bl?' ':'') + (bl?bl+' bulan':'') || 'kurang dari 1 bulan';
 }
 
+function pilihSemuaModul(centang){
+  document.querySelectorAll('.puModul').forEach(function(x){ x.checked=!!centang; });
+}
+
 function nilaiEl(id){ var e=document.getElementById(id); return e ? String(e.value||'').trim() : ''; }
 
 function barisProfil(label, nilai){
@@ -13891,7 +13977,11 @@ function gambarProfil(){
       ['Tanggal bergabung', u.TanggalBergabung?fmtTgl(u.TanggalBergabung):''],
       ['Masa kerja', masaKerja(u.TanggalBergabung)],
       ['Status kepegawaian', u.StatusKepegawaian], ['Atasan langsung', u.Atasan],
-      ['Peran aplikasi', peran], ['Cakupan akses', akses||'Seluruh unit']
+      ['Peran aplikasi', peran], ['Cakupan akses', akses||'Seluruh unit'],
+      ['Modul yang dapat dibuka', (function(){
+        var s=String(u.ModulDiizinkan||'').trim();
+        return s ? s.split(',').filter(Boolean).length+' modul terpilih' : 'Seluruh modul';
+      })()]
     ])+
     kartuProfil('Administratif &amp; Keuangan', [
       ['NPWP', u.NPWP], ['Bank', u.BankNama], ['Nomor rekening', u.BankRekening],
@@ -14471,6 +14561,66 @@ function zoomLogoAplikasi(){
     return;
   }
   zoomFoto(src, (st.judulAplikasi||'') + (st.namaPerusahaan?' — '+st.namaPerusahaan:''));
+}
+
+
+/* ==================== HAK AKSES MODUL ====================
+ * Selain pembatasan unit (Perusahaan/Estate/Divisi), tiap pengguna dapat
+ * dibatasi modul mana saja yang boleh dibuka — agar tampilannya fokus pada
+ * pekerjaannya sendiri. Kosong berarti seluruh modul boleh diakses.
+ */
+var DAFTAR_MODUL = [
+  { grup:'Inti', item:[
+    ['dasbor','📊 Dasbor'], ['peta','🗺️ Peta'], ['blok','🌴 Blok'], ['panen','🧺 Panen'] ]},
+  { grup:'Operasional', item:[
+    ['masalah','⚠️ Masalah Lapangan'], ['jadwal','🗓️ Jadwal'], ['alat','🚜 Alat Berat'],
+    ['hujan','🌧️ Curah Hujan'], ['spb','🚛 SPB'], ['pupuk','🧪 Pemupukan'],
+    ['sensus','🐛 Sensus Hama'], ['sensusbuah','🍇 Sensus Buah'], ['bkm','📋 BKM & Premi'] ]},
+  { grup:'Aset & Biaya', item:[
+    ['traksi','🚜 Traksi'], ['gudang','📦 Gudang'], ['budget','💰 Budget'],
+    ['landclearing','🏗️ Land Clearing'], ['audit','✅ Audit'] ]},
+  { grup:'Administrasi', item:[
+    ['ktu','🗂️ KTU'], ['workflow','✅ Workflow Persetujuan'], ['rekap','📈 Rekap Bulanan'],
+    ['laporan','📄 Laporan'], ['kalender','📅 Kalender'], ['monmasalah','🔍 Monitoring Masalah'],
+    ['lacak','📍 Lacak GPS'] ]}
+];
+var SEMUA_MODUL = DAFTAR_MODUL.reduce(function(a,g){
+  return a.concat(g.item.map(function(x){ return x[0]; })); }, []);
+
+/** Modul yang boleh dibuka pengguna yang sedang masuk. */
+function modulDiizinkan(){
+  if(!SESI || SESI.peran==='admin') return null;          // null = tanpa batas
+  var s = String(SESI.ModulDiizinkan||'').trim();
+  if(!s) return null;
+  var izin = {};
+  s.split(',').forEach(function(x){ x=x.trim(); if(x) izin[x]=1; });
+  izin['dasbor']=1;                                        // dasbor selalu boleh
+  return izin;
+}
+function bolehBukaModul(nama){
+  var izin = modulDiizinkan();
+  return !izin || !!izin[nama];
+}
+
+/** Sembunyikan menu & tab modul yang tidak diizinkan. */
+function terapkanAksesModul(){
+  var izin = modulDiizinkan();
+
+  // navigasi bawah (#navBawah) — 'lainnya' selalu tampil sebagai pintu menu
+  document.querySelectorAll('#navBawah button[data-hal]').forEach(function(b){
+    var nm = b.getAttribute('data-hal');
+    if(!nm || nm === 'lainnya') return;
+    b.style.display = (!izin || izin[nm]) ? '' : 'none';
+  });
+
+  /* Menu Lainnya. Hanya tombol yang MEMANGGIL bukaHalaman yang disaring;
+     tombol aksi seperti Pindai QR atau Notifikasi dibiarkan apa adanya. */
+  document.querySelectorAll('#hal-lainnya .menu-grid button').forEach(function(b){
+    var oc = b.getAttribute('onclick') || '';
+    var m = /bukaHalaman\(\s*'([a-zA-Z]+)'\s*\)/.exec(oc);
+    if(!m) return;                       // bukan tombol halaman → biarkan
+    b.style.display = (!izin || izin[m[1]]) ? '' : 'none';
+  });
 }
 
 /* ==================== MULAI ==================== */
