@@ -5316,6 +5316,7 @@ function renderAlat(){
       '<div class="meta">'+esc(e.Jenis)+' · '+esc(namaBlok(e.IDBlok))+' · Op. '+esc(e.Operator||'-')+'</div></div></div>'+
       '<div class="kanan"><span class="chip '+chipS+'">'+esc(e.Status)+'</span></div></div>'+
       '<div class="aksi-baris"><button class="btn btn-sekunder btn-kecil" onclick="formAlat(\''+esc(e.ID)+'\')">✏️ Edit</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="tampilQRIdentitas(\'ALAT\',\''+esc(e.ID)+'\')">🏷️ Stiker QR</button>'+
       '<button class="btn btn-bahaya btn-kecil" onclick="hapusAlat(\''+esc(e.ID)+'\')">Hapus</button></div></div>';
   });
   document.getElementById('daftarAlat').innerHTML = html || '<div class="kosong"><span class="ic">🚜</span>Belum ada alat berat terdaftar.</div>';
@@ -9486,7 +9487,10 @@ function renderGudang(){
           '<div>⚠️ <b>Batas Minimal:</b> ' + (x.StokMinimal||0) + ' ' + esc(x.Satuan||'unit') + '<br>📤 <b>Stok Keluar Bulan Ini:</b> ' + (x.StokKeluar||0) + ' ' + esc(x.Satuan||'unit') + '</div>' +
         '</div>' +
         mediaDisplayHTML(x.Foto, x.Video) +
-        (bolehEdit() ? '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px"><button class="btn btn-sekunder btn-kecil" onclick="formGudangBarang(\'' + x.ID + '\')">✏️ Edit Barang</button><button class="btn btn-sekunder btn-kecil" style="color:var(--merah)" onclick="hapusGudangBarang(\'' + x.ID + '\')">🗑️ Hapus</button></div>' : '') +
+        '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px;flex-wrap:wrap">' +
+          '<button class="btn btn-sekunder btn-kecil" onclick="tampilQRIdentitas(\'BARANG\',\'' + x.ID + '\')">🏷️ Stiker QR</button>' +
+          (bolehEdit() ? '<button class="btn btn-sekunder btn-kecil" onclick="formGudangBarang(\'' + x.ID + '\')">✏️ Edit Barang</button><button class="btn btn-sekunder btn-kecil" style="color:var(--merah)" onclick="hapusGudangBarang(\'' + x.ID + '\')">🗑️ Hapus</button>' : '') +
+        '</div>' +
       '</div>';
     });
     html += '</div>';
@@ -10922,7 +10926,7 @@ function prosesHasilScanQR(text){
   if(p.length >= 2){
     var last = p[p.length-1].trim();
     var secondLast = p[p.length-2].trim().toUpperCase();
-    if(['BLOK','ALAT','GUDANG','BARANG','TRAKSI'].indexOf(secondLast) >= 0){
+    if(['BLOK','ALAT','GUDANG','BARANG','TRAKSI','ASET','INVENTARIS'].indexOf(secondLast) >= 0){
       cleanId = last;
     }
   }
@@ -10954,6 +10958,18 @@ function prosesHasilScanQR(text){
   if(g){
     tutupLembar();
     bukaDetailQRRecord('GUDANG', g);
+    return;
+  }
+
+  // 4. Cari di Inventaris Aset (KTU)
+  var as = (S.assets||[]).find(function(x){
+    return String(x.ID).toUpperCase() === cleanId.toUpperCase() ||
+           String(x.KodeAset||'').toUpperCase() === cleanId.toUpperCase() ||
+           String(x.NamaAset||'').toUpperCase() === cleanId.toUpperCase();
+  });
+  if(as){
+    tutupLembar();
+    bukaDetailQRRecord('ASET', as);
     return;
   }
 
@@ -11091,11 +11107,50 @@ function bukaDetailQRRecord(tipe, item){
       '<button class="btn btn-sekunder btn-blok" style="margin-top:6px" onclick="tutupLembar()">Tutup</button>'
     );
   }
+
+  if(tipe === 'ASET'){
+    var a = item;
+    var chipKondisi = { 'Baik':'hijau', 'Rusak Ringan':'oranye', 'Rusak Berat':'merah' }[a.Kondisi] || 'abu';
+    bukaLembar(
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
+        '<span style="font-size:32px">🏷️</span>' +
+        '<div><b style="font-size:16px">' + esc(a.NamaAset || a.ID) + '</b>' +
+        '<div class="meta">' + esc(a.KodeAset || a.ID) + (a.Kategori ? ' · ' + esc(a.Kategori) : '') + '</div></div>' +
+      '</div>' +
+      '<div class="kartu" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--garis)">' +
+        '<span class="meta">Kondisi</span><span class="chip ' + chipKondisi + '">' + esc(a.Kondisi || '-') + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--garis)">' +
+        '<span class="meta">Nilai perolehan</span><b>' + rp(a.NilaiPerolehanRp) + '</b></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--garis)">' +
+        '<span class="meta">Nilai buku</span><b>' + rp(a.NilaiBukuRp) + '</b></div>' +
+        (a.Lokasi ? '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--garis)">' +
+          '<span class="meta">Lokasi</span><b>' + esc(a.Lokasi) + '</b></div>' : '') +
+        (a.PenanggungJawab ? '<div style="display:flex;justify-content:space-between;padding:5px 0">' +
+          '<span class="meta">Penanggung jawab</span><b>' + esc(a.PenanggungJawab) + '</b></div>' : '') +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">' +
+        '<button class="btn btn-utama btn-kecil" onclick="tutupLembar();bukaHalaman(\'ktu\');gantiTabKtu(\'aset\');formAset(\''+esc(a.ID)+'\')">✏️ Edit Aset</button>' +
+        '<button class="btn btn-sekunder btn-kecil" onclick="tutupLembar();bukaHalaman(\'ktu\');gantiTabKtu(\'aset\')">🏷️ Lihat Inventaris</button>' +
+      '</div>' +
+      '<button class="btn btn-sekunder btn-blok" style="margin-top:10px" onclick="tampilQRIdentitas(\'ASET\', \''+esc(a.ID)+'\')">🖨️ Tampilkan / Cetak Kode QR</button>' +
+      '<button class="btn btn-sekunder btn-blok" style="margin-top:6px" onclick="tutupLembar()">Tutup</button>'
+    );
+  }
 }
 
 function tampilQRIdentitas(tipe, id){
   var qrText = 'SAWITGIS:' + tipe + ':' + id;
-  var judul = (tipe==='BLOK' ? 'Blok '+id : (tipe==='ALAT'?'Alat '+id:'Barang '+id));
+  var judul = { BLOK:'Blok ', ALAT:'Alat ', BARANG:'Barang ', ASET:'Aset ' }[tipe] || '';
+  judul = (judul || 'Objek ') + id;
+  /* Lengkapi judul dengan nama objeknya agar stiker mudah dikenali di lapangan. */
+  try{
+    var sumber = { BLOK:S.blocks, ALAT:S.equipments, BARANG:S.gudang, ASET:S.assets }[tipe] || [];
+    var obj = (sumber||[]).find(function(x){ return String(x.ID)===String(id); });
+    if(obj){
+      var nm = obj.Nama || obj.NamaBarang || obj.NamaAset || obj.KodeUnit || '';
+      if(nm) judul = judul + ' — ' + nm;
+    }
+  }catch(e){}
   bukaLembar(
     '<div style="text-align:center">' +
       '<h3>🖨️ Label Kode QR Kebun</h3>' +
@@ -11853,6 +11908,7 @@ function renderAset(){
       (a.Lokasi?' · '+esc(a.Lokasi):'')+(a.PenanggungJawab?' · PJ: '+esc(a.PenanggungJawab):'')+'</div>'+
       '<div class="aksi-baris">'+
       '<button class="btn btn-sekunder btn-kecil" onclick="formAset(\''+esc(a.ID)+'\')">✏️ Edit</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="tampilQRIdentitas(\'ASET\',\''+esc(a.ID)+'\')">🏷️ Stiker QR</button>'+
       '<button class="btn btn-bahaya btn-kecil" onclick="hapusKtu(\'deleteAsset\',\''+esc(a.ID)+'\',\'data aset\')">🗑 Hapus</button>'+
       '</div></div>';
   }).join('');
@@ -12092,7 +12148,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.9.1';
+var VERSI_APP = '1.9.2';
 var TANGGAL_BUILD = '2026-08-19';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
