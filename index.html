@@ -4532,7 +4532,9 @@ function renderBlok(){
       '</div>'+
       '<div class="meta" style="margin-top:8px">🧪 Pupuk berikut: <b style="color:'+(pupukTelat?'var(--merah)':'inherit')+'">'+fmtTgl(b.PemupukanBerikut)+(pupukTelat?' ⏰':'')+'</b>'+
       ' &nbsp;·&nbsp; 🌿 Penyiangan: <b style="color:'+(siangTelat?'var(--merah)':'inherit')+'">'+fmtTgl(b.PenyianganBerikut)+(siangTelat?' ⏰':'')+'</b></div>'+
-      '<div class="aksi-baris"><button class="btn btn-sekunder btn-kecil" onclick="formBlok(\''+b.ID+'\')">✏️ Edit</button>'+
+      '<div class="aksi-baris"><button class="btn btn-utama btn-kecil" onclick="detailBlok(\''+b.ID+'\')">🔍 Detail</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="formBlok(\''+b.ID+'\')">✏️ Edit</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="tampilQRIdentitas(\'BLOK\',\''+b.ID+'\')">🏷️ Stiker QR</button>'+
       '<button class="btn btn-sekunder btn-kecil" onclick="formPanen(\''+b.ID+'\')">🧺 Catat Panen</button>'+
       '<button class="btn btn-bahaya btn-kecil" onclick="hapusBlok(\''+b.ID+'\')">Hapus</button></div></div>';
   });
@@ -4673,6 +4675,93 @@ function ringkasanBlokTerpilih(){
     '<div style="background:#fff;padding:10px;border-radius:8px;border:1px solid var(--garis);margin-top:6px">' + htmlSehat + '</div>' +
     '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="tutupLembar()">Tutup Ringkasan</button>'
   );
+}
+
+/* ==================== DETAIL BLOK ====================
+ * Rangkuman satu blok: identitas, kondisi tanaman, riwayat panen dan
+ * pemupukan, masalah terbuka, serta pintasan ke tindakan yang sering dipakai.
+ */
+function detailBlok(id){
+  var b = (S.blocks||[]).find(function(x){ return String(x.ID)===String(id); });
+  if(!b) return toast('Blok tidak ditemukan.', true);
+
+  var panen = (S.harvests||[]).filter(function(h){ return String(h.IDBlok)===String(id); })
+    .sort(function(x,y){ return String(y.Tanggal).localeCompare(String(x.Tanggal)); });
+  var pupuk = (S.fertilizers||[]).filter(function(p){ return String(p.IDBlok)===String(id); })
+    .sort(function(x,y){ return String(y.Tanggal).localeCompare(String(x.Tanggal)); });
+  var masalah = (S.issues||[]).filter(function(m){ return String(m.IDBlok)===String(id); })
+    .sort(function(x,y){ return String(y.Tanggal).localeCompare(String(x.Tanggal)); });
+  var jadwal = (S.schedules||[]).filter(function(j){ return String(j.IDBlok)===String(id); });
+
+  var totalTon = panen.reduce(function(a,h){ return a + (Number(h.EstimasiTon)||0); }, 0);
+  var luas = Number(b.LuasHa)||0;
+  var umur = b.TahunTanam ? (new Date().getFullYear() - Number(b.TahunTanam)) : null;
+  var terbuka = masalah.filter(function(m){ return String(m.Status)==='Terbuka'; });
+
+  function baris(l,v){ return v ? '<div style="display:flex;justify-content:space-between;gap:10px;'+
+    'padding:6px 0;border-bottom:1px solid var(--garis)">'+
+    '<span style="color:var(--abu);font-size:12.5px">'+esc(l)+'</span>'+
+    '<span style="text-align:right;font-weight:600;font-size:13px">'+v+'</span></div>' : ''; }
+
+  bukaLembar(
+    '<h3>🌴 '+esc(b.Nama||b.ID)+'</h3>'+
+    '<div class="meta">'+esc(b.ID)+' · '+esc(b.Perusahaan||'-')+' · '+esc(b.Estate||'-')+' · '+esc(b.Divisi||'-')+'</div>'+
+
+    '<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin:12px 0">'+
+      kpiKotak('Luas', angka(luas,2)+' ha', '#1565C0')+
+      kpiKotak('Total Panen', angka(totalTon,2)+' t', '#2E7D46')+
+      kpiKotak('Produktivitas', luas>0?angka(totalTon/luas,3)+' t/ha':'-', '#E8960C')+
+    '</div>'+
+
+    '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Identitas &amp; Kondisi</b>'+
+    '<div style="margin-top:6px">'+
+      baris('Tahun tanam', b.TahunTanam ? esc(b.TahunTanam)+(umur!==null?' <span class="meta">('+umur+' tahun)</span>':'') : '')+
+      baris('Jumlah pokok', b.JumlahPokok?angka(b.JumlahPokok,0)+' pokok':'')+
+      baris('SPH', b.SPH?esc(b.SPH):'')+
+      baris('Jenis tanah', esc(b.JenisTanah||''))+
+      baris('Kesehatan tanaman', b.KesehatanTanaman
+        ? '<span class="chip '+(String(b.KesehatanTanaman).toLowerCase().indexOf('sehat')>=0?'hijau':'oranye')+'">'+
+          esc(b.KesehatanTanaman)+'</span>' : '')+
+      baris('Pemupukan terakhir', b.PemupukanTerakhir?esc(fmtTgl(b.PemupukanTerakhir)):'')+
+      baris('Pemupukan berikut', b.PemupukanBerikut?esc(fmtTgl(b.PemupukanBerikut)):'')+
+      baris('Penyiangan berikut', b.PenyianganBerikut?esc(fmtTgl(b.PenyianganBerikut)):'')+
+    '</div></div>'+
+
+    (terbuka.length
+      ? '<div class="kartu" style="margin-bottom:12px;border-left:4px solid var(--merah)">'+
+        '<b style="font-size:14px">⚠️ Masalah Terbuka ('+terbuka.length+')</b><div style="margin-top:6px">'+
+        terbuka.slice(0,5).map(function(m){
+          return '<div class="meta" style="padding:4px 0;border-bottom:1px solid var(--garis)">'+
+            esc(fmtTgl(m.Tanggal))+' — <b>'+esc(m.JenisMasalah||'-')+'</b> ('+esc(m.Tingkat||'-')+')</div>';
+        }).join('')+'</div></div>'
+      : '')+
+
+    '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">🧺 Panen Terakhir</b>'+
+    '<div style="margin-top:6px">'+
+      (panen.length
+        ? panen.slice(0,6).map(function(h){
+            return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--garis);font-size:12.5px">'+
+              '<span>'+esc(fmtTgl(h.Tanggal))+'</span>'+
+              '<span><b>'+angka(h.EstimasiTon,2)+' t</b> <span class="meta">· '+angka(h.JumlahJanjang,0)+' jjg · BJR '+angka(h.BJR,1)+'</span></span></div>';
+          }).join('') + (panen.length>6?'<div class="meta" style="margin-top:6px">…dan '+(panen.length-6)+' catatan lain</div>':'')
+        : '<div class="meta">Belum ada catatan panen untuk blok ini.</div>')+
+    '</div></div>'+
+
+    (pupuk.length
+      ? '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">🧪 Pemupukan Terakhir</b>'+
+        '<div style="margin-top:6px">'+pupuk.slice(0,4).map(function(p){
+          return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--garis);font-size:12.5px">'+
+            '<span>'+esc(fmtTgl(p.Tanggal))+' — '+esc(p.JenisPupuk||'-')+'</span>'+
+            '<b>'+angka(p.TotalKg,0)+' kg</b></div>'; }).join('')+'</div></div>'
+      : '')+
+
+    '<div class="aksi-baris" style="margin-top:14px;flex-wrap:wrap">'+
+      '<button class="btn btn-utama btn-kecil" onclick="tutupLembar();formPanen(\''+esc(b.ID)+'\')">🧺 Catat Panen</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="tutupLembar();formMasalah()">⚠️ Lapor Masalah</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="tampilQRIdentitas(\'BLOK\',\''+esc(b.ID)+'\')">🏷️ Cetak Stiker QR</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="tutupLembar();formBlok(\''+esc(b.ID)+'\')">✏️ Edit Blok</button>'+
+      (jadwal.length?'<span class="meta" style="align-self:center">📅 '+jadwal.length+' jadwal terkait</span>':'')+
+    '</div>');
 }
 
 function formBlok(id){
@@ -10714,82 +10803,91 @@ function bukaScannerQR(){
 
   if(typeof ADA_GAS !== 'undefined' && ADA_GAS){
     gagalKamera('Kamera tidak tersedia di mode ini',
-      '<b>Aplikasi sedang berjalan di dalam bingkai Apps Script.</b><br>'+
+      '<b>Aplikasi berjalan di dalam bingkai Apps Script.</b><br>'+
       'Browser tidak mengizinkan akses kamera dari sini — sama seperti GPS dan notifikasi.<br><br>'+
       'Gunakan <b>versi PWA</b> yang dipasang di layar utama agar kamera berfungsi. '+
-      'Untuk sementara, silakan <b>unggah gambar QR</b> atau ketik ID secara manual di bawah.');
+      'Untuk sementara, silakan <b>unggah gambar QR</b> atau ketik ID manual di bawah.');
     return;
   }
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
     gagalKamera('Kamera tidak didukung peramban',
-      'Peramban ini tidak menyediakan akses kamera. Gunakan Chrome pada Android atau Safari iOS 11+.<br><br>'+
+      'Peramban ini tidak menyediakan akses kamera. Gunakan Chrome di Android atau Safari iOS 11+.<br><br>'+
       'Anda tetap dapat mengunggah gambar QR atau mengetik ID di bawah.');
     return;
   }
 
-  // minta izin kamera dulu; bila ditolak, jangan tampilkan kotak hitam
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-    .then(function(stream){
-      stream.getTracks().forEach(function(t){ t.stop(); });   // lepas, biar dipakai pustaka
-      return pastikanScannerQR();
-    })
-    .catch(function(err){
-      var nm = err && err.name ? err.name : '';
-      if(nm === 'NotAllowedError' || nm === 'SecurityError'){
-        gagalKamera('Izin kamera ditolak',
-          'Izin kamera pernah ditolak untuk situs ini.<br><br>'+
-          'Ketuk ikon <b>gembok</b> di samping alamat situs → <b>Setelan situs</b> → '+
-          '<b>Kamera</b> → ubah menjadi <b>Izinkan</b>, lalu buka ulang pemindai.');
-      } else if(nm === 'NotFoundError'){
-        gagalKamera('Kamera tidak ditemukan', 'Perangkat ini tidak memiliki kamera yang dapat diakses.');
-      } else if(nm === 'NotReadableError'){
-        gagalKamera('Kamera sedang dipakai aplikasi lain',
-          'Tutup aplikasi lain yang memakai kamera (mis. WhatsApp atau Kamera), lalu coba lagi.');
-      } else {
-        gagalKamera('Kamera tidak dapat diakses', 'Penyebab: ' + esc(String(err && err.message || nm || err)));
-      }
-      throw err;
-    })
-    .then(function(){
-  setTimeout(function(){
+  /* PENTING: jangan memanggil getUserMedia sendiri untuk "menguji" kamera.
+     Aliran yang direbut lalu dilepas membuat pustaka pemindai gagal membuka
+     kamera berikutnya — inilah penyebab layar hitam setelah izin diberikan.
+     Biarkan pustaka yang membuka kamera, hasilnya ditangani lewat promise. */
+  hentikanScannerQR();
+  pastikanScannerQR().then(function(){
+    if(typeof Html5Qrcode === 'undefined') throw new Error('Pustaka pemindai gagal dimuat.');
     var bdg = document.getElementById('qrStatusBadge');
-    if(typeof Html5QrcodeScanner !== 'undefined'){
-      try {
-        if(html5QrcodeScanner){ html5QrcodeScanner.clear().catch(function(){}); }
-        html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
-        html5QrcodeScanner.render(function(decodedText){
-          hentikanScannerQR();
-          prosesHasilScanQR(decodedText);
-        }, function(error){});
-        if(bdg){
-          bdg.className = 'chip hijau';
-          bdg.innerHTML = '🟢 Status: Kamera aktif — arahkan ke kode QR';
+    if(bdg){ bdg.className='chip oranye'; bdg.innerHTML='&#9203; Meminta izin kamera...'; }
+
+    html5QrcodeScanner = new Html5Qrcode('qr-reader');
+    return html5QrcodeScanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      function(decodedText){ hentikanScannerQR(); prosesHasilScanQR(decodedText); },
+      function(){}
+    ).then(function(){
+      if(bdg){ bdg.className='chip hijau'; bdg.innerHTML='&#128994; Kamera aktif - arahkan ke kode QR'; }
+      // pastikan gambar benar-benar tampil, bukan kotak hitam
+      setTimeout(function(){
+        var v = document.querySelector('#qr-reader video');
+        if(!v || !v.videoWidth){
+          gagalKamera('Kamera terbuka tetapi tidak menampilkan gambar',
+            'Tutup aplikasi lain yang memakai kamera, lalu buka ulang pemindai. '+
+            'Bila tetap hitam, gunakan <b>Unggah Gambar QR</b> di bawah.');
         }
-      } catch(e) {
-        if(bdg){
-          bdg.className = 'chip oranye';
-          bdg.innerHTML = '⚠️ Status: Kamera Tidak Dapat Diakses / Izin Ditolak';
-        }
-        var elR = document.getElementById('qr-reader');
-        if(elR) elR.innerHTML = '<div style="padding:20px;color:var(--abu);font-size:12px;text-align:center">Kamera tidak dapat diakses atau izin ditolak. Anda dapat mengunggah gambar QR atau memasukkan ID manual di bawah.</div>';
-      }
+      }, 2500);
+    });
+  }).catch(function(err){
+    var nm = (err && err.name) ? err.name : String(err || '');
+    var pesan = String((err && err.message) || nm);
+    if(/NotAllowed|Permission|SecurityError/i.test(nm + pesan)){
+      gagalKamera('Izin kamera ditolak',
+        'Izin kamera ditolak untuk situs ini.<br><br>'+
+        'Ketuk ikon <b>gembok</b> di samping alamat situs &rarr; <b>Setelan situs</b> &rarr; '+
+        '<b>Kamera</b> &rarr; <b>Izinkan</b>, lalu buka ulang pemindai.');
+    } else if(/NotFound|Devices/i.test(nm + pesan)){
+      gagalKamera('Kamera tidak ditemukan', 'Perangkat ini tidak memiliki kamera yang dapat diakses.');
+    } else if(/NotReadable|TrackStart|in use/i.test(nm + pesan)){
+      gagalKamera('Kamera sedang dipakai aplikasi lain',
+        'Tutup aplikasi lain yang memakai kamera (mis. WhatsApp atau Kamera), lalu coba lagi.');
     } else {
-      if(bdg){
-        bdg.className = 'chip oranye';
-        bdg.innerHTML = '⏳ Status: Pustaka QR Scanner sedang dimuat...';
-      }
-      var elR = document.getElementById('qr-reader');
-      if(elR) elR.innerHTML = '<div style="padding:20px;color:var(--abu);font-size:12px;text-align:center">Pustaka QR Scanner sedang dimuat... Silakan ketik ID di bawah.</div>';
+      gagalKamera('Kamera tidak dapat diakses',
+        'Penyebab: ' + esc(pesan) + '<br><br>Anda tetap dapat mengunggah gambar QR atau mengetik ID di bawah.');
     }
-  }, 100);
   });
 }
 
 function hentikanScannerQR(){
-  if(html5QrcodeScanner){
-    try { html5QrcodeScanner.clear().catch(function(){}); } catch(e){}
-    html5QrcodeScanner = null;
-  }
+  /* Wajib stop() dulu agar aliran kamera benar-benar dilepas. Sebelumnya hanya
+     clear() yang dipanggil, sehingga kamera tetap menyala dan pembukaan
+     berikutnya menampilkan layar hitam. */
+  var s = html5QrcodeScanner;
+  html5QrcodeScanner = null;
+  if(!s) return;
+  try {
+    if(typeof s.stop === 'function'){
+      s.stop().then(function(){ try{ s.clear(); }catch(e){} }).catch(function(){
+        try{ s.clear(); }catch(e){}
+      });
+    } else if(typeof s.clear === 'function'){
+      var r = s.clear(); if(r && r.catch) r.catch(function(){});
+    }
+  } catch(e){}
+  // lepas paksa aliran video yang mungkin masih menempel
+  try {
+    var v = document.querySelector('#qr-reader video');
+    if(v && v.srcObject){
+      v.srcObject.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} });
+      v.srcObject = null;
+    }
+  } catch(e){}
 }
 
 function pilihGambarQR(){
@@ -11994,7 +12092,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.9.0';
+var VERSI_APP = '1.9.1';
 var TANGGAL_BUILD = '2026-08-19';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
