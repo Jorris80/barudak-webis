@@ -728,6 +728,7 @@
       <button onclick="bukaHalaman('budget')"><span class="ic">💰</span>Budgeting Kebun</button>
       <button onclick="bukaProfil()"><span class="ic">🪪</span>Profil Saya</button>
       <button onclick="formGantiSandi()"><span class="ic">🔑</span>Ganti Kata Sandi</button>
+      <button onclick="bukaTentang()"><span class="ic">ℹ️</span>Tentang &amp; Ketentuan</button>
       <button class="adminOnly" onclick="formKunciAI()"><span class="ic">🤖</span>Kunci Asisten AI</button>
       <button onclick="bukaHalaman('rekap')"><span class="ic">📈</span>Rekap Bulanan</button>
       <button onclick="bukaHalaman('workflow')"><span class="ic">✅</span>Workflow Persetujuan</button>
@@ -6503,6 +6504,40 @@ function formPengguna(username){
       '<div><label>Jabatan</label><input id="puJabatan" value="'+esc(u?u.Jabatan:'')+'" placeholder="cth: Asisten Kepala"></div>'+
       '<div><label>Level Struktur</label><input type="number" id="puLevel" value="'+esc(u?u.Level:'')+'" placeholder="1 = staf"></div>'+
     '</div>'+
+    '<label>Atasan Langsung</label>'+
+    '<select id="puAtasan">'+
+      '<option value="">— belum ditentukan —</option>'+
+      (daftarPenggunaCache()||[]).filter(function(x){
+        return !u || String(x.Username)!==String(u.Username);   // jangan jadi atasan diri sendiri
+      }).map(function(x){
+        return '<option value="'+esc(x.Username)+'"'+((u&&u.Atasan===x.Username)?' selected':'')+'>'+
+          esc(x.Nama||x.Username)+(x.Jabatan?' — '+esc(x.Jabatan):'')+'</option>';
+      }).join('')+
+    '</select>'+
+    '<div class="meta" style="margin-top:4px">Dipakai alur berpenanda <b>Atasan Langsung</b>.</div>'+
+    '<label>Atasan Tingkat Dua <span style="text-transform:none;letter-spacing:0">(opsional)</span></label>'+
+    '<select id="puAtasan2">'+
+      '<option value="">— ikuti atasan dari atasan langsung —</option>'+
+      (daftarPenggunaCache()||[]).filter(function(x){
+        return !u || String(x.Username)!==String(u.Username);
+      }).map(function(x){
+        return '<option value="'+esc(x.Username)+'"'+((u&&u.Atasan2===x.Username)?' selected':'')+'>'+
+          esc(x.Nama||x.Username)+(x.Jabatan?' — '+esc(x.Jabatan):'')+'</option>';
+      }).join('')+
+    '</select>'+
+    '<div class="meta" style="margin-top:4px">Isi bila jenjang kedua berbeda dari atasan-nya atasan. '+
+      'Bila dikosongkan, sistem menelusuri sendiri.</div>'+
+    '<label>Peran Struktural <span style="text-transform:none;letter-spacing:0">(untuk alur persetujuan)</span></label>'+
+    '<select id="puPeranStruktural">'+
+      '<option value="">— bukan pemegang peran khusus —</option>'+
+      PERAN_STRUKTURAL.map(function(x){
+        return '<option'+((u&&u.PeranStruktural===x)?' selected':'')+'>'+esc(x)+'</option>';
+      }).join('')+
+    '</select>'+
+    '<div class="meta" style="margin-top:4px;line-height:1.6">Menandai pemegang peran ini di perusahaan. '+
+      'Alur yang memilih approver <b>HRD</b>, <b>Finance</b>, <b>Manajer Logistik</b>, dan seterusnya '+
+      'otomatis tertuju ke orang yang ditandai di sini. Bila beberapa orang berperan sama, '+
+      'yang <b>seunit dengan pemohon</b> didahulukan.</div>'+
     '<div class="grid2">'+
       '<div><label>Lokasi Kerja</label><select id="puLokasi">'+
         ['Kebun','HO'].map(function(x){ return '<option'+((u&&u.LokasiKerja===x)||(!u&&x==='Kebun')?' selected':'')+'>'+x+'</option>'; }).join('')+
@@ -6674,6 +6709,9 @@ function simpanPengguna(existing){
       var t=[]; document.querySelectorAll('.puModul:checked').forEach(function(x){ t.push(x.value); });
       return t.length===SEMUA_MODUL.length ? '' : t.join(',');   // semua = tanpa batas
     })(),
+    Atasan: nilaiEl('puAtasan'),
+    Atasan2: nilaiEl('puAtasan2'),
+    PeranStruktural: nilaiEl('puPeranStruktural'),
     NamaPanggilan: nilaiEl('puPanggilan'), NIK: nilaiEl('puNIK'),
     TempatLahir: nilaiEl('puTmpLahir'), TanggalLahir: nilaiEl('puTglLahir'),
     JenisKelamin: nilaiEl('puGender'), Agama: nilaiEl('puAgama'),
@@ -12148,8 +12186,8 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '1.9.2';
-var TANGGAL_BUILD = '2026-08-19';
+var VERSI_APP = '2.2.0';
+var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
   if(v) v.textContent = VERSI_APP + ' (' + TANGGAL_BUILD + ')';
@@ -12913,13 +12951,36 @@ function tambahBarisUM(){
   var i=w.children.length;
   var div=document.createElement('div');
   div.style.cssText='display:flex;gap:6px;margin-bottom:6px';
-  div.innerHTML='<select class="umKat" style="flex:1.2">'+
+  div.innerHTML='<select class="umKat" style="flex:1.2" onchange="ubahKategoriUM(this)">'+
     KATEGORI_UM.map(function(k){ return '<option>'+k+'</option>'; }).join('')+'</select>'+
+    '<input class="umKatLain" placeholder="Sebutkan kategorinya" style="flex:1.2;display:none">'+
     '<input class="umNom" type="number" placeholder="0" style="flex:1" oninput="hitungTotalUM()">'+
     '<button class="btn btn-sekunder btn-kecil" style="flex:0 0 auto" onclick="this.parentNode.remove();hitungTotalUM()">✕</button>';
   w.appendChild(div);
   hitungTotalUM();
 }
+/* Kategori "Lainnya" memunculkan kolom ketik supaya nama biayanya spesifik —
+   mis. "Sewa Perahu" atau "Retribusi Jalan" — bukan sekadar tertulis Lainnya. */
+function ubahKategoriUM(sel){
+  var baris = sel.parentNode;
+  var lain = baris.querySelector('.umKatLain');
+  if(!lain) return;
+  var perlu = String(sel.value).toLowerCase() === 'lainnya';
+  lain.style.display = perlu ? '' : 'none';
+  if(perlu){ sel.style.flex='0 0 96px'; setTimeout(function(){ lain.focus(); }, 60); }
+  else { sel.style.flex='1.2'; lain.value=''; }
+}
+/** Nama kategori sebenarnya dari satu baris — memakai ketikan bila diisi. */
+function bacaKategoriUM(baris){
+  var sel = baris.querySelector('.umKat');
+  var lain = baris.querySelector('.umKatLain');
+  var v = sel ? sel.value : '';
+  if(String(v).toLowerCase()==='lainnya' && lain && lain.value.trim()){
+    return lain.value.trim();
+  }
+  return v;
+}
+
 function hitungTotalUM(){
   var t=0;
   document.querySelectorAll('#wfUM .umNom').forEach(function(e){ t+=Number(e.value)||0; });
@@ -12981,10 +13042,11 @@ function kirimPengajuan(){
   } else if(jenis==='sppd'||jenis==='uangmuka'){
     if(!nilai('wfTujuan')) return toast('Tujuan wajib diisi.', true);
     var um=[], tot=0;
-    var kat=document.querySelectorAll('#wfUM .umKat'), nom=document.querySelectorAll('#wfUM .umNom');
-    for(var i=0;i<kat.length;i++){
-      var n=Number(nom[i].value)||0;
-      if(n>0){ um.push({ kategori:kat[i].value, nominal:n }); tot+=n; }
+    var baris=document.querySelectorAll('#wfUM > div');
+    for(var i=0;i<baris.length;i++){
+      var nomEl=baris[i].querySelector('.umNom');
+      var n=nomEl?Number(nomEl.value)||0:0;
+      if(n>0){ um.push({ kategori:bacaKategoriUM(baris[i]), nominal:n }); tot+=n; }
     }
     data={ Tujuan:nilai('wfTujuan'), Kendaraan:nilai('wfKendaraan'), Mulai:nilai('wfMulai'),
            Selesai:nilai('wfSelesai'), Maksud:nilai('wfMaksud'), Keterangan:nilai('wfKet'),
@@ -13017,7 +13079,7 @@ function renderAlur(){
             : ' · semua karyawan')+'</div></div>'+
         '<div class="kanan"><span class="chip '+(t.Aktif?'hijau':'abu')+'">'+(t.Aktif?'Aktif':'Nonaktif')+'</span></div></div>'+
         '<div class="meta" style="margin-top:6px">'+t.Langkah.map(function(l,i){
-          return (i+1)+'. '+esc(l.nama)+' → '+esc(namaUser(l.approver)); }).join(' &nbsp;·&nbsp; ')+'</div>'+
+          return (i+1)+'. '+esc(l.nama)+' → '+esc(namaApprover(l.approver)); }).join(' &nbsp;·&nbsp; ')+'</div>'+
         '<div class="aksi-baris">'+
         '<button class="btn btn-sekunder btn-kecil" onclick="formAlur(\''+esc(t.ID)+'\')">✏️ Ubah</button>'+
         '<button class="btn btn-bahaya btn-kecil" onclick="hapusAlur(\''+esc(t.ID)+'\')">🗑 Hapus</button>'+
@@ -13028,12 +13090,52 @@ function namaUser(u){
   var x=(WF.users||[]).find(function(p){ return String(p.Username)===String(u); });
   return x ? (x.Nama||x.Username)+(x.Jabatan?' ('+x.Jabatan+')':'') : (u||'-');
 }
+/* Penanda dinamis: alur mengikuti struktur jabatan tiap pemohon, bukan orang
+   tertentu. Satu alur berlaku untuk semua karyawan. */
+var PERAN_STRUKTURAL = [
+  'HRD','Finance','Manajer Logistik','Purchasing','Kepala Gudang',
+  'Kepala Tata Usaha','Asisten Kepala','Manajer Kebun','Estate Manager',
+  'General Manager','Direktur','Kepala Teknik','Kepala Traksi','QC / Mutu','Humas / CSR'
+];
+var APPROVER_DINAMIS = [
+  ['@atasan',     '👤 Atasan Langsung'],
+  ['@atasan2',    '👥 Atasan Tingkat Dua'],
+  ['@askep',      '🌴 Asisten Kepala'],
+  ['@manajer',    '🏢 Manajer Kebun'],
+  ['@estate',     '🏢 Estate Manager'],
+  ['@ktu',        '🗂️ Kepala Tata Usaha'],
+  ['@hrd',        '🧾 HRD'],
+  ['@finance',    '💰 Finance'],
+  ['@logistik',   '🚚 Manajer Logistik'],
+  ['@purchasing', '🛒 Purchasing'],
+  ['@gudang',     '📦 Kepala Gudang'],
+  ['@teknik',     '🔧 Kepala Teknik'],
+  ['@traksi',     '🚜 Kepala Traksi'],
+  ['@qc',         '🔍 QC / Mutu'],
+  ['@humas',      '🤝 Humas / CSR'],
+  ['@gm',         '👔 General Manager'],
+  ['@direktur',   '🏛️ Direktur']
+];
 function opsiApprover(pilih){
   var punya=(WF.users||[]).filter(function(u){ return u.Jabatan; });
   var sumber = punya.length ? punya : (WF.users||[]);
-  return '<option value="">— pilih approver —</option>'+sumber.map(function(u){
-    return '<option value="'+esc(u.Username)+'"'+(pilih===u.Username?' selected':'')+'>'+
-      esc(u.Nama||u.Username)+(u.Jabatan?' — '+esc(u.Jabatan):'')+'</option>'; }).join('');
+  return '<option value="">— pilih approver —</option>'+
+    '<optgroup label="Otomatis mengikuti struktur jabatan">'+
+      APPROVER_DINAMIS.map(function(d){
+        return '<option value="'+d[0]+'"'+(pilih===d[0]?' selected':'')+'>'+esc(d[1])+'</option>';
+      }).join('')+
+    '</optgroup>'+
+    '<optgroup label="Orang tertentu">'+
+      sumber.map(function(u){
+        return '<option value="'+esc(u.Username)+'"'+(pilih===u.Username?' selected':'')+'>'+
+          esc(u.Nama||u.Username)+(u.Jabatan?' — '+esc(u.Jabatan):'')+'</option>'; }).join('')+
+    '</optgroup>';
+}
+/** Nama tampilan approver, termasuk penanda dinamis. */
+function namaApprover(kode){
+  var d = APPROVER_DINAMIS.filter(function(x){ return x[0]===kode; })[0];
+  if(d) return d[1];
+  return namaUser(kode);
 }
 function formAlur(id){
   var t = id ? WF.templates.find(function(x){ return x.ID===id; }) : null;
@@ -13057,6 +13159,9 @@ function formAlur(id){
     '<label style="display:flex;align-items:center;gap:8px;margin-top:12px">'+
       '<input type="checkbox" id="alAktif" style="width:auto" '+(!t||t.Aktif?'checked':'')+'> Alur aktif</label>'+
     '<h4 style="margin:16px 0 6px;font-size:13px">Langkah Persetujuan (berurutan)</h4>'+
+    '<div class="meta" style="margin-bottom:8px;line-height:1.6">Pilih <b>Atasan Langsung (otomatis)</b> '+
+      'agar dokumen mengalir ke atasan masing-masing pemohon sesuai kolom <b>Atasan</b> di profilnya — '+
+      'satu alur cukup untuk seluruh karyawan.</div>'+
     '<div id="alLangkah"></div>'+
     '<button class="btn btn-sekunder btn-kecil" style="margin-top:8px" onclick="tambahLangkah()">＋ Tambah langkah</button>'+
     (!((WF.users||[]).some(function(u){ return u.Jabatan; }))
@@ -13127,6 +13232,12 @@ function bukaCadangan(){
       '<div class="meta" style="margin-top:4px;line-height:1.6">Mengunduh seluruh data sebagai satu berkas ke perangkat ini. '+
         'Berguna untuk arsip di luar Google atau diserahkan ke bagian IT.</div>'+
       '<button class="btn btn-sekunder btn-blok" style="margin-top:10px" onclick="jalankanBackup(\'json\')">⬇ Unduh JSON</button>'+
+    '</div>'+
+    '<div style="margin-top:12px;padding:14px;border-radius:12px;background:#FBEAE7;border:1px solid #F3C6C0">'+
+      '<b style="font-size:14px">3. Pulihkan dari cadangan</b>'+
+      '<div class="meta" style="margin-top:4px;line-height:1.6">Mengembalikan data dari berkas cadangan JSON. '+
+        'Keadaan sekarang dicadangkan otomatis lebih dulu sebagai pengaman.</div>'+
+      '<button class="btn btn-bahaya btn-blok" style="margin-top:10px" onclick="bukaPulihkan()">♻️ Pulihkan Data</button>'+
     '</div>'+
     '<div class="meta" style="margin-top:14px;line-height:1.6">'+
       '<b>Saran:</b> cadangkan ke Drive setiap awal bulan, dan unduh JSON setiap akhir tahun. '+
@@ -14064,6 +14175,13 @@ function pilihSemuaModul(centang){
   document.querySelectorAll('.puModul').forEach(function(x){ x.checked=!!centang; });
 }
 
+/* Daftar pengguna terakhir yang dimuat halaman Pengguna — dipakai mengisi
+   dropdown atasan tanpa perlu memanggil server lagi. */
+function daftarPenggunaCache(){
+  var el = document.getElementById('daftarPengguna');
+  return (el && el._users) ? el._users : [];
+}
+
 function nilaiEl(id){ var e=document.getElementById(id); return e ? String(e.value||'').trim() : ''; }
 
 function barisProfil(label, nilai){
@@ -14130,7 +14248,10 @@ function gambarProfil(){
                               : ' — hanya Minggu yang tidak memotong cuti') : ''],
       ['Tanggal bergabung', u.TanggalBergabung?fmtTgl(u.TanggalBergabung):''],
       ['Masa kerja', masaKerja(u.TanggalBergabung)],
-      ['Status kepegawaian', u.StatusKepegawaian], ['Atasan langsung', u.Atasan],
+      ['Status kepegawaian', u.StatusKepegawaian],
+      ['Atasan langsung', u.AtasanNama || u.Atasan],
+      ['Atasan tingkat dua', u.Atasan2Nama || u.Atasan2],
+      ['Peran struktural', u.PeranStruktural],
       ['Peran aplikasi', peran], ['Cakupan akses', akses||'Seluruh unit'],
       ['Modul yang dapat dibuka', (function(){
         var s=String(u.ModulDiizinkan||'').trim();
@@ -14775,6 +14896,290 @@ function terapkanAksesModul(){
     if(!m) return;                       // bukan tombol halaman → biarkan
     b.style.display = (!izin || izin[m[1]]) ? '' : 'none';
   });
+}
+
+
+/* ==================== TENTANG, SYARAT & PRIVASI ==================== */
+function bukaTentang(tab){
+  tab = tab || 'versi';
+  var st = S.settings || {};
+  var lic = (S.license||{});
+  var tombol = [['versi','Tentang'],['syarat','Syarat & Ketentuan'],['privasi','Pemberitahuan Privasi']];
+
+  var isi = '';
+  if(tab === 'versi'){
+    isi =
+      '<div style="text-align:center;padding:10px 0 16px">'+
+        '<div style="font-size:44px">'+esc(st.emoji||'🌴')+'</div>'+
+        '<div style="font-size:19px;font-weight:800;margin-top:6px">'+esc(st.judulAplikasi||'SawitGIS Mandiri')+'</div>'+
+        '<div class="meta">'+esc(st.namaPerusahaan||st.subjudul||'Sistem Manajemen Perkebunan Kelapa Sawit')+'</div>'+
+        '<div style="margin-top:10px"><span class="chip hijau">Versi '+esc(VERSI_APP)+'</span></div>'+
+      '</div>'+
+      '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Informasi Aplikasi</b><div style="margin-top:6px">'+
+        barisProfil('Versi aplikasi', esc(VERSI_APP))+
+        barisProfil('Tanggal build', esc(typeof TANGGAL_BUILD!=='undefined'?TANGGAL_BUILD:'-'))+
+        barisProfil('Versi backend', esc(lic.versiBackend||'(tidak terbaca)'))+
+        barisProfil('Mode berjalan', (typeof ADA_GAS!=='undefined'&&ADA_GAS)?'Apps Script'
+          :((typeof MODE_API!=='undefined'&&MODE_API)?'PWA (offline siap)':'Demo'))+
+        barisProfil('Status lisensi', lic.mode?esc(lic.mode)+' — '+esc(lic.pesan||''):'-')+
+        (lic.installId?barisProfil('ID instalasi', '<span style="font-family:monospace">'+esc(lic.installId)+'</span>'):'')+
+      '</div></div>'+
+      '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Komponen Pihak Ketiga</b>'+
+      '<div class="meta" style="margin-top:6px;line-height:1.7">'+
+        'Leaflet (BSD-2) · Chart.js (MIT) · jsPDF (MIT) · html2canvas (MIT) · SheetJS (Apache-2.0) · '+
+        '@mapbox/shp-write (ISC) · html5-qrcode (Apache-2.0) · qrcodejs (MIT) · '+
+        'Peta dasar © OpenStreetMap contributors (ODbL)'+
+      '</div></div>'+
+      '<div class="aksi-baris">'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="diagnosa()">🩺 Salin Diagnosa</button>'+
+        (SESI&&SESI.peran==='admin'?'<button class="btn btn-sekunder btn-kecil" onclick="tutupLembar();bukaCadangan()">💾 Cadangkan Data</button>':'')+
+      '</div>';
+  }
+
+  if(tab === 'syarat'){
+    isi = pasalHTML([
+      ['1. Penerimaan Ketentuan',
+       'Dengan masuk dan menggunakan aplikasi ini, Anda menyatakan telah membaca, memahami, dan '+
+       'menyetujui seluruh ketentuan di bawah ini. Apabila tidak menyetujuinya, mohon hentikan pemakaian '+
+       'dan sampaikan kepada administrator perusahaan.'],
+      ['2. Lingkup Penggunaan',
+       'Aplikasi ini disediakan untuk keperluan operasional perkebunan '+
+       esc((S.settings||{}).namaPerusahaan||'perusahaan')+' semata. Akun diberikan atas nama perorangan '+
+       'dan tidak boleh dipakai bersama. Setiap tindakan yang dilakukan melalui suatu akun menjadi '+
+       'tanggung jawab pemilik akun tersebut.'],
+      ['3. Kewajiban Pengguna',
+       '<b>a.</b> Menjaga kerahasiaan kata sandi dan menggantinya secara berkala.<br>'+
+       '<b>b.</b> Memasukkan data secara benar, lengkap, dan tepat waktu sesuai SOP perusahaan.<br>'+
+       '<b>c.</b> Tidak memasukkan data fiktif atau yang tidak sesuai keadaan lapangan.<br>'+
+       '<b>d.</b> Tidak mengubah atau menghapus data milik pengguna lain tanpa kewenangan.<br>'+
+       '<b>e.</b> Melaporkan kehilangan perangkat atau dugaan penyalahgunaan akun pada hari yang sama.'],
+      ['4. Kepemilikan Data',
+       'Seluruh data yang dimasukkan melalui aplikasi ini merupakan milik perusahaan dan tersimpan '+
+       'pada akun Google Workspace perusahaan. Pengembang aplikasi tidak menyimpan salinan data di '+
+       'server mana pun. Perusahaan dapat mengekspor seluruh datanya sewaktu-waktu.'],
+      ['5. Hak Kekayaan Intelektual',
+       'Kode program, rancangan antarmuka, dan dokumentasi aplikasi merupakan milik penyedia. '+
+       'Lisensi yang diberikan bersifat hak pakai, tidak dapat dialihkan, dan tidak mencakup hak untuk '+
+       'menyalin, menjual kembali, atau membongkar kode program.'],
+      ['6. Ketersediaan Layanan',
+       'Aplikasi bergantung pada layanan Google Workspace dan jaringan internet. Gangguan pada layanan '+
+       'pihak ketiga berada di luar kendali penyedia. Beberapa fungsi — peta latar, unggah foto, '+
+       'pengiriman posisi, dan pemberitahuan — memerlukan koneksi internet.'],
+      ['7. Batasan Tanggung Jawab',
+       'Aplikasi merupakan alat bantu pencatatan dan pemantauan. Keputusan operasional tetap berada '+
+       'pada manajemen perusahaan. Penyedia tidak bertanggung jawab atas kerugian yang timbul dari '+
+       'kesalahan pemasukan data, kelalaian pengguna, atau keputusan yang diambil berdasarkan data '+
+       'yang tidak diperbarui.'],
+      ['8. Asisten AI',
+       'Fitur Asisten Kebun bersifat membaca data dan tidak dapat mengubahnya. Jawaban asisten '+
+       'disusun dari data yang tersimpan di aplikasi, namun tetap perlu diperiksa sebelum dijadikan '+
+       'dasar keputusan penting. Pertanyaan dan ringkasan data dikirim ke layanan Google Gemini '+
+       'untuk diproses.'],
+      ['9. Pengakhiran',
+       'Perusahaan dapat menonaktifkan akun pengguna sewaktu-waktu, antara lain karena berakhirnya '+
+       'hubungan kerja atau pelanggaran ketentuan ini. Apabila masa lisensi berakhir, aplikasi beralih '+
+       'ke mode baca-saja dan data tetap dapat diekspor.'],
+      ['10. Perubahan Ketentuan',
+       'Ketentuan ini dapat diperbarui seiring pengembangan aplikasi. Versi terbaru selalu tersedia '+
+       'pada halaman ini beserta nomor versi aplikasinya.']
+    ]);
+  }
+
+  if(tab === 'privasi'){
+    isi = pasalHTML([
+      ['1. Data yang Dikumpulkan',
+       '<b>Data kepegawaian:</b> nama, NIK, tempat dan tanggal lahir, jenis kelamin, agama, alamat, '+
+       'status pernikahan, jumlah tanggungan, kontak darurat, jabatan, dan status kepegawaian.<br>'+
+       '<b>Data administratif:</b> NPWP, nomor rekening bank, dan nomor kepesertaan BPJS.<br>'+
+       '<b>Data operasional:</b> catatan panen, kehadiran, premi, serta laporan lapangan beserta foto.<br>'+
+       '<b>Data lokasi:</b> titik koordinat saat melaporkan masalah, dan posisi berkala apabila '+
+       'fitur berbagi lokasi diaktifkan pengguna.<br>'+
+       '<b>Data teknis:</b> catatan aktivitas berisi nama pengguna, waktu, dan tindakan yang dilakukan.'],
+      ['2. Tujuan Penggunaan',
+       'Data digunakan untuk pengelolaan operasional kebun, perhitungan upah dan premi, administrasi '+
+       'kepegawaian, persetujuan dokumen, serta pelaporan kepada manajemen. Data tidak digunakan untuk '+
+       'tujuan lain di luar keperluan perusahaan.'],
+      ['3. Tempat Penyimpanan',
+       'Seluruh data tersimpan di Google Spreadsheet dan Google Drive milik perusahaan, bukan di server '+
+       'pengembang. Keamanan akun Google perusahaan menjadi tanggung jawab perusahaan, termasuk '+
+       'pengaturan siapa saja yang dapat mengakses berkas tersebut.'],
+      ['4. Perlindungan Data Sensitif',
+       'NIK, NPWP, nomor rekening, nomor BPJS, dan alamat rumah hanya ditampilkan utuh kepada pemilik '+
+       'data dan administrator. Pengguna lain hanya melihat bentuk tersamar, misalnya 32••••••001. '+
+       'Data ini juga tidak disertakan dalam daftar pengguna yang dikirim ke perangkat lain.<br><br>'+
+       '<b>Catatan penting:</b> pembatasan ini berlaku di dalam aplikasi. Siapa pun yang memiliki akses '+
+       'langsung ke spreadsheet tetap dapat membaca seluruh isinya. Karena itu akses berbagi '+
+       'spreadsheet perlu dibatasi hanya untuk HRD dan administrator.'],
+      ['5. Berbagi Lokasi',
+       'Fitur pelacakan posisi bersifat <b>sukarela</b> dan hanya berjalan selama pengguna '+
+       'mengaktifkannya, dengan aplikasi dalam keadaan terbuka. Pengguna dapat menghentikannya '+
+       'kapan saja. Perusahaan wajib memberitahukan penerapan fitur ini kepada karyawan sebelum '+
+       'digunakan, sesuai peraturan ketenagakerjaan yang berlaku.'],
+      ['6. Pihak Ketiga',
+       '<b>Google Workspace</b> — penyimpanan data dan pengiriman surel.<br>'+
+       '<b>Penyedia peta</b> — memuat peta latar; koordinat tampilan terkirim ke penyedia peta.<br>'+
+       '<b>Google Gemini</b> — memproses pertanyaan Asisten AI beserta ringkasan data kebun, '+
+       'apabila fitur ini diaktifkan administrator.<br>'+
+       '<b>Gateway WhatsApp</b> — mengirim pemberitahuan, apabila dipasang perusahaan.'],
+      ['7. Masa Simpan',
+       'Data operasional disimpan selama diperlukan perusahaan. Jejak lokasi disarankan dibersihkan '+
+       'setiap tiga bulan. Data tahun sebelumnya sebaiknya diarsipkan setiap awal tahun.'],
+      ['8. Hak Pengguna',
+       'Setiap karyawan berhak melihat data pribadinya melalui menu Profil Saya, meminta koreksi '+
+       'apabila terdapat kekeliruan, dan memperoleh salinan datanya dalam bentuk cetak. '+
+       'Permintaan disampaikan kepada bagian kepegawaian.'],
+      ['9. Keamanan',
+       'Akses aplikasi dilindungi kata sandi dengan tiga tingkat peran, pembatasan wilayah kerja, dan '+
+       'pembatasan modul. Setiap tindakan tercatat pada log aktivitas. Kata sandi disimpan dalam bentuk '+
+       'ringkasan (hash), bukan teks terbaca.'],
+      ['10. Kontak',
+       'Pertanyaan mengenai perlindungan data disampaikan kepada administrator sistem atau bagian '+
+       'kepegawaian perusahaan.']
+    ]);
+  }
+
+  bukaLembar('<h3>ℹ️ Tentang Aplikasi</h3>'+
+    '<div class="filter-bar" style="margin:10px 0 12px">'+
+      tombol.map(function(t){
+        return '<button class="btn btn-kecil '+(t[0]===tab?'btn-utama':'btn-sekunder')+'" '+
+          'onclick="bukaTentang(\''+t[0]+'\')">'+esc(t[1])+'</button>'; }).join('')+
+    '</div>'+
+    isi+
+    (tab!=='versi'
+      ? '<div class="meta" style="margin-top:14px;padding-top:10px;border-top:1px solid var(--garis)">'+
+        'Berlaku untuk aplikasi versi '+esc(VERSI_APP)+'. Dokumen ini merupakan ketentuan internal '+
+        'perusahaan dan bukan nasihat hukum. Sesuaikan dengan kebijakan dan peraturan yang berlaku '+
+        'sebelum diberlakukan resmi.</div>'
+      : ''));
+}
+
+function pasalHTML(daftar){
+  return daftar.map(function(p){
+    return '<div style="margin-bottom:12px">'+
+      '<div style="font-size:13.5px;font-weight:700;color:var(--hijau-700);margin-bottom:3px">'+esc(p[0])+'</div>'+
+      '<div style="font-size:12.5px;line-height:1.65;color:var(--tinta)">'+p[1]+'</div></div>';
+  }).join('');
+}
+
+
+/* ==================== PULIHKAN DATA (ADMIN) ==================== */
+var CADANGAN_ISI = null;
+
+function bukaPulihkan(){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin yang dapat memulihkan data.', true);
+  CADANGAN_ISI = null;
+  bukaLembar('<h3>♻️ Pulihkan Data dari Cadangan</h3>'+
+    '<div style="margin-top:8px;padding:12px;border-radius:8px;background:#FBEAE7;border-left:3px solid var(--merah);font-size:12.5px;line-height:1.65">'+
+      '<b>Tindakan ini menimpa data yang ada sekarang.</b> Gunakan hanya bila data rusak, '+
+      'terhapus tidak sengaja, atau perlu dikembalikan ke keadaan sebelumnya.<br><br>'+
+      'Sebagai pengaman, sistem <b>mencadangkan keadaan sekarang lebih dulu</b> ke Google Drive '+
+      'sebelum memulihkan — jadi Anda masih bisa kembali bila keliru.'+
+    '</div>'+
+    '<label>Pilih Berkas Cadangan (.json)</label>'+
+    '<input type="file" id="pcBerkas" accept=".json,application/json" onchange="bacaBerkasCadangan(this)">'+
+    '<div class="meta" style="margin-top:4px">Berkas hasil menu <b>Cadangkan Data → Unduh JSON</b>.</div>'+
+    '<div id="pcPratinjau" style="margin-top:14px"></div>');
+}
+
+function bacaBerkasCadangan(input){
+  var f = input.files && input.files[0];
+  if(!f) return;
+  var el = document.getElementById('pcPratinjau');
+  el.innerHTML = '<div class="kosong">Membaca berkas…</div>';
+  var r = new FileReader();
+  r.onload = function(){
+    var teks = r.result;
+    tampilLoader(true,'Memeriksa isi cadangan…');
+    callApi('periksaCadangan', { data: teks }).then(function(info){
+      tampilLoader(false);
+      CADANGAN_ISI = teks;
+      gambarPratinjauCadangan(info);
+    }).catch(function(e){
+      tampilLoader(false); CADANGAN_ISI = null;
+      el.innerHTML = '<div style="padding:10px 12px;border-radius:8px;background:#FBEAE7;'+
+        'border-left:3px solid var(--merah);font-size:12.5px">⚠️ '+esc(e.message)+'</div>';
+    });
+  };
+  r.onerror = function(){ el.innerHTML='<div class="kosong" style="color:var(--merah)">Gagal membaca berkas.</div>'; };
+  r.readAsText(f);
+}
+
+function gambarPratinjauCadangan(info){
+  var el = document.getElementById('pcPratinjau');
+  var baris = info.ringkas.filter(function(x){ return x.diCadangan>0 || x.sekarang>0; });
+  el.innerHTML =
+    '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Isi Cadangan</b><div style="margin-top:6px">'+
+      barisProfil('Dibuat', esc(info.dibuat))+
+      barisProfil('Oleh', esc(info.oleh))+
+      barisProfil('Versi aplikasi', esc(info.versi))+
+      barisProfil('Jumlah sheet', esc(info.jumlahSheet))+
+      barisProfil('Total baris', angka(info.totalBaris,0))+
+    '</div></div>'+
+
+    '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Perbandingan dengan Data Sekarang</b>'+
+    '<div class="meta" style="margin-top:4px;margin-bottom:6px">Centang sheet yang ingin dipulihkan.</div>'+
+    '<div class="aksi-baris" style="margin-bottom:8px">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="pilihSemuaSheet(true)">Centang semua</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="pilihSemuaSheet(false)">Kosongkan</button>'+
+    '</div>'+
+    '<div style="max-height:250px;overflow-y:auto;border:1px solid var(--garis);border-radius:8px;padding:8px">'+
+      baris.map(function(x){
+        var tanda = x.selisih>0 ? '<span style="color:var(--hijau-700)">+'+x.selisih+'</span>'
+                  : (x.selisih<0 ? '<span style="color:var(--merah)">'+x.selisih+'</span>' : '<span class="meta">sama</span>');
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px;cursor:pointer;'+
+          'border-bottom:1px solid var(--garis)">'+
+          '<input type="checkbox" class="pcSheet" value="'+esc(x.sheet)+'" style="width:auto;margin:0" checked>'+
+          '<span style="flex:1">'+esc(x.sheet)+'</span>'+
+          '<span class="meta">'+angka(x.sekarang,0)+' → <b style="color:var(--tinta)">'+angka(x.diCadangan,0)+'</b></span>'+
+          '<span style="width:52px;text-align:right;font-size:11.5px">'+tanda+'</span>'+
+          '</label>';
+      }).join('')+
+    '</div></div>'+
+
+    '<div class="kartu" style="margin-bottom:12px;border-left:4px solid #E8960C">'+
+      '<label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;cursor:pointer;line-height:1.6">'+
+        '<input type="checkbox" id="pcPengguna" style="width:auto;margin:3px 0 0">'+
+        '<span><b>Ikut pulihkan data Pengguna</b><br>'+
+        '<span class="meta">Bawaannya <b>tidak</b>, agar akun dan kata sandi yang berlaku sekarang '+
+        'tidak tertimpa data lama. Centang hanya bila memang ingin mengembalikan daftar pengguna.</span></span>'+
+      '</label>'+
+    '</div>'+
+
+    '<label>Ketik <b>PULIHKAN</b> untuk menegaskan *</label>'+
+    '<input id="pcKonfirmasi" placeholder="PULIHKAN" autocomplete="off" oninput="this.value=this.value.toUpperCase()">'+
+    '<button class="btn btn-bahaya btn-blok" style="margin-top:14px" onclick="jalankanPulihkan()">♻️ Pulihkan Sekarang</button>';
+}
+
+function pilihSemuaSheet(centang){
+  document.querySelectorAll('.pcSheet').forEach(function(x){ x.checked=!!centang; });
+}
+
+function jalankanPulihkan(){
+  if(!CADANGAN_ISI) return toast('Pilih berkas cadangan terlebih dahulu.', true);
+  var konf = (document.getElementById('pcKonfirmasi')||{}).value.trim().toUpperCase();
+  if(konf !== 'PULIHKAN') return toast('Ketik PULIHKAN untuk menegaskan tindakan ini.', true);
+  var pilih = [];
+  document.querySelectorAll('.pcSheet:checked').forEach(function(x){ pilih.push(x.value); });
+  if(!pilih.length) return toast('Pilih minimal satu sheet untuk dipulihkan.', true);
+  var ikutPengguna = (document.getElementById('pcPengguna')||{}).checked;
+
+  if(!confirm('Pulihkan '+pilih.length+' sheet dari cadangan?\n\n'+
+     'Data yang ada sekarang akan ditimpa.'+
+     (ikutPengguna?'\n\nTERMASUK data Pengguna — akun dan kata sandi akan ikut diganti.':'')+
+     '\n\nKeadaan sekarang dicadangkan otomatis ke Drive lebih dulu.')) return;
+
+  tampilLoader(true,'Memulihkan data — jangan tutup halaman…');
+  callApi('pulihkanCadangan', {
+    data: CADANGAN_ISI, sheet: pilih, ikutPengguna: ikutPengguna, konfirmasi: 'PULIHKAN'
+  }).then(function(r){
+    tampilLoader(false); tutupLembar();
+    var pesan = 'Pemulihan selesai.\n\n'+
+      r.totalSheet+' sheet · '+r.totalBaris+' baris dipulihkan.'+
+      (r.dilewati.length ? '\n\nDilewati: '+r.dilewati.join(', ') : '')+
+      (r.cadanganSebelum ? '\n\nKeadaan sebelumnya tersimpan sebagai:\n'+r.cadanganSebelum : '');
+    alert(pesan);
+    muatData(true);
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
 }
 
 /* ==================== MULAI ==================== */
