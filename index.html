@@ -746,6 +746,7 @@
       <button class="adminOnly" onclick="bukaKelolaHakCuti()"><span class="ic">🌴</span>Kelola Hak Cuti</button>
       <button class="adminOnly" onclick="bukaHariLibur()"><span class="ic">📅</span>Hari Libur Nasional</button>
       <button class="adminOnly" onclick="bukaKelolaRingkasan()"><span class="ic">⚡</span>Ringkasan Bulanan</button>
+      <button class="adminOnly" onclick="bukaArsipTahunan()"><span class="ic">🗄️</span>Arsip Tahunan</button>
       <button class="adminOnly" onclick="bukaStatistikData()"><span class="ic">📊</span>Ukuran Data</button>
       <button class="adminOnly" onclick="bukaCadangan()"><span class="ic">💾</span>Cadangkan Data</button>
     </div>
@@ -12204,7 +12205,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '2.4.0';
+var VERSI_APP = '2.5.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -15303,6 +15304,149 @@ function jalankanHitungRingkasan(){
     toast('Selesai — '+(r.jumlah-gagal.length)+' bulan diringkas'+(gagal.length?', '+gagal.length+' gagal':'')+' ✓');
     muatDaftarRingkasan();
   }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+
+/* ==================== ARSIP TAHUNAN (ADMIN) ==================== */
+var ARSIP_ANTRE = [];
+
+function bukaArsipTahunan(){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin.', true);
+  var thn = new Date().getFullYear();
+  var pilihan = [];
+  for(var t = thn-1; t >= thn-6; t--) pilihan.push(t);
+  bukaLembar('<h3>🗄️ Arsip Tahunan</h3>'+
+    '<div class="meta" style="line-height:1.6">Memindahkan data tahun lama ke spreadsheet '+
+      'terpisah agar berkas aktif tetap ringan. <b>Data tidak dihapus</b> — hanya berpindah berkas, '+
+      'dan tetap dapat dibaca aplikasi.</div>'+
+    '<div class="filter-bar" style="margin-top:12px">'+
+      '<select id="arTahun" onchange="muatPratinjauArsip()">'+
+        pilihan.map(function(t){ return '<option>'+t+'</option>'; }).join('')+
+      '</select>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="muatPratinjauArsip()">⟳ Periksa</button>'+
+    '</div>'+
+    '<div id="arPratinjau"><div class="kosong">Memeriksa…</div></div>'+
+    '<div id="arDaftar" style="margin-top:18px"></div>');
+  muatPratinjauArsip();
+  muatDaftarArsip();
+}
+
+function muatPratinjauArsip(){
+  var thn=(document.getElementById('arTahun')||{}).value;
+  var el=document.getElementById('arPratinjau');
+  el.innerHTML='<div class="kosong">Memeriksa data tahun '+esc(thn)+'…</div>';
+  callApi('pratinjauArsip', { tahun:thn }).then(function(r){
+    if(!r.totalBaris){
+      el.innerHTML='<div class="kosong">Tidak ada data tahun '+esc(thn)+' di berkas aktif.</div>';
+      return;
+    }
+    el.innerHTML =
+      (r.peringatan
+        ? '<div style="margin:10px 0;padding:12px;border-radius:8px;background:#FFF4E5;'+
+          'border-left:3px solid #E8960C;font-size:12.5px;line-height:1.6">⚠️ '+esc(r.peringatan)+
+          '<div style="margin-top:8px"><button class="btn btn-sekunder btn-kecil" '+
+          'onclick="tutupLembar();bukaKelolaRingkasan()">Buka Ringkasan Bulanan</button></div></div>'
+        : '<div style="margin:10px 0;padding:10px 12px;border-radius:8px;background:var(--hijau-50);'+
+          'font-size:12.5px">✅ Ringkasan '+r.bulanTerangkum+' bulan tahun '+esc(r.tahun)+
+          ' sudah tersimpan — rekap tahun ini tetap dapat dibuka setelah diarsipkan.</div>')+
+
+      '<div class="kpi-grid" style="grid-template-columns:repeat(2,1fr);margin:10px 0">'+
+        kpiKotak('Baris Dipindah', angka(r.totalBaris,0), '#1565C0')+
+        kpiKotak('Sel Dibebaskan', angka(r.totalSel,0), '#2E7D46')+
+      '</div>'+
+      '<div class="kartu"><b style="font-size:14px">Rincian per Sheet</b><div style="margin-top:8px">'+
+        r.rincian.map(function(x){
+          return '<div style="display:flex;justify-content:space-between;padding:5px 0;'+
+            'border-bottom:1px solid var(--garis);font-size:12.5px">'+
+            '<span>'+esc(x.sheet)+'</span><b>'+angka(x.baris,0)+' baris</b></div>';
+        }).join('')+
+      '</div></div>'+
+      (r.arsipSudahAda?'<div class="meta" style="margin-top:8px">Arsip tahun ini sudah ada — '+
+        'data akan ditambahkan, baris yang sudah pernah dipindah tidak diulang.</div>':'')+
+
+      '<div style="margin-top:14px;padding:12px;border-radius:8px;background:#FBEAE7;'+
+        'border-left:3px solid var(--merah);font-size:12.5px;line-height:1.6">'+
+        '<b>Sebelum melanjutkan:</b> pastikan Anda sudah <b>mencadangkan data</b>. '+
+        'Sistem menyalin ke arsip dan memverifikasi jumlahnya lebih dulu, tetapi cadangan tetap '+
+        'wajib sebagai pengaman terakhir.</div>'+
+      '<label>Ketik <b>ARSIPKAN</b> untuk menegaskan *</label>'+
+      '<input id="arKonfirmasi" placeholder="ARSIPKAN" autocomplete="off" '+
+        'oninput="this.value=this.value.toUpperCase()">'+
+      '<button class="btn btn-bahaya btn-blok" style="margin-top:12px" '+
+        'onclick=\'mulaiArsip('+JSON.stringify(r.rincian.map(function(x){return x.sheet;}))+')\'>'+
+        '🗄️ Arsipkan Tahun '+esc(r.tahun)+'</button>'+
+      '<div id="arProses" style="margin-top:12px"></div>';
+  }).catch(function(e){
+    el.innerHTML='<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+  });
+}
+
+/* Diproses per sheet secara berurutan — satu panggilan per sheet supaya tidak
+   melampaui batas 6 menit Apps Script pada data besar. */
+function mulaiArsip(daftarSheet){
+  var konf=(document.getElementById('arKonfirmasi')||{}).value.trim().toUpperCase();
+  if(konf!=='ARSIPKAN') return toast('Ketik ARSIPKAN untuk menegaskan.', true);
+  var thn=(document.getElementById('arTahun')||{}).value;
+  if(!confirm('Arsipkan seluruh data tahun '+thn+'?\n\n'+daftarSheet.length+' sheet akan diproses '+
+     'satu per satu. Jangan tutup halaman selama proses berlangsung.')) return;
+
+  ARSIP_ANTRE = daftarSheet.slice();
+  var total = ARSIP_ANTRE.length, selesai = 0, hasil = [];
+  var el = document.getElementById('arProses');
+
+  function lanjut(){
+    if(!ARSIP_ANTRE.length){
+      el.innerHTML='<div style="padding:12px;border-radius:8px;background:var(--hijau-50);'+
+        'font-size:12.5px;line-height:1.6">✅ <b>Selesai.</b><br>'+
+        hasil.map(function(h){ return esc(h.sheet)+': '+angka(h.dipindah,0)+' baris dipindah'; }).join('<br>')+
+        (hasil[0]&&hasil[0].urlArsip?'<div style="margin-top:8px"><a href="'+esc(hasil[0].urlArsip)+
+          '" target="_blank" style="color:var(--hijau-700);font-weight:700">Buka berkas arsip →</a></div>':'')+
+        '</div>';
+      toast('Arsip tahun '+thn+' selesai ✓');
+      muatDaftarArsip();
+      muatData(true);
+      return;
+    }
+    var sheet = ARSIP_ANTRE.shift();
+    el.innerHTML='<div style="padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px">'+
+      '⏳ Memproses <b>'+esc(sheet)+'</b> ('+(selesai+1)+' dari '+total+')…'+
+      '<div style="height:6px;border-radius:3px;background:var(--garis);margin-top:8px">'+
+      '<div style="height:100%;width:'+Math.round(selesai/total*100)+'%;background:var(--hijau-500);'+
+      'border-radius:3px"></div></div></div>';
+
+    callApi('arsipkanSheet', { tahun:thn, sheet:sheet, konfirmasi:'ARSIPKAN' }).then(function(r){
+      selesai++; hasil.push(r); lanjut();
+    }).catch(function(e){
+      el.innerHTML='<div style="padding:12px;border-radius:8px;background:#FBEAE7;'+
+        'border-left:3px solid var(--merah);font-size:12.5px;line-height:1.6">'+
+        '⚠️ <b>Berhenti pada sheet '+esc(sheet)+'</b><br>'+esc(e.message)+
+        '<div class="meta" style="margin-top:6px">Sheet yang sudah selesai tetap aman. '+
+        'Perbaiki penyebabnya, lalu jalankan ulang — baris yang sudah dipindah tidak akan diulang.</div></div>';
+      toast('Proses arsip berhenti.', true);
+    });
+  }
+  lanjut();
+}
+
+function muatDaftarArsip(){
+  callApi('daftarArsip', {}).then(function(r){
+    var el=document.getElementById('arDaftar'); if(!el) return;
+    if(!r.length){ el.innerHTML='<div class="meta">Belum ada arsip.</div>'; return; }
+    el.innerHTML='<h4 style="font-size:13px;margin-bottom:6px">Arsip Tersedia</h4>'+
+      r.map(function(a){
+        var totalBaris=a.sheet.reduce(function(s,x){ return s+x.baris; },0);
+        return '<div class="item"><div class="kepala">'+
+          '<div><b>Tahun '+esc(a.tahun)+'</b><div class="meta">'+esc(a.nama)+'</div></div>'+
+          '<div class="kanan"><b>'+angka(totalBaris,0)+'</b><div class="meta" style="font-size:10.5px">baris</div></div>'+
+          '</div>'+
+          '<div class="meta" style="margin-top:4px">'+
+            a.sheet.map(function(s){ return esc(s.nama)+' ('+angka(s.baris,0)+')'; }).join(' · ')+
+          '</div>'+
+          (a.url?'<div class="aksi-baris"><a class="btn btn-sekunder btn-kecil" href="'+esc(a.url)+
+            '" target="_blank">📂 Buka Berkas</a></div>':'')+
+          '</div>';
+      }).join('');
+  }).catch(function(){});
 }
 
 /* ==================== MULAI ==================== */
