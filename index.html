@@ -728,6 +728,7 @@
       <button onclick="bukaHalaman('gudang')"><span class="ic">📦</span>Gudang &amp; Stok</button>
       <button onclick="bukaHalaman('budget')"><span class="ic">💰</span>Budgeting Kebun</button>
       <button onclick="bukaProfil()"><span class="ic">🪪</span>Profil Saya</button>
+      <button onclick="bukaAturTataLetak()"><span class="ic">🎛️</span>Tata Letak Modul</button>
       <button onclick="formGantiSandi()"><span class="ic">🔑</span>Ganti Kata Sandi</button>
       <button onclick="bukaTentang()"><span class="ic">ℹ️</span>Tentang &amp; Ketentuan</button>
       <button class="adminOnly" onclick="formKunciAI()"><span class="ic">🤖</span>Kunci Asisten AI</button>
@@ -2195,6 +2196,7 @@ function terapkanPengaturan(){
   if(S && S.license) terapkanLisensi(S.license);
   tampilkanCakupanAkses();
   try{ terapkanAksesModul(); }catch(e){}
+  try{ terapkanTataLetak(); }catch(e){}
   var st = S.settings || {};
   document.getElementById('hdJudul').textContent = st.judulAplikasi || 'SawitGIS Mandiri';
   document.getElementById('hdSub').textContent = st.subjudul || '';
@@ -12205,7 +12207,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '2.5.0';
+var VERSI_APP = '2.6.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -14944,6 +14946,13 @@ function bukaTentang(tab){
         barisProfil('Status lisensi', lic.mode?esc(lic.mode)+' — '+esc(lic.pesan||''):'-')+
         (lic.installId?barisProfil('ID instalasi', '<span style="font-family:monospace">'+esc(lic.installId)+'</span>'):'')+
       '</div></div>'+
+      '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Penyimpanan Data</b><div style="margin-top:6px">'+
+        barisProfil('Basis data', 'Google Spreadsheet milik perusahaan')+
+        barisProfil('Rentang termuat', JENDELA ? JENDELA.hari+' hari terakhir' : 'seluruhnya')+
+        barisProfil('Rekap bulan lalu', 'dari ringkasan tersimpan')+
+        barisProfil('Data tahun lama', 'dapat diarsipkan ke berkas terpisah')+
+      '</div><div class="meta" style="margin-top:8px;line-height:1.6">Data lama tetap utuh dan dapat '+
+        'dibuka kembali dari halaman Laporan atau berkas arsip.</div></div>'+
       '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Komponen Pihak Ketiga</b>'+
       '<div class="meta" style="margin-top:6px;line-height:1.7">'+
         'Leaflet (BSD-2) · Chart.js (MIT) · jsPDF (MIT) · html2canvas (MIT) · SheetJS (Apache-2.0) · '+
@@ -14977,29 +14986,35 @@ function bukaTentang(tab){
        'Seluruh data yang dimasukkan melalui aplikasi ini merupakan milik perusahaan dan tersimpan '+
        'pada akun Google Workspace perusahaan. Pengembang aplikasi tidak menyimpan salinan data di '+
        'server mana pun. Perusahaan dapat mengekspor seluruh datanya sewaktu-waktu.'],
-      ['5. Hak Kekayaan Intelektual',
+      ['5. Penyimpanan &amp; Pengarsipan',
+       'Untuk menjaga kecepatan aplikasi, hanya data periode terakhir yang dimuat saat aplikasi '+
+       'dibuka. Data lama tetap tersimpan utuh dan dapat dibuka melalui halaman Laporan. '+
+       'Administrator dapat memindahkan data tahun lama ke berkas arsip terpisah — proses ini '+
+       'memindahkan, bukan menghapus, dan diverifikasi jumlahnya sebelum data lama dibersihkan. '+
+       'Perusahaan tetap memegang seluruh berkas arsip tersebut.'],
+      ['6. Hak Kekayaan Intelektual',
        'Kode program, rancangan antarmuka, dan dokumentasi aplikasi merupakan milik penyedia. '+
        'Lisensi yang diberikan bersifat hak pakai, tidak dapat dialihkan, dan tidak mencakup hak untuk '+
        'menyalin, menjual kembali, atau membongkar kode program.'],
-      ['6. Ketersediaan Layanan',
+      ['7. Ketersediaan Layanan',
        'Aplikasi bergantung pada layanan Google Workspace dan jaringan internet. Gangguan pada layanan '+
        'pihak ketiga berada di luar kendali penyedia. Beberapa fungsi — peta latar, unggah foto, '+
        'pengiriman posisi, dan pemberitahuan — memerlukan koneksi internet.'],
-      ['7. Batasan Tanggung Jawab',
+      ['8. Batasan Tanggung Jawab',
        'Aplikasi merupakan alat bantu pencatatan dan pemantauan. Keputusan operasional tetap berada '+
        'pada manajemen perusahaan. Penyedia tidak bertanggung jawab atas kerugian yang timbul dari '+
        'kesalahan pemasukan data, kelalaian pengguna, atau keputusan yang diambil berdasarkan data '+
        'yang tidak diperbarui.'],
-      ['8. Asisten AI',
+      ['9. Asisten AI',
        'Fitur Asisten Kebun bersifat membaca data dan tidak dapat mengubahnya. Jawaban asisten '+
        'disusun dari data yang tersimpan di aplikasi, namun tetap perlu diperiksa sebelum dijadikan '+
        'dasar keputusan penting. Pertanyaan dan ringkasan data dikirim ke layanan Google Gemini '+
        'untuk diproses.'],
-      ['9. Pengakhiran',
+      ['10. Pengakhiran',
        'Perusahaan dapat menonaktifkan akun pengguna sewaktu-waktu, antara lain karena berakhirnya '+
        'hubungan kerja atau pelanggaran ketentuan ini. Apabila masa lisensi berakhir, aplikasi beralih '+
        'ke mode baca-saja dan data tetap dapat diekspor.'],
-      ['10. Perubahan Ketentuan',
+      ['11. Perubahan Ketentuan',
        'Ketentuan ini dapat diperbarui seiring pengembangan aplikasi. Versi terbaru selalu tersedia '+
        'pada halaman ini beserta nomor versi aplikasinya.']
     ]);
@@ -15041,18 +15056,27 @@ function bukaTentang(tab){
        '<b>Google Gemini</b> — memproses pertanyaan Asisten AI beserta ringkasan data kebun, '+
        'apabila fitur ini diaktifkan administrator.<br>'+
        '<b>Gateway WhatsApp</b> — mengirim pemberitahuan, apabila dipasang perusahaan.'],
-      ['7. Masa Simpan',
+      ['7. Masa Simpan &amp; Arsip',
        'Data operasional disimpan selama diperlukan perusahaan. Jejak lokasi disarankan dibersihkan '+
-       'setiap tiga bulan. Data tahun sebelumnya sebaiknya diarsipkan setiap awal tahun.'],
-      ['8. Hak Pengguna',
+       'setiap tiga bulan. Data tahun sebelumnya dapat diarsipkan ke berkas terpisah yang tetap '+
+       'berada pada akun Google perusahaan — pengarsipan memindahkan data, tidak menghapusnya, '+
+       'dan jumlahnya diverifikasi lebih dulu.'],
+      ['8. Data Tersimpan di Perangkat',
+       'Aplikasi menyimpan beberapa hal di perangkat Anda sendiri: salinan data terakhir agar tetap '+
+       'dapat dibuka saat sinyal hilang, antrean input yang belum terkirim, pengaturan tata letak '+
+       'modul, dan halaman terakhir yang dibuka. Seluruhnya terhapus saat Anda menekan Keluar '+
+       'atau membersihkan data situs pada peramban.'],
+      ['9. Hak Pengguna',
        'Setiap karyawan berhak melihat data pribadinya melalui menu Profil Saya, meminta koreksi '+
        'apabila terdapat kekeliruan, dan memperoleh salinan datanya dalam bentuk cetak. '+
        'Permintaan disampaikan kepada bagian kepegawaian.'],
-      ['9. Keamanan',
+      ['10. Keamanan',
        'Akses aplikasi dilindungi kata sandi dengan tiga tingkat peran, pembatasan wilayah kerja, dan '+
-       'pembatasan modul. Setiap tindakan tercatat pada log aktivitas. Kata sandi disimpan dalam bentuk '+
-       'ringkasan (hash), bukan teks terbaca.'],
-      ['10. Kontak',
+       'pembatasan modul. Modul yang tidak termasuk hak akses Anda tidak ditampilkan sama sekali di '+
+       'menu, dan tetap ditolak apabila diakses dengan cara lain — pembatasan ini ditegakkan di sisi '+
+       'server, bukan sekadar disembunyikan. Setiap tindakan tercatat pada log aktivitas. Kata sandi '+
+       'disimpan dalam bentuk ringkasan (hash), bukan teks terbaca.'],
+      ['11. Kontak',
        'Pertanyaan mengenai perlindungan data disampaikan kepada administrator sistem atau bagian '+
        'kepegawaian perusahaan.']
     ]);
@@ -15447,6 +15471,186 @@ function muatDaftarArsip(){
           '</div>';
       }).join('');
   }).catch(function(){});
+}
+
+
+/* ==================== TATA LETAK MODUL ====================
+ * Tiap pengguna dapat menyusun sendiri urutan menu Lainnya dan memilih empat
+ * modul yang tampil di navigasi bawah. Tersimpan di perangkat masing-masing,
+ * sehingga mandor dapat menaruh Panen di depan sementara KTU menaruh Kas.
+ */
+var TATA_BAWAAN = ['dasbor', 'peta', 'blok', 'panen'];
+
+function bacaTataLetak(){
+  try{
+    var s = JSON.parse(localStorage.getItem('sg_tataletak') || 'null');
+    if(s && Array.isArray(s.nav) && Array.isArray(s.urutan)) return s;
+  }catch(e){}
+  return { nav: TATA_BAWAAN.slice(), urutan: [], sembunyi: [] };
+}
+function simpanTataLetak(t){
+  try{ localStorage.setItem('sg_tataletak', JSON.stringify(t)); }catch(e){}
+}
+
+/** Terapkan tata letak: urutan menu Lainnya + isi navigasi bawah. */
+function terapkanTataLetak(){
+  var t = bacaTataLetak();
+  var izin = (typeof modulDiizinkan === 'function') ? modulDiizinkan() : null;
+
+  /* ---------- navigasi bawah ----------
+     Tombol dibangun ulang secara dinamis supaya modul apa pun dapat
+     ditempatkan di sini — bukan hanya empat tombol bawaan. */
+  var nav = document.getElementById('navBawah');
+  if(nav){
+    var label = {};
+    DAFTAR_MODUL.forEach(function(g){
+      g.item.forEach(function(it){
+        var pisah = it[1].split(' ');
+        label[it[0]] = { ikon: pisah[0], teks: pisah.slice(1).join(' ') };
+      });
+    });
+
+    var pilih = (t.nav || TATA_BAWAAN).filter(function(m){
+      return label[m] && (!izin || izin[m]);
+    });
+    if(pilih.indexOf('dasbor') < 0) pilih.unshift('dasbor');
+    pilih = pilih.slice(0, 4);
+
+    var tombolLainnya = nav.querySelector('button[data-hal="lainnya"]');
+    nav.querySelectorAll('button[data-hal]').forEach(function(b){
+      if(b !== tombolLainnya) b.remove();
+    });
+    pilih.forEach(function(m){
+      var b = document.createElement('button');
+      b.setAttribute('data-hal', m);
+      b.setAttribute('onclick', "bukaHalaman('" + m + "')");
+      // teks dipendekkan agar muat di layar sempit
+      var teks = label[m].teks;
+      if(teks.length > 9) teks = teks.split(' ')[0];
+      b.innerHTML = '<span class="ic">' + label[m].ikon + '</span>' + esc(teks);
+      if(typeof halAktif !== 'undefined' && halAktif === m) b.className = 'aktif';
+      nav.insertBefore(b, tombolLainnya);
+    });
+  }
+
+  // ---------- urutan menu Lainnya ----------
+  var grid = document.querySelector('#hal-lainnya .menu-grid');
+  if(grid && (t.urutan || []).length){
+    t.urutan.slice().reverse().forEach(function(kode){
+      var b = grid.querySelector('button[onclick*="\'' + kode + '\'"]');
+      if(b) grid.insertBefore(b, grid.firstChild);
+    });
+  }
+  // sembunyikan yang dipilih pengguna
+  (t.sembunyi || []).forEach(function(kode){
+    var b = grid && grid.querySelector('button[onclick*="\'' + kode + '\'"]');
+    if(b) b.style.display = 'none';
+  });
+}
+
+function bukaAturTataLetak(){
+  var t = bacaTataLetak();
+  var izin = (typeof modulDiizinkan === 'function') ? modulDiizinkan() : null;
+  var tersedia = DAFTAR_MODUL.reduce(function(a,g){
+    return a.concat(g.item.filter(function(it){ return !izin || izin[it[0]]; }));
+  }, []);
+
+  bukaLembar('<h3>🎛️ Tata Letak Modul</h3>'+
+    '<div class="meta" style="line-height:1.6">Susun sendiri tampilan aplikasi sesuai pekerjaan Anda. '+
+      'Pengaturan ini tersimpan di perangkat ini saja — tidak memengaruhi pengguna lain.</div>'+
+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Navigasi Bawah</h4>'+
+    '<div class="meta" style="margin-bottom:8px">Pilih 3 modul yang paling sering dibuka. '+
+      'Dasbor dan Lainnya selalu ada.</div>'+
+    '<div id="tlNav" style="border:1px solid var(--garis);border-radius:10px;padding:10px;max-height:210px;overflow-y:auto">'+
+      tersedia.filter(function(it){ return it[0]!=='dasbor'; }).map(function(it){
+        var dipilih = (t.nav||[]).indexOf(it[0]) >= 0;
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;cursor:pointer">'+
+          '<input type="checkbox" class="tlNavItem" value="'+it[0]+'" style="width:auto;margin:0"'+
+          (dipilih?' checked':'')+' onchange="batasiPilihanNav()"> '+esc(it[1])+'</label>';
+      }).join('')+
+    '</div>'+
+    '<div class="meta" id="tlNavHitung" style="margin-top:4px"></div>'+
+
+    '<h4 style="margin:16px 0 6px;font-size:13px">Urutan Menu Lainnya</h4>'+
+    '<div class="meta" style="margin-bottom:8px">Naikkan modul yang sering dipakai agar mudah dijangkau.</div>'+
+    '<div id="tlUrutan" style="border:1px solid var(--garis);border-radius:10px;padding:8px;max-height:280px;overflow-y:auto"></div>'+
+
+    '<div class="aksi-baris" style="margin-top:16px">'+
+      '<button class="btn btn-utama" style="flex:1" onclick="simpanAturTataLetak()">💾 Simpan</button>'+
+      '<button class="btn btn-sekunder" onclick="resetTataLetak()">↺ Kembalikan Bawaan</button>'+
+    '</div>');
+
+  gambarUrutanModul(t, tersedia);
+  batasiPilihanNav();
+}
+
+function gambarUrutanModul(t, tersedia){
+  var el = document.getElementById('tlUrutan'); if(!el) return;
+  // modul menu Lainnya = seluruh yang tersedia kecuali yang ada di nav bawah
+  var diNav = t.nav || TATA_BAWAAN;
+  var daftar = tersedia.filter(function(it){ return diNav.indexOf(it[0]) < 0 && it[0]!=='dasbor'; });
+  // urutkan sesuai simpanan
+  var urut = (t.urutan||[]).slice();
+  daftar.sort(function(a,b){
+    var ia=urut.indexOf(a[0]), ib=urut.indexOf(b[0]);
+    if(ia<0) ia=999; if(ib<0) ib=999;
+    return ia-ib;
+  });
+  el.innerHTML = daftar.map(function(it, i){
+    var sembunyi = (t.sembunyi||[]).indexOf(it[0]) >= 0;
+    return '<div class="tlBaris" data-kode="'+it[0]+'" style="display:flex;align-items:center;gap:6px;'+
+      'padding:6px 4px;border-bottom:1px solid var(--garis);font-size:13px'+
+      (sembunyi?';opacity:.45':'')+'">'+
+      '<button class="btn btn-sekunder btn-kecil" style="padding:2px 8px" onclick="geserModul(this,-1)">▲</button>'+
+      '<button class="btn btn-sekunder btn-kecil" style="padding:2px 8px" onclick="geserModul(this,1)">▼</button>'+
+      '<span style="flex:1">'+esc(it[1])+'</span>'+
+      '<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--abu)">'+
+        '<input type="checkbox" class="tlSembunyi" style="width:auto;margin:0"'+(sembunyi?' checked':'')+
+        ' onchange="this.closest(\'.tlBaris\').style.opacity=this.checked?0.45:1"> sembunyikan</label>'+
+      '</div>';
+  }).join('') || '<div class="meta" style="padding:8px">Semua modul sudah ada di navigasi bawah.</div>';
+}
+
+function geserModul(tombol, arah){
+  var baris = tombol.closest('.tlBaris');
+  var induk = baris.parentNode;
+  if(arah < 0 && baris.previousElementSibling) induk.insertBefore(baris, baris.previousElementSibling);
+  if(arah > 0 && baris.nextElementSibling) induk.insertBefore(baris.nextElementSibling, baris);
+}
+
+function batasiPilihanNav(){
+  var kotak = document.querySelectorAll('.tlNavItem');
+  var terpilih = 0;
+  kotak.forEach(function(x){ if(x.checked) terpilih++; });
+  kotak.forEach(function(x){ x.disabled = !x.checked && terpilih >= 3; });
+  var el = document.getElementById('tlNavHitung');
+  if(el) el.textContent = terpilih + ' dari 3 terpilih' + (terpilih>=3 ? ' — kosongkan satu untuk mengganti' : '');
+}
+
+function simpanAturTataLetak(){
+  var nav = ['dasbor'];
+  document.querySelectorAll('.tlNavItem:checked').forEach(function(x){ nav.push(x.value); });
+  var urutan = [], sembunyi = [];
+  document.querySelectorAll('#tlUrutan .tlBaris').forEach(function(b){
+    var k = b.getAttribute('data-kode');
+    urutan.push(k);
+    if(b.querySelector('.tlSembunyi').checked) sembunyi.push(k);
+  });
+  simpanTataLetak({ nav: nav, urutan: urutan, sembunyi: sembunyi });
+  tutupLembar();
+  terapkanAksesModul();
+  terapkanTataLetak();
+  toast('Tata letak disimpan ✓');
+}
+
+function resetTataLetak(){
+  if(!confirm('Kembalikan tata letak ke pengaturan bawaan?')) return;
+  try{ localStorage.removeItem('sg_tataletak'); }catch(e){}
+  tutupLembar();
+  terapkanAksesModul();
+  terapkanTataLetak();
+  toast('Tata letak dikembalikan ke bawaan.');
 }
 
 /* ==================== MULAI ==================== */
