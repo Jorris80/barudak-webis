@@ -745,6 +745,7 @@
       <button class="adminOnly" id="menuPengguna" onclick="bukaHalaman('pengguna')"><span class="ic">👥</span>Pengguna</button>
       <button class="adminOnly" onclick="bukaKelolaHakCuti()"><span class="ic">🌴</span>Kelola Hak Cuti</button>
       <button class="adminOnly" onclick="bukaHariLibur()"><span class="ic">📅</span>Hari Libur Nasional</button>
+      <button class="adminOnly" onclick="bukaKelolaRingkasan()"><span class="ic">⚡</span>Ringkasan Bulanan</button>
       <button class="adminOnly" onclick="bukaStatistikData()"><span class="ic">📊</span>Ukuran Data</button>
       <button class="adminOnly" onclick="bukaCadangan()"><span class="ic">💾</span>Cadangkan Data</button>
     </div>
@@ -12203,7 +12204,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '2.3.0';
+var VERSI_APP = '2.4.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -13797,7 +13798,8 @@ function gambarRekap(r){
     (pr.perubahanPersen>=0 ? '<span style="color:var(--hijau-700)">▲ '+pr.perubahanPersen+'%</span>'
                            : '<span style="color:var(--merah)">▼ '+Math.abs(pr.perubahanPersen)+'%</span>');
   var el=document.getElementById('ringkasRekap');
-  if(el) el.textContent = namaBulan(r.bulan)+' · '+r.blok.jumlah+' blok · '+angka(r.blok.luasHa,1)+' ha';
+  if(el) el.textContent = namaBulan(r.bulan)+' · '+r.blok.jumlah+' blok · '+angka(r.blok.luasHa,1)+' ha'+
+    (r.dariRingkasan ? ' · ⚡ tersimpan' : '');
 
   var kpi = kpiKotak('Produksi', angka(pr.totalTon,2)+' t', '#2E7D46') +
             kpiKotak('Produktivitas', angka(pr.tonPerHa,3)+' t/ha', '#1565C0') +
@@ -15241,6 +15243,66 @@ function bukaStatistikData(){
     document.getElementById('isiStatData').innerHTML =
       '<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
   });
+}
+
+
+/* ==================== KELOLA RINGKASAN BULANAN (ADMIN) ==================== */
+function bukaKelolaRingkasan(){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin.', true);
+  bukaLembar('<h3>⚡ Ringkasan Bulanan</h3>'+
+    '<div class="meta" style="line-height:1.6">Rekap bulan yang sudah lewat dihitung sekali lalu '+
+      'disimpan, sehingga terbuka seketika berapa pun besarnya data. Bulan berjalan selalu '+
+      'dihitung ulang karena datanya masih bertambah.</div>'+
+    '<div style="margin-top:12px;padding:12px;border-radius:10px;background:var(--hijau-50);font-size:12.5px;line-height:1.6">'+
+      '<b>Pemicu otomatis</b><br>Agar berjalan sendiri tiap tanggal 1, jalankan sekali dari editor '+
+      'Apps Script: <span style="font-family:monospace">pasangRingkasanOtomatis()</span>'+
+    '</div>'+
+    '<div class="grid2" style="margin-top:14px">'+
+      '<div><label>Hitung Mundur</label><select id="rgJumlah">'+
+        [3,6,12,24,36].map(function(x){ return '<option value="'+x+'"'+(x===12?' selected':'')+'>'+x+' bulan terakhir</option>'; }).join('')+
+      '</select></div>'+
+      '<div><label>Termasuk Bulan Ini</label><select id="rgIni">'+
+        '<option value="">Tidak (disarankan)</option><option value="1">Ya</option></select></div>'+
+    '</div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:12px" onclick="jalankanHitungRingkasan()">⚡ Hitung Ringkasan</button>'+
+    '<div id="daftarRingkasan" style="margin-top:16px"><div class="kosong">Memuat…</div></div>');
+  muatDaftarRingkasan();
+}
+
+function muatDaftarRingkasan(){
+  callApi('daftarRingkasan', {}).then(function(r){
+    var el=document.getElementById('daftarRingkasan'); if(!el) return;
+    if(!r.length){
+      el.innerHTML='<div class="kosong">Belum ada ringkasan. Tekan <b>Hitung Ringkasan</b> di atas '+
+        'untuk membuatnya dari data yang ada.</div>';
+      return;
+    }
+    el.innerHTML='<div class="meta" style="margin-bottom:6px">'+r.length+' bulan sudah diringkas</div>'+
+      r.map(function(x){
+        return '<div style="display:flex;justify-content:space-between;align-items:center;'+
+          'padding:8px 0;border-bottom:1px solid var(--garis);font-size:13px">'+
+          '<div><b>'+esc(namaBulan(x.bulan))+'</b>'+
+          '<div class="meta" style="font-size:11px">dihitung '+esc(String(x.dihitungPada||'-').slice(0,16))+'</div></div>'+
+          '<span class="chip hijau">'+x.barisUnit+' unit</span></div>';
+      }).join('');
+  }).catch(function(e){
+    var el=document.getElementById('daftarRingkasan');
+    if(el) el.innerHTML='<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+  });
+}
+
+function jalankanHitungRingkasan(){
+  var n=Number((document.getElementById('rgJumlah')||{}).value)||12;
+  var ini=!!(document.getElementById('rgIni')||{}).value;
+  if(!confirm('Hitung ringkasan '+n+' bulan terakhir?\n\nProses ini membaca data mentah tiap bulan '+
+     'dan bisa memakan waktu satu-dua menit.')) return;
+  tampilLoader(true,'Menghitung ringkasan — jangan tutup halaman…');
+  callApi('hitungRingkasan', { jumlahBulan:n, termasukBulanIni:ini }).then(function(r){
+    tampilLoader(false);
+    var gagal=r.hasil.filter(function(x){ return x.galat; });
+    toast('Selesai — '+(r.jumlah-gagal.length)+' bulan diringkas'+(gagal.length?', '+gagal.length+' gagal':'')+' ✓');
+    muatDaftarRingkasan();
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
 }
 
 /* ==================== MULAI ==================== */
