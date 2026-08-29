@@ -532,6 +532,7 @@
   <!-- ================= PANEN ================= -->
   <section class="halaman" id="hal-panen">
     <h2 class="judul">Catatan Panen (EBR) <small id="ringkasPanen"></small></h2>
+    <div id="catatanJendelaPanen"></div>
     <div class="filter-bar">
       <select id="pnPer" onchange="isiCascade('pnPer','pnEst','pnDiv');renderPanen()"><option value="">Semua Perusahaan</option></select>
       <select id="pnEst" onchange="isiCascade('pnPer','pnEst','pnDiv');renderPanen()"><option value="">Semua Estate</option></select>
@@ -744,6 +745,7 @@
       <button class="adminOnly" id="menuPengguna" onclick="bukaHalaman('pengguna')"><span class="ic">👥</span>Pengguna</button>
       <button class="adminOnly" onclick="bukaKelolaHakCuti()"><span class="ic">🌴</span>Kelola Hak Cuti</button>
       <button class="adminOnly" onclick="bukaHariLibur()"><span class="ic">📅</span>Hari Libur Nasional</button>
+      <button class="adminOnly" onclick="bukaStatistikData()"><span class="ic">📊</span>Ukuran Data</button>
       <button class="adminOnly" onclick="bukaCadangan()"><span class="ic">💾</span>Cadangkan Data</button>
     </div>
     <p style="text-align:center;margin-top:16px;font-size:11.5px;color:var(--abu)">
@@ -1407,6 +1409,18 @@ var TOKEN = '';
 var SESI = null; // {username, nama, peran}
 var OFFLINE = false; // status koneksi terkini (deteksi dari kegagalan/onLine)
 var GALAT_TERAKHIR = '';   // galat terakhir dari server, untuk diagnosa
+var JENDELA = null;        // { hari, dari } — rentang data yang termuat
+
+/* Keterangan bahwa data yang tampil dibatasi rentang waktu, agar pengguna
+   tidak mengira data lamanya hilang. */
+function catatanJendela(){
+  if(!JENDELA || !JENDELA.dari) return '';
+  return '<div class="meta" style="margin:8px 0;padding:8px 10px;border-radius:8px;'+
+    'background:var(--hijau-50);line-height:1.55">📅 Menampilkan data sejak <b>'+
+    esc(fmtTgl(JENDELA.dari))+'</b> ('+JENDELA.hari+' hari terakhir) agar aplikasi tetap ringan. '+
+    'Data lebih lama tetap tersimpan — pilih periodenya di halaman <b>Laporan</b> atau '+
+    '<b>Rekap Bulanan</b>.</div>';
+}
 var PULIH_HALAMAN = false; // halaman terakhir hanya dipulihkan sekali per sesi
 var WAKTU_LOGIN = 0;       // penanda kapan login terakhir berhasil
 
@@ -2140,6 +2154,7 @@ function muatData(ulang){
        Sebelumnya galat kecil di salah satu render membuat aliran jatuh ke
        blok catch, memunculkan pesan offline, lalu memantul ke layar login. */
     S = d;
+    if(d && d.jendelaDari) JENDELA = { hari: d.jendelaHari, dari: d.jendelaDari };
     try{ batasiDataAkses(); }catch(e1){ console.error('batasiDataAkses:', e1); }
     if(d && d.sesi) SESI = d.sesi;
     try{ simpanCache(); }catch(e2){}
@@ -4856,6 +4871,8 @@ function jalankanHapusSemuaBlok(){
  *  PANEN
  * ===================================================================*/
 function renderPanen(){
+  var elJ=document.getElementById('catatanJendelaPanen');
+  if(elJ) elJ.innerHTML = catatanJendela();
   var blok = document.getElementById('filterPanenBlok').value;
   var dari = document.getElementById('filterPanenDari').value;
   var sampai = document.getElementById('filterPanenSampai').value;
@@ -12186,7 +12203,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '2.2.0';
+var VERSI_APP = '2.3.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -15180,6 +15197,50 @@ function jalankanPulihkan(){
     alert(pesan);
     muatData(true);
   }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+
+/* ==================== STATISTIK UKURAN DATA (ADMIN) ==================== */
+function bukaStatistikData(){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin.', true);
+  bukaLembar('<h3>📊 Ukuran Data</h3>'+
+    '<div class="meta">Memantau pertumbuhan data agar diketahui kapan perlu diarsipkan.</div>'+
+    '<div id="isiStatData"><div class="kosong">Menghitung…</div></div>');
+  callApi('statistikSheet', {}).then(function(s){
+    var warna = s.persenTerpakai>70 ? 'var(--merah)' : (s.persenTerpakai>40 ? '#E8960C' : 'var(--hijau-700)');
+    var el=document.getElementById('isiStatData');
+    el.innerHTML =
+      '<div class="kpi-grid" style="grid-template-columns:repeat(2,1fr);margin:12px 0">'+
+        kpiKotak('Terpakai', s.persenTerpakai+'%', warna)+
+        kpiKotak('Total Sel', angka(s.totalSel,0), '#1565C0')+
+      '</div>'+
+      '<div style="height:10px;border-radius:5px;background:var(--garis);overflow:hidden;margin-bottom:10px">'+
+        '<div style="height:100%;width:'+Math.min(100,s.persenTerpakai)+'%;background:'+warna+'"></div>'+
+      '</div>'+
+      '<div style="padding:10px 12px;border-radius:8px;background:'+
+        (s.persenTerpakai>70?'#FBEAE7':'var(--hijau-50)')+';font-size:12.5px;line-height:1.6;margin-bottom:12px">'+
+        (s.persenTerpakai>70?'⚠️ ':'✅ ')+esc(s.saran)+
+        '<div class="meta" style="margin-top:4px">Batas Google Spreadsheet: 10 juta sel per berkas.</div>'+
+      '</div>'+
+      '<div class="kartu"><b style="font-size:14px">Sepuluh Sheet Terbesar</b><div style="margin-top:8px">'+
+        s.sheet.slice(0,10).map(function(x){
+          var pct = s.totalSel ? Math.round(x.sel/s.totalSel*100) : 0;
+          return '<div style="padding:6px 0;border-bottom:1px solid var(--garis)">'+
+            '<div style="display:flex;justify-content:space-between;font-size:12.5px">'+
+              '<span>'+esc(x.sheet)+(x.berjendela?' <span class="meta">· berjendela</span>':'')+'</span>'+
+              '<b>'+angka(x.baris,0)+' baris</b></div>'+
+            '<div style="height:4px;border-radius:2px;background:var(--garis);margin-top:4px">'+
+              '<div style="height:100%;width:'+pct+'%;background:var(--hijau-500);border-radius:2px"></div>'+
+            '</div></div>';
+        }).join('')+
+      '</div></div>'+
+      '<div class="meta" style="margin-top:12px;line-height:1.6">Sheet bertanda <b>berjendela</b> hanya '+
+        'dimuat sebagian saat aplikasi dibuka, sehingga ukurannya tidak memperlambat pemakaian '+
+        'sehari-hari. Data lama tetap utuh dan dapat dipanggil dari halaman Laporan.</div>';
+  }).catch(function(e){
+    document.getElementById('isiStatData').innerHTML =
+      '<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+  });
 }
 
 /* ==================== MULAI ==================== */
