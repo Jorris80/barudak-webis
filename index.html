@@ -1414,7 +1414,7 @@ function kanonik_(val, opsi){
  *    isi API_URL dengan URL Web App /exec, lalu callApi memakai fetch.
  *  - Bila dibuka sebagai file lokal tanpa API_URL: mode demo.
  * ============================================================ */
-var API_URL = ''; // dikosongkan pada berkas demo — aplikasi berjalan sepenuhnya di peramban tanpa server
+var API_URL = 'https://script.google.com/macros/s/AKfycbxnk9lAVB_eDAzZq7Kv2tx9J_9n-L7IJ_YxPW_DSIAxG_i2eN7y0tsF_McKZpJqJ2nh/exec'; // ← URL Web App /exec. WAJIB diisi untuk PWA; kosongkan hanya pada berkas demo.
 
 var ADA_GAS = (typeof google !== 'undefined' && google.script && google.script.run);
 var MODE_API = !ADA_GAS && !!API_URL;         // host statis → fetch ke GAS
