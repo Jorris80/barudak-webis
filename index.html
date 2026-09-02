@@ -276,6 +276,16 @@
   #ttdKanvas{width:100%;height:150px;border:2px dashed var(--garis);border-radius:10px;
     background:#fff;touch-action:none;cursor:crosshair}
   .wf-chip{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}
+  /* Tombol kosongkan isian — muncul saat kolom terisi, membantu koreksi cepat */
+  .isianBungkus{position:relative;display:block}
+  .isianHapus{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+    width:22px;height:22px;border-radius:50%;border:none;background:var(--garis);
+    color:var(--abu);font-size:14px;line-height:1;cursor:pointer;display:none;
+    align-items:center;justify-content:center;padding:0;z-index:2}
+  .isianHapus:hover{background:var(--merah);color:#fff}
+  .isianBungkus.terisi .isianHapus{display:flex}
+  .isianBungkus input{padding-right:34px}
+
   /* Penandaan hari libur pada Kalender Kebun */
   .kalender-tgl.libur-nasional{background:#FDECEA;border-color:#F3C6C0}
   .kalender-tgl.libur-nasional .angka-tgl{color:#C0392B;font-weight:800}
@@ -409,9 +419,9 @@
       </div>
     </div>
     <div class="filter-bar no-cetak" style="margin-bottom:12px">
-      <select id="dbPer" onchange="isiCascade('dbPer','dbEst','dbDiv');renderDasbor();"><option value="">Semua Perusahaan</option></select>
-      <select id="dbEst" onchange="isiCascade('dbPer','dbEst','dbDiv');renderDasbor();"><option value="">Semua Estate</option></select>
-      <select id="dbDiv" onchange="renderDasbor()"><option value="">Semua Divisi</option></select>
+      <select id="dbPer" onchange="isiCascade('dbPer','dbEst','dbDiv');renderDasbor();cuacaIkutSaringan();"><option value="">Semua Perusahaan</option></select>
+      <select id="dbEst" onchange="isiCascade('dbPer','dbEst','dbDiv');renderDasbor();cuacaIkutSaringan();"><option value="">Semua Estate</option></select>
+      <select id="dbDiv" onchange="renderDasbor();cuacaIkutSaringan()"><option value="">Semua Divisi</option></select>
     </div>
     <div id="bannerNotifikasiMaintenance" style="display:none;margin-bottom:12px"></div>
     <!-- Widget Prakiraan Cuaca Perkebunan -->
@@ -727,6 +737,7 @@
       <button onclick="bukaHalaman('traksi')"><span class="ic">🚜</span>Traksi &amp; Alat Berat</button>
       <button onclick="bukaHalaman('gudang')"><span class="ic">📦</span>Gudang &amp; Stok</button>
       <button onclick="bukaHalaman('budget')"><span class="ic">💰</span>Budgeting Kebun</button>
+      <button onclick="bukaStrukturOrganisasi()"><span class="ic">🗂️</span>Struktur Organisasi</button>
       <button onclick="bukaProfil()"><span class="ic">🪪</span>Profil Saya</button>
       <button onclick="bukaAturTataLetak()"><span class="ic">🎛️</span>Tata Letak Modul</button>
       <button onclick="formGantiSandi()"><span class="ic">🔑</span>Ganti Kata Sandi</button>
@@ -2269,6 +2280,14 @@ function isiOpsiBlok(){
 }
 
 /* Helper cascade perusahaan→estate→divisi generik untuk 3 select id. */
+/* Saringan dasbor berubah → prakiraan cuaca ikut menyesuaikan areanya. */
+function cuacaIkutSaringan(){
+  if(typeof segarkanCuaca === 'function' && document.getElementById('kontenCuaca')) {
+    clearTimeout(window._tCuaca);
+    window._tCuaca = setTimeout(segarkanCuaca, 350);   // tunggu saringan selesai
+  }
+}
+
 function isiCascade(idP, idE, idD){
   var elP=document.getElementById(idP), elE=document.getElementById(idE), elD=document.getElementById(idD);
   if(!elP && !elE && !elD) return;
@@ -3385,17 +3404,73 @@ function renderDasbor(){
 /* =====================================================================
  *  PRAKIRAAN CUACA PERKEBUNAN
  * ===================================================================*/
+/**
+ * Titik tengah area yang sedang disaring di Dasbor.
+ * Dihitung dari rata-rata titik seluruh batas blok pada unit terpilih.
+ * Bila blok belum punya koordinat, jatuh kembali ke titik peta di Pengaturan.
+ */
+function pusatUnitTerpilih(){
+  var st = S.settings || {};
+  var fP = (document.getElementById('dbPer')||{}).value || '';
+  var fE = (document.getElementById('dbEst')||{}).value || '';
+  var fD = (document.getElementById('dbDiv')||{}).value || '';
+
+  var blok = (S.blocks||[]).filter(function(b){
+    if(fP && b.Perusahaan !== fP) return false;
+    if(fE && b.Estate !== fE) return false;
+    if(fD && b.Divisi !== fD) return false;
+    return true;
+  });
+
+  var jumlahLat = 0, jumlahLng = 0, titik = 0;
+  blok.forEach(function(b){
+    if(!b.Koordinat) return;
+    try{
+      var k = typeof b.Koordinat === 'string' ? JSON.parse(b.Koordinat) : b.Koordinat;
+      if(!k || !k.length) return;
+      // dukung bentuk [[lat,lng],...] maupun [[[lat,lng],...],...]
+      var ring = (typeof k[0][0] === 'number') ? [k] : k;
+      ring.forEach(function(r){
+        r.forEach(function(t){
+          var la = Number(t[0]), ln = Number(t[1]);
+          if(isNaN(la) || isNaN(ln)) return;
+          jumlahLat += la; jumlahLng += ln; titik++;
+        });
+      });
+    }catch(e){}
+  });
+
+  var namaArea = fD ? ('Divisi ' + fD) : (fE ? ('Estate ' + fE) : (fP || 'Seluruh Area'));
+
+  if(titik > 0){
+    return {
+      lat: jumlahLat / titik, lng: jumlahLng / titik,
+      nama: namaArea + ' · ' + blok.length + ' blok',
+      dariBlok: true
+    };
+  }
+  return {
+    lat: Number(st.petaLat) || -0.85,
+    lng: Number(st.petaLng) || 101.45,
+    nama: namaArea + ' (titik peta)',
+    dariBlok: false
+  };
+}
+
 function segarkanCuaca(){
   var container = document.getElementById('kontenCuaca');
   if(!container) return;
   container.innerHTML = '<div style="text-align:center;padding:12px;font-size:13px;opacity:.85">Mengambil data cuaca perkebunan terbaru…</div>';
 
-  var st = S.settings || {};
-  var lat = Number(st.petaLat) || -0.85;
-  var lng = Number(st.petaLng) || 101.45;
+  /* Titik prakiraan mengikuti saringan dasbor: bila pengguna memilih satu
+     estate atau divisi, cuaca diambil dari titik tengah blok-blok unit itu —
+     bukan dari koordinat tetap di Pengaturan. Prakiraan jadi benar-benar
+     mewakili area yang sedang dilihat. */
+  var pusat = pusatUnitTerpilih();
+  var lat = pusat.lat, lng = pusat.lng;
 
   var locEl = document.getElementById('cuacaLokasi');
-  if(locEl) locEl.textContent = 'Area Perkebunan (' + lat.toFixed(3) + '°, ' + lng.toFixed(3) + '°)';
+  if(locEl) locEl.textContent = pusat.nama + ' (' + lat.toFixed(3) + '°, ' + lng.toFixed(3) + '°)';
 
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lng +
     '&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max&current_weather=true&timezone=auto';
@@ -6342,6 +6417,7 @@ try{ history.replaceState({ awal:true }, ''); history.pushState({ akar:true }, '
 function bukaLembar(html){
   document.getElementById('lembar').innerHTML = '<div class="pegangan"></div>' + html;
   document.getElementById('tirai').classList.add('tampil');
+  try{ pasangTombolHapusIsian(document.getElementById('lembar')); }catch(e){}
   dorongLapis('lembar', function(){
     document.getElementById('tirai').classList.remove('tampil');
     if(petaPick){ try{ petaPick.remove(); }catch(e){} petaPick=null; penandaPick=null; }
@@ -12207,7 +12283,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '2.6.0';
+var VERSI_APP = '2.8.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -14204,6 +14280,48 @@ function daftarPenggunaCache(){
   return (el && el._users) ? el._users : [];
 }
 
+/* ==================== TOMBOL KOSONGKAN ISIAN ====================
+ * Dipasang otomatis pada setiap kolom teks di dalam lembar yang terbuka,
+ * sehingga koreksi isian lebih cepat — terutama di ponsel yang menghapus
+ * teks satu per satu terasa lambat.
+ */
+function pasangTombolHapusIsian(induk){
+  induk = induk || document.getElementById('lembar');
+  if(!induk) return;
+  var jenis = ['text','search','tel','email','url','number','password'];
+  induk.querySelectorAll('input').forEach(function(inp){
+    if(inp._adaHapus) return;
+    if(jenis.indexOf(inp.type||'text') < 0) return;
+    if(inp.readOnly || inp.disabled) return;
+
+    var bungkus = document.createElement('span');
+    bungkus.className = 'isianBungkus';
+    inp.parentNode.insertBefore(bungkus, inp);
+    bungkus.appendChild(inp);
+
+    var tb = document.createElement('button');
+    tb.type = 'button';
+    tb.className = 'isianHapus';
+    tb.setAttribute('aria-label','Kosongkan isian');
+    tb.textContent = '×';
+    tb.onclick = function(e){
+      e.preventDefault();
+      inp.value = '';
+      bungkus.classList.remove('terisi');
+      inp.dispatchEvent(new Event('input', { bubbles:true }));
+      inp.dispatchEvent(new Event('change', { bubbles:true }));
+      inp.focus();
+    };
+    bungkus.appendChild(tb);
+
+    function perbarui(){ bungkus.classList.toggle('terisi', !!String(inp.value||'').length); }
+    inp.addEventListener('input', perbarui);
+    inp.addEventListener('change', perbarui);
+    perbarui();
+    inp._adaHapus = true;
+  });
+}
+
 function nilaiEl(id){ var e=document.getElementById(id); return e ? String(e.value||'').trim() : ''; }
 
 function barisProfil(label, nilai){
@@ -15651,6 +15769,796 @@ function resetTataLetak(){
   terapkanAksesModul();
   terapkanTataLetak();
   toast('Tata letak dikembalikan ke bawaan.');
+}
+
+
+/* ==================== STRUKTUR ORGANISASI ====================
+ * Bagan disusun di atas kanvas: kotak dapat digeser bebas, dan dihubungkan
+ * lewat empat titik sambung (atas, bawah, kiri, kanan). Garis digambar
+ * bersiku mengikuti sisi yang dipilih, seperti bagan organisasi pada umumnya.
+ */
+var SO_DAFTAR = [], SO_AKTIF = null, SO_UBAH = false;
+var SO_SAMBUNG = null;          // titik sambung yang sedang ditarik
+var SO_LEBAR = 168, SO_TINGGI = 96;
+
+var SO_JENIS = [
+  ['perusahaan', '🏢 SO Perusahaan'],
+  ['estate',     '🌴 SO Estate'],
+  ['ho',         '🏛️ SO Head Office']
+];
+
+function bukaStrukturOrganisasi(){
+  bukaLembar('<h3>🗂️ Struktur Organisasi</h3>'+
+    '<div class="filter-bar" style="margin-top:10px">'+
+      '<select id="soJenis" onchange="muatStruktur()">'+
+        '<option value="">Semua Jenis</option>'+
+        SO_JENIS.map(function(j){ return '<option value="'+j[0]+'">'+esc(j[1])+'</option>'; }).join('')+
+      '</select>'+
+      (SESI && SESI.peran==='admin'
+        ? '<button class="btn btn-utama btn-kecil" onclick="formStruktur()">＋ Bagan Baru</button>' : '')+
+    '</div>'+
+    '<div id="soDaftar"><div class="kosong">Memuat…</div></div>');
+  muatStruktur();
+}
+
+function muatStruktur(){
+  var j=(document.getElementById('soJenis')||{}).value||'';
+  callApi('listStruktur', j?{jenis:j}:{}).then(function(r){
+    SO_DAFTAR = r||[];
+    var el=document.getElementById('soDaftar'); if(!el) return;
+    if(!SO_DAFTAR.length){
+      el.innerHTML='<div class="kosong">Belum ada bagan struktur organisasi.'+
+        (SESI&&SESI.peran==='admin'?'<br>Tekan <b>Bagan Baru</b> untuk membuatnya.':'')+'</div>';
+      return;
+    }
+    var grup={};
+    SO_DAFTAR.forEach(function(s){ (grup[s.Jenis]=grup[s.Jenis]||[]).push(s); });
+    el.innerHTML = SO_JENIS.filter(function(j){ return grup[j[0]]; }).map(function(j){
+      return '<h4 style="font-size:13px;margin:14px 0 6px">'+esc(j[1])+'</h4>'+
+        grup[j[0]].map(function(s){
+          return '<div class="item"><div class="kepala">'+
+            '<div><b>'+esc(s.Judul)+'</b>'+
+            (s.Unit?'<div class="meta">'+esc(s.Unit)+'</div>':'')+
+            (s.Subjudul?'<div class="meta">'+esc(s.Subjudul)+'</div>':'')+'</div>'+
+            '<div class="kanan"><span class="chip hijau">'+s.jumlahKotak+' jabatan</span></div></div>'+
+            '<div class="aksi-baris">'+
+              '<button class="btn btn-utama btn-kecil" onclick="lihatStruktur(\''+esc(s.ID)+'\')">👁️ Lihat</button>'+
+              (SESI&&SESI.peran==='admin'
+                ? '<button class="btn btn-sekunder btn-kecil" onclick="editStruktur(\''+esc(s.ID)+'\')">✏️ Susun</button>'+
+                  '<button class="btn btn-sekunder btn-kecil" onclick="formStruktur(\''+esc(s.ID)+'\')">⚙️ Judul</button>'+
+                  '<button class="btn btn-bahaya btn-kecil" onclick="hapusStruktur(\''+esc(s.ID)+'\')">Hapus</button>' : '')+
+            '</div></div>';
+        }).join('');
+    }).join('');
+  }).catch(function(e){
+    var el=document.getElementById('soDaftar');
+    if(el) el.innerHTML='<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+  });
+}
+
+/* ---------- pengaturan judul ---------- */
+function formStruktur(id){
+  var s = id ? SO_DAFTAR.filter(function(x){ return x.ID===id; })[0] : null;
+  var estateAda = {};
+  (S.blocks||[]).forEach(function(b){ if(b.Estate) estateAda[b.Estate]=1; });
+
+  bukaLembar('<h3>'+(s?'Ubah Judul Bagan':'Bagan Baru')+'</h3>'+
+    '<label>Jenis Struktur *</label>'+
+    '<select id="soFJenis" onchange="soToggleUnit()">'+
+      SO_JENIS.map(function(j){
+        return '<option value="'+j[0]+'"'+((s&&s.Jenis===j[0])?' selected':'')+'>'+esc(j[1])+'</option>';
+      }).join('')+
+    '</select>'+
+    '<div id="soUnitWrap" style="display:none">'+
+      '<label>Estate / Unit</label>'+
+      '<input id="soFUnit" list="soEstateList" value="'+esc(s?s.Unit:'')+'" placeholder="cth: Estate LNE">'+
+      '<datalist id="soEstateList">'+Object.keys(estateAda).map(function(e){
+        return '<option value="'+esc(e)+'">'; }).join('')+'</datalist>'+
+    '</div>'+
+    '<label>Judul Bagan *</label>'+
+    '<input id="soFJudul" value="'+esc(s?s.Judul:'')+'" placeholder="cth: Struktur Organisasi PT Agrindo Sukses Sejahtera">'+
+    '<label>Subjudul</label>'+
+    '<input id="soFSub" value="'+esc(s?s.Subjudul:'')+'" placeholder="cth: Berlaku sejak Januari 2026">'+
+    '<label>Urutan Tampil</label>'+
+    '<input type="number" id="soFUrut" value="'+esc(s?s.Urutan:0)+'">'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="simpanJudulStruktur(\''+esc(id||'')+'\')">💾 Simpan</button>');
+  soToggleUnit();
+}
+function soToggleUnit(){
+  var j=(document.getElementById('soFJenis')||{}).value;
+  var w=document.getElementById('soUnitWrap');
+  if(w) w.style.display = (j==='estate') ? 'block' : 'none';
+}
+function simpanJudulStruktur(id){
+  var judul=(document.getElementById('soFJudul')||{}).value.trim();
+  if(!judul) return toast('Judul bagan wajib diisi.', true);
+  var s = id ? SO_DAFTAR.filter(function(x){ return x.ID===id; })[0] : null;
+  tampilLoader(true,'Menyimpan…');
+  callApi('saveStruktur', {
+    ID: id||'', Jenis: nilaiEl('soFJenis'), Unit: nilaiEl('soFUnit'),
+    Judul: judul, Subjudul: nilaiEl('soFSub'), Urutan: nilaiEl('soFUrut'),
+    data: s ? s.data : { kotak:[], garis:[] }
+  }).then(function(r){
+    tampilLoader(false);
+    toast('Bagan tersimpan ✓');
+    bukaStrukturOrganisasi();
+    if(!id) setTimeout(function(){ editStruktur(r.ID); }, 400);
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+function hapusStruktur(id){
+  var s=SO_DAFTAR.filter(function(x){ return x.ID===id; })[0];
+  if(!confirm('Hapus bagan "'+(s?s.Judul:id)+'"?\n\nTindakan ini tidak dapat dibatalkan.')) return;
+  callApi('deleteStruktur',{id:id}).then(function(){
+    toast('Bagan dihapus ✓'); bukaStrukturOrganisasi();
+  }).catch(function(e){ toast(e.message, true); });
+}
+
+
+/* ---------- penggambar bagan (dipakai penyusun & penampil) ---------- */
+function soGambarSVG(data, opsi){
+  opsi = opsi || {};
+  var kotak = data.kotak || [], garis = data.garis || [];
+  if(!kotak.length) return '';
+
+  // ukuran kanvas mengikuti kotak terjauh
+  var maksX = 0, maksY = 0;
+  kotak.forEach(function(k){
+    maksX = Math.max(maksX, (k.x||0) + SO_LEBAR);
+    maksY = Math.max(maksY, (k.y||0) + SO_TINGGI);
+  });
+  var W = maksX + 40, H = maksY + 40;
+
+  function titikSisi(k, sisi){
+    var x = k.x||0, y = k.y||0;
+    if(sisi === 'atas')  return { x: x + SO_LEBAR/2, y: y };
+    if(sisi === 'bawah') return { x: x + SO_LEBAR/2, y: y + SO_TINGGI };
+    if(sisi === 'kiri')  return { x: x, y: y + SO_TINGGI/2 };
+    return { x: x + SO_LEBAR, y: y + SO_TINGGI/2 };   // kanan
+  }
+
+  /* Garis digambar bersiku: keluar tegak lurus dari sisi masing-masing,
+     lalu bertemu di tengah — bentuk yang lazim pada bagan organisasi. */
+  function jalur(a, b, sisiA, sisiB){
+    var p1 = titikSisi(a, sisiA), p2 = titikSisi(b, sisiB);
+    var lepas = 22;
+    var k1 = { x: p1.x, y: p1.y }, k2 = { x: p2.x, y: p2.y };
+    if(sisiA === 'atas') k1.y -= lepas; else if(sisiA === 'bawah') k1.y += lepas;
+    else if(sisiA === 'kiri') k1.x -= lepas; else k1.x += lepas;
+    if(sisiB === 'atas') k2.y -= lepas; else if(sisiB === 'bawah') k2.y += lepas;
+    else if(sisiB === 'kiri') k2.x -= lepas; else k2.x += lepas;
+
+    var tegakA = (sisiA === 'atas' || sisiA === 'bawah');
+    var tengah = tegakA ? (k1.y + k2.y)/2 : (k1.x + k2.x)/2;
+    var d;
+    if(tegakA) d = 'M'+p1.x+','+p1.y+' L'+k1.x+','+k1.y+' L'+k1.x+','+tengah+
+                   ' L'+k2.x+','+tengah+' L'+k2.x+','+k2.y+' L'+p2.x+','+p2.y;
+    else       d = 'M'+p1.x+','+p1.y+' L'+k1.x+','+k1.y+' L'+tengah+','+k1.y+
+                   ' L'+tengah+','+k2.y+' L'+k2.x+','+k2.y+' L'+p2.x+','+p2.y;
+    return d;
+  }
+
+  var petaKotak = {};
+  kotak.forEach(function(k){ petaKotak[String(k.id)] = k; });
+
+  var svgGaris = garis.map(function(g){
+    var a = petaKotak[String(g.dari)], b = petaKotak[String(g.ke)];
+    if(!a || !b) return '';
+    return '<path d="'+jalur(a,b,g.sisiDari||'bawah',g.sisiKe||'atas')+'" '+
+      'fill="none" stroke="#5F6B63" stroke-width="1.8" stroke-linejoin="round"/>';
+  }).join('');
+
+  var svgKotak = kotak.map(function(k){
+    var x=k.x||0, y=k.y||0;
+    var warna = k.warna || '#123B22';
+    var foto = k.foto
+      ? '<clipPath id="cp'+esc(k.id)+'"><circle cx="'+(x+26)+'" cy="'+(y+SO_TINGGI/2)+'" r="18"/></clipPath>'+
+        '<image href="'+esc(k.foto)+'" x="'+(x+8)+'" y="'+(y+SO_TINGGI/2-18)+'" width="36" height="36" '+
+        'preserveAspectRatio="xMidYMid slice" clip-path="url(#cp'+esc(k.id)+')"'+
+        (opsi.klikFoto?' style="cursor:zoom-in" onclick="zoomFoto(\''+esc(k.foto)+'\',\''+esc(k.nama||'')+'\')"':'')+'/>'+
+        '<circle cx="'+(x+26)+'" cy="'+(y+SO_TINGGI/2)+'" r="18" fill="none" stroke="'+warna+'" stroke-width="2"/>'
+      : '<circle cx="'+(x+26)+'" cy="'+(y+SO_TINGGI/2)+'" r="18" fill="#EAF3EC" stroke="#C9D6CD" stroke-width="1.5"/>'+
+        '<text x="'+(x+26)+'" y="'+(y+SO_TINGGI/2+6)+'" text-anchor="middle" font-size="17">👤</text>';
+
+    // nama & jabatan dipenggal agar tidak melimpah keluar kotak
+    function penggal(t, maks){ t=String(t||''); return t.length>maks ? t.slice(0,maks-1)+'…' : t; }
+
+    return '<g>'+
+      '<rect x="'+x+'" y="'+y+'" width="'+SO_LEBAR+'" height="'+SO_TINGGI+'" rx="10" '+
+        'fill="#FFFFFF" stroke="'+warna+'" stroke-width="1.6"/>'+
+      '<rect x="'+x+'" y="'+y+'" width="'+SO_LEBAR+'" height="5" rx="2.5" fill="'+warna+'"/>'+
+      foto+
+      '<text x="'+(x+52)+'" y="'+(y+38)+'" font-size="12.5" font-weight="700" fill="#123B22">'+
+        esc(penggal(k.nama,16))+'</text>'+
+      '<text x="'+(x+52)+'" y="'+(y+54)+'" font-size="10.5" fill="#5F6B63">'+
+        esc(penggal(k.jabatan,20))+'</text>'+
+      (k.unit?'<text x="'+(x+52)+'" y="'+(y+69)+'" font-size="9.5" fill="#8A958C">'+
+        esc(penggal(k.unit,22))+'</text>':'')+
+      '</g>';
+  }).join('');
+
+  var gaya = opsi.gaya || 'max-width:none';
+  return '<svg id="'+(opsi.id||'soSvg')+'" viewBox="0 0 '+W+' '+H+'" '+
+    (opsi.tanpaUkuran ? '' : 'width="'+W+'" height="'+H+'" ')+
+    'preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" '+
+    'style="'+gaya+'">'+svgGaris+svgKotak+'</svg>';
+}
+
+/* ---------- penampil ---------- */
+function lihatStruktur(id){
+  var s = SO_DAFTAR.filter(function(x){ return x.ID===id; })[0];
+  if(!s) return;
+  var svg = soGambarSVG(s.data, { klikFoto:true, id:'soLihat' });
+  var svgMuat = soGambarSVG(s.data, { klikFoto:true, id:'soLihatMuat', tanpaUkuran:true,
+    gaya:'width:100%;height:auto;max-height:56vh;display:block' });
+  bukaLembar('<h3>'+esc(s.Judul)+'</h3>'+
+    (s.Subjudul?'<div class="meta">'+esc(s.Subjudul)+'</div>':'')+
+    (s.Unit?'<div class="meta">'+esc(s.Unit)+'</div>':'')+
+    '<div class="meta" style="margin-top:8px">Geser ke samping untuk melihat bagan penuh. '+
+      'Ketuk foto untuk memperbesar.</div>'+
+    '<div class="aksi-baris" style="margin:8px 0">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="soTukarPasLebar()">⤢ Pas Lebar / Ukuran Asli</button>'+
+    '</div>'+
+    '<div id="soWadahLihat" data-pas="1" style="overflow:auto;border:1px solid var(--garis);'+
+      'border-radius:10px;padding:12px;margin-top:4px;background:#FAFBFA">'+
+      (svgMuat || '<div class="kosong">Bagan masih kosong.</div>')+
+    '</div>'+
+    '<div id="soAsli" style="display:none">'+(svg||'')+'</div>'+
+    '<div class="aksi-baris" style="margin-top:12px">'+
+      '<button class="btn btn-utama btn-kecil" onclick="dialogCetakStruktur(\''+esc(id)+'\')">🖨️ Cetak</button>'+
+      (SESI&&SESI.peran==='admin'
+        ? '<button class="btn btn-sekunder btn-kecil" onclick="editStruktur(\''+esc(id)+'\')">✏️ Susun</button>':'')+
+    '</div>');
+}
+
+/* Beralih antara tampilan pas-lebar dan ukuran asli yang dapat digeser. */
+function soTukarPasLebar(){
+  var w = document.getElementById('soWadahLihat');
+  var asli = document.getElementById('soAsli');
+  if(!w || !asli) return;
+  var pas = w.getAttribute('data-pas') === '1';
+  var simpan = w.innerHTML;
+  w.innerHTML = asli.innerHTML;
+  asli.innerHTML = simpan;
+  w.setAttribute('data-pas', pas ? '0' : '1');
+}
+
+function cetakStruktur(id){
+  var s = SO_DAFTAR.filter(function(x){ return x.ID===id; })[0];
+  if(!s) return;
+  var kertas = (document.getElementById('soKertas')||{}).value || 'A3';
+  var orientasi = (document.getElementById('soOrientasi')||{}).value || 'landscape';
+  var uk = SO_KERTAS[kertas] || SO_KERTAS.A3;
+  var lebarMm = orientasi==='landscape' ? uk[1] : uk[0];
+  var tinggiMm = orientasi==='landscape' ? uk[0] : uk[1];
+
+  /* Bagan dipaskan ke ruang yang benar-benar tersisa di halaman.
+     Sebelumnya SVG diberi height="auto" — bukan atribut SVG yang sah, sehingga
+     gambarnya membesar melampaui tinggi kertas lalu terdorong ke halaman
+     berikutnya, meninggalkan halaman pertama kosong.
+     Sekarang tingginya dipatok dalam milimeter dan preserveAspectRatio
+     membuat isinya mengecil proporsional agar seluruhnya termuat. */
+  var margin = 12, tinggiKop = 30, tinggiTtd = 34, tinggiKaki = 10;
+  var tinggiMuat = Math.max(60, tinggiMm - (margin*2) - tinggiKop - tinggiTtd - tinggiKaki);
+  var svg = soGambarSVG(s.data, {
+    id: 'soCetak', tanpaUkuran: true,
+    gaya: 'width:100%;height:' + tinggiMuat + 'mm;display:block'
+  });
+
+  var isi = kopCetak(s.Judul.toUpperCase(), s.Subjudul || '',
+      s.Unit ? { perusahaan:'-', estate:s.Unit, divisi:'-' } : null)+
+    '<div style="text-align:center;margin:14px 0">'+svg+'</div>'+
+    '<table style="width:100%;margin-top:20px;page-break-inside:avoid"><tr>'+
+      '<td style="width:34%"></td>'+
+      '<td style="width:33%"></td>'+
+      '<td style="width:33%;text-align:center;font-size:11px">'+
+        esc((S.settings||{}).kotaSurat||'……………………')+', '+
+        new Date().toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})+
+        '<div style="height:56px"></div>'+
+        '<div style="border-top:1px solid #333;margin:0 20px 4px"></div>'+
+        '<b>'+esc((S.settings||{}).namaPerusahaan||'Pimpinan Perusahaan')+'</b></td>'+
+    '</tr></table>'+
+    kakiCetak('Struktur organisasi — dokumen internal perusahaan.');
+
+  var w = bukaCetak('Struktur — '+s.Judul, isi);
+  if(w){
+    // ukuran halaman disuntikkan agar dialog cetak langsung menawarkan kertas yang tepat
+    try{
+      var st = w.document.createElement('style');
+      st.textContent = '@page{size:'+lebarMm+'mm '+tinggiMm+'mm;margin:12mm}';
+      w.document.head.appendChild(st);
+    }catch(e){}
+  }
+}
+
+
+/* ---------- penyusun bagan ---------- */
+function editStruktur(id){
+  var s = SO_DAFTAR.filter(function(x){ return x.ID===id; })[0];
+  if(!s) return;
+  /* Salinan kerja dimuat SEKALI di sini. Penggambaran ulang antarmuka memakai
+     soBukaEditor() yang membaca salinan kerja itu — bukan memuat ulang dari
+     daftar tersimpan. Sebelumnya keduanya menyatu, sehingga setiap kali kotak
+     disimpan seluruh suntingan yang belum tersimpan ikut terbuang dan
+     kanvasnya tampak kosong. */
+  SO_AKTIF = JSON.parse(JSON.stringify(s));
+  SO_AKTIF.data = SO_AKTIF.data || { kotak:[], garis:[] };
+  SO_AKTIF.data.kotak = SO_AKTIF.data.kotak || [];
+  SO_AKTIF.data.garis = SO_AKTIF.data.garis || [];
+  SO_UBAH = false; SO_SAMBUNG = null;
+  soBukaEditor();
+}
+
+/** Gambar ulang panel penyusun dari salinan kerja yang sedang dipegang. */
+function soBukaEditor(){
+  if(!SO_AKTIF) return;
+  var s = SO_AKTIF;
+  bukaLembar('<h3>✏️ Susun Bagan</h3>'+
+    '<div class="meta"><b>'+esc(s.Judul)+'</b></div>'+
+    '<div class="meta" style="margin-top:6px;line-height:1.6">'+
+      'Geser kotak untuk memindahkan. Ketuk <b>titik biru</b> di salah satu sisi, lalu ketuk '+
+      'titik pada kotak lain untuk membuat garis penghubung.</div>'+
+    '<div class="aksi-baris" style="margin:10px 0">'+
+      '<button class="btn btn-utama btn-kecil" onclick="soTambahKotak()">＋ Kotak</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="soDialogRapikan()">⊞ Rapikan</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="soBatalSambung()">✕ Batal Sambung</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="soSusunDariPengguna()">👥 Dari Data Pengguna</button>'+
+    '</div>'+
+    '<div id="soPetunjuk" class="meta" style="margin-bottom:6px"></div>'+
+    '<div id="soKanvasBungkus" style="overflow:auto;border:1px solid var(--garis);border-radius:10px;'+
+      'background:#FAFBFA;position:relative;height:56vh"></div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:12px" onclick="soSimpan()">💾 Simpan Bagan</button>');
+  soGambarEditor();
+}
+
+function soGambarEditor(){
+  var w = document.getElementById('soKanvasBungkus'); if(!w) return;
+  var d = SO_AKTIF.data;
+  var maksX = 400, maksY = 300;
+  d.kotak.forEach(function(k){
+    maksX = Math.max(maksX, (k.x||0)+SO_LEBAR+80);
+    maksY = Math.max(maksY, (k.y||0)+SO_TINGGI+80);
+  });
+
+  var svgLatar = soGambarSVG(d, { id:'soSvgEdit' });
+  var html = '<div id="soKanvas" style="position:relative;width:'+maksX+'px;height:'+maksY+'px">'+
+    '<div style="position:absolute;inset:0;pointer-events:none">'+(svgLatar||'')+'</div>';
+
+  // lapisan interaktif: area geser + titik sambung
+  d.kotak.forEach(function(k){
+    var x=k.x||0, y=k.y||0;
+    html += '<div class="soBox" data-id="'+esc(k.id)+'" style="position:absolute;left:'+x+'px;top:'+y+'px;'+
+      'width:'+SO_LEBAR+'px;height:'+SO_TINGGI+'px;cursor:move;touch-action:none"'+
+      ' onpointerdown="soMulaiGeser(event,\''+esc(k.id)+'\')"'+
+      ' ondblclick="soEditKotak(\''+esc(k.id)+'\')"></div>';
+    [['atas',x+SO_LEBAR/2,y],['bawah',x+SO_LEBAR/2,y+SO_TINGGI],
+     ['kiri',x,y+SO_TINGGI/2],['kanan',x+SO_LEBAR,y+SO_TINGGI/2]].forEach(function(t){
+      html += '<div class="soDot" style="position:absolute;left:'+(t[1]-7)+'px;top:'+(t[2]-7)+'px;'+
+        'width:14px;height:14px;border-radius:50%;background:#1565C0;border:2px solid #fff;'+
+        'box-shadow:0 1px 3px rgba(0,0,0,.3);cursor:crosshair;z-index:5"'+
+        ' onclick="soKlikSambung(\''+esc(k.id)+'\',\''+t[0]+'\')"></div>';
+    });
+    // tombol hapus kotak
+    html += '<button style="position:absolute;left:'+(x+SO_LEBAR-14)+'px;top:'+(y-8)+'px;'+
+      'width:22px;height:22px;border-radius:50%;border:none;background:var(--merah);color:#fff;'+
+      'font-size:13px;line-height:1;cursor:pointer;z-index:6" '+
+      'onclick="soHapusKotak(\''+esc(k.id)+'\')">×</button>';
+  });
+
+  // garis yang bisa dihapus
+  d.garis.forEach(function(g, i){
+    var a=d.kotak.filter(function(x){return String(x.id)===String(g.dari);})[0];
+    var b=d.kotak.filter(function(x){return String(x.id)===String(g.ke);})[0];
+    if(!a||!b) return;
+    var mx=((a.x||0)+(b.x||0))/2+SO_LEBAR/2, my=((a.y||0)+(b.y||0))/2+SO_TINGGI/2;
+    html += '<button title="Hapus garis" style="position:absolute;left:'+(mx-9)+'px;top:'+(my-9)+'px;'+
+      'width:18px;height:18px;border-radius:50%;border:1px solid #C9D6CD;background:#fff;'+
+      'color:#C0392B;font-size:11px;line-height:1;cursor:pointer;z-index:4" '+
+      'onclick="soHapusGaris('+i+')">×</button>';
+  });
+
+  html += '</div>';
+  w.innerHTML = html;
+}
+
+function soTambahKotak(){
+  var d = SO_AKTIF.data;
+  var id = 'k' + Date.now().toString(36);
+  // letakkan bertingkat agar tidak saling menimpa
+  var n = d.kotak.length;
+  d.kotak.push({ id:id, nama:'Nama Pejabat', jabatan:'Jabatan', foto:'', unit:'',
+                 x: 40 + (n%4)*200, y: 40 + Math.floor(n/4)*140, warna:'#123B22' });
+  SO_UBAH = true;
+  soGambarEditor();
+  soEditKotak(id);
+}
+
+function soEditKotak(id){
+  var k = SO_AKTIF.data.kotak.filter(function(x){ return String(x.id)===String(id); })[0];
+  if(!k) return;
+  var users = (typeof daftarPenggunaCache==='function') ? daftarPenggunaCache() : [];
+  bukaLembar('<h3>Isi Kotak Jabatan</h3>'+
+    (users.length
+      ? '<label>Ambil dari Data Pengguna</label>'+
+        '<select id="soPilihUser" onchange="soIsiDariUser()">'+
+          '<option value="">— isi manual —</option>'+
+          users.map(function(u){
+            return '<option value="'+esc(u.Username)+'">'+esc(u.Nama||u.Username)+
+              (u.Jabatan?' — '+esc(u.Jabatan):'')+'</option>'; }).join('')+
+        '</select>' : '')+
+    '<label>Nama *</label><input id="soKNama" value="'+esc(k.nama||'')+'">'+
+    '<label>Jabatan *</label><input id="soKJabatan" value="'+esc(k.jabatan||'')+'">'+
+    '<label>Unit / Keterangan</label><input id="soKUnit" value="'+esc(k.unit||'')+'" placeholder="cth: Estate LNE">'+
+    '<label>Foto Profil</label>'+
+    '<input type="file" id="soKFoto" accept="image/*" onchange="soUnggahFoto(this)">'+
+    '<div id="soFotoPratinjau" style="margin-top:8px">'+
+      (k.foto?'<img src="'+esc(k.foto)+'" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--hijau-700)">'+
+        '<button class="btn btn-sekunder btn-kecil" style="margin-left:8px" onclick="soHapusFoto()">Hapus Foto</button>':'')+
+    '</div>'+
+    '<label>Warna Aksen</label>'+
+    '<select id="soKWarna">'+
+      [['#123B22','Hijau Tua'],['#2E7D46','Hijau'],['#1565C0','Biru'],['#E8960C','Amber'],['#6A1B9A','Ungu'],['#455A64','Abu']]
+      .map(function(w){ return '<option value="'+w[0]+'"'+((k.warna===w[0])?' selected':'')+'>'+w[1]+'</option>'; }).join('')+
+    '</select>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="soSimpanKotak(\''+esc(id)+'\')">💾 Simpan Kotak</button>');
+  window._soFotoSementara = k.foto || '';
+}
+function soIsiDariUser(){
+  var u=(document.getElementById('soPilihUser')||{}).value;
+  if(!u) return;
+  var d=(daftarPenggunaCache()||[]).filter(function(x){ return x.Username===u; })[0];
+  if(!d) return;
+  document.getElementById('soKNama').value = d.Nama || d.Username;
+  document.getElementById('soKJabatan').value = d.Jabatan || '';
+  document.getElementById('soKUnit').value = [d.AksesEstate,d.AksesDivisi].filter(Boolean).join(' · ');
+  if(d.Foto){
+    window._soFotoSementara = d.Foto;
+    document.getElementById('soFotoPratinjau').innerHTML =
+      '<img src="'+esc(d.Foto)+'" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--hijau-700)">';
+  }
+}
+function soUnggahFoto(input){
+  var f = input.files && input.files[0]; if(!f) return;
+  var r = new FileReader();
+  r.onload = function(){
+    // diperkecil supaya tidak membengkakkan ukuran data bagan
+    var img = new Image();
+    img.onload = function(){
+      var sisi = 128;
+      var c = document.createElement('canvas'); c.width=sisi; c.height=sisi;
+      var ctx = c.getContext('2d');
+      var s = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width-s)/2, (img.height-s)/2, s, s, 0, 0, sisi, sisi);
+      window._soFotoSementara = c.toDataURL('image/jpeg', 0.82);
+      document.getElementById('soFotoPratinjau').innerHTML =
+        '<img src="'+window._soFotoSementara+'" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--hijau-700)">'+
+        '<button class="btn btn-sekunder btn-kecil" style="margin-left:8px" onclick="soHapusFoto()">Hapus Foto</button>';
+    };
+    img.src = r.result;
+  };
+  r.readAsDataURL(f);
+}
+function soHapusFoto(){
+  window._soFotoSementara = '';
+  document.getElementById('soFotoPratinjau').innerHTML = '';
+}
+function soSimpanKotak(id){
+  var k = SO_AKTIF.data.kotak.filter(function(x){ return String(x.id)===String(id); })[0];
+  if(!k) return;
+  var nama = nilaiEl('soKNama'), jab = nilaiEl('soKJabatan');
+  if(!nama || !jab) return toast('Nama dan jabatan wajib diisi.', true);
+  k.nama = nama; k.jabatan = jab; k.unit = nilaiEl('soKUnit');
+  k.warna = nilaiEl('soKWarna') || '#123B22';
+  k.foto = window._soFotoSementara || '';
+  SO_UBAH = true;
+  soBukaEditor();                 // kembali ke penyusun tanpa memuat ulang data
+}
+function soHapusKotak(id){
+  if(!confirm('Hapus kotak ini beserta garis yang terhubung?')) return;
+  var d = SO_AKTIF.data;
+  d.kotak = d.kotak.filter(function(x){ return String(x.id)!==String(id); });
+  d.garis = d.garis.filter(function(g){
+    return String(g.dari)!==String(id) && String(g.ke)!==String(id); });
+  SO_UBAH = true; soGambarEditor();
+}
+function soHapusGaris(i){
+  SO_AKTIF.data.garis.splice(i,1);
+  SO_UBAH = true; soGambarEditor();
+}
+
+/* Sambungan dibuat dua ketukan: titik asal lalu titik tujuan. Cara ini lebih
+   andal di layar sentuh dibanding menyeret garis. */
+function soKlikSambung(id, sisi){
+  var p = document.getElementById('soPetunjuk');
+  if(!SO_SAMBUNG){
+    SO_SAMBUNG = { id:id, sisi:sisi };
+    if(p) p.innerHTML = '🔵 Titik awal dipilih (<b>'+esc(sisi)+'</b>). Ketuk titik pada kotak tujuan.';
+    return;
+  }
+  if(String(SO_SAMBUNG.id) === String(id)){
+    if(p) p.textContent = 'Tidak dapat menyambung ke kotak yang sama.';
+    SO_SAMBUNG = null; return;
+  }
+  var d = SO_AKTIF.data;
+  var sudahAda = d.garis.some(function(g){
+    return (String(g.dari)===String(SO_SAMBUNG.id) && String(g.ke)===String(id)) ||
+           (String(g.dari)===String(id) && String(g.ke)===String(SO_SAMBUNG.id));
+  });
+  if(sudahAda){
+    if(p) p.textContent = 'Kedua kotak itu sudah terhubung.';
+  } else {
+    d.garis.push({ dari:SO_SAMBUNG.id, ke:id, sisiDari:SO_SAMBUNG.sisi, sisiKe:sisi });
+    SO_UBAH = true;
+    if(p) p.textContent = 'Garis dibuat ✓';
+  }
+  SO_SAMBUNG = null;
+  soGambarEditor();
+}
+function soBatalSambung(){
+  SO_SAMBUNG = null;
+  var p = document.getElementById('soPetunjuk');
+  if(p) p.textContent = '';
+}
+
+/* Geser kotak dengan pointer — bekerja untuk tetikus maupun sentuhan. */
+function soMulaiGeser(ev, id){
+  ev.preventDefault();
+  var k = SO_AKTIF.data.kotak.filter(function(x){ return String(x.id)===String(id); })[0];
+  if(!k) return;
+  var kanvas = document.getElementById('soKanvas');
+  var awal = kanvas.getBoundingClientRect();
+  var geserX = ev.clientX - awal.left - (k.x||0);
+  var geserY = ev.clientY - awal.top - (k.y||0);
+  var el = ev.currentTarget;
+  el.setPointerCapture(ev.pointerId);
+
+  function gerak(e){
+    var r = kanvas.getBoundingClientRect();
+    k.x = Math.max(0, Math.round((e.clientX - r.left - geserX)/10)*10);   // rekat 10px
+    k.y = Math.max(0, Math.round((e.clientY - r.top - geserY)/10)*10);
+    el.style.left = k.x+'px'; el.style.top = k.y+'px';
+  }
+  function lepas(){
+    el.removeEventListener('pointermove', gerak);
+    el.removeEventListener('pointerup', lepas);
+    SO_UBAH = true;
+    soGambarEditor();
+  }
+  el.addEventListener('pointermove', gerak);
+  el.addEventListener('pointerup', lepas);
+}
+
+/** Tanya cara perataan sebelum merapikan. */
+function soDialogRapikan(){
+  bukaLembar('<h3>⊞ Rapikan Bagan</h3>'+
+    '<div class="meta">Kotak disusun menjadi jenjang berdasarkan garis penghubung.</div>'+
+    '<label>Perataan Tiap Jenjang</label>'+
+    '<select id="soRata">'+
+      '<option value="tengah" selected>Rata tengah (disarankan)</option>'+
+      '<option value="kiri">Rata kiri</option>'+
+      '<option value="bawah-induk">Ikuti posisi atasan</option>'+
+    '</select>'+
+    '<div class="meta" style="margin-top:6px;line-height:1.6">'+
+      '<b>Rata tengah</b> menempatkan tiap jenjang di tengah — bentuk piramida yang lazim.<br>'+
+      '<b>Ikuti posisi atasan</b> menaruh bawahan tepat di bawah atasannya masing-masing.</div>'+
+    '<label>Jarak Antar Kotak (px)</label>'+
+    '<input type="number" id="soJarak" value="40" min="10" max="120">'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" '+
+      'onclick="soRapikan(nilaiEl(\'soRata\'), Number(nilaiEl(\'soJarak\'))||40)">⊞ Rapikan</button>');
+}
+
+/** Susun ulang kotak menjadi jenjang rapi berdasarkan garis penghubung. */
+function soRapikan(rata, jarak){
+  var d = SO_AKTIF.data;
+  if(!d.kotak.length) return;
+  var anak = {}, punyaInduk = {};
+  d.garis.forEach(function(g){
+    (anak[g.dari] = anak[g.dari] || []).push(g.ke);
+    punyaInduk[g.ke] = 1;
+  });
+  var akar = d.kotak.filter(function(k){ return !punyaInduk[k.id]; });
+  if(!akar.length) akar = [d.kotak[0]];
+
+  var tingkat = {}, urut = [];
+  function telusuri(id, lvl, dilihat){
+    if(dilihat[id]) return; dilihat[id]=1;
+    tingkat[lvl] = tingkat[lvl] || [];
+    tingkat[lvl].push(id); urut.push(id);
+    (anak[id]||[]).forEach(function(a){ telusuri(a, lvl+1, dilihat); });
+  }
+  var dilihat = {};
+  akar.forEach(function(k){ telusuri(k.id, 0, dilihat); });
+  d.kotak.forEach(function(k){ if(!dilihat[k.id]) telusuri(k.id, 0, dilihat); });
+
+  rata = rata || 'tengah';
+  jarak = jarak || 40;
+  var langkahX = SO_LEBAR + jarak, langkahY = SO_TINGGI + 70;
+
+  // lebar jenjang terbanyak menjadi acuan penengahan
+  var terlebar = 0;
+  Object.keys(tingkat).forEach(function(lvl){
+    terlebar = Math.max(terlebar, tingkat[lvl].length);
+  });
+  var lebarKanvas = terlebar * langkahX;
+
+  var posisi = {};
+  Object.keys(tingkat).sort(function(a,b){ return Number(a)-Number(b); }).forEach(function(lvl){
+    var baris = tingkat[lvl];
+    var mulaiX;
+    if(rata === 'kiri') mulaiX = 40;
+    else mulaiX = 40 + (lebarKanvas - baris.length*langkahX) / 2;   // rata tengah
+
+    baris.forEach(function(id, i){
+      var k = d.kotak.filter(function(x){ return String(x.id)===String(id); })[0];
+      if(!k) return;
+      k.y = 40 + Number(lvl)*langkahY;
+      if(rata === 'bawah-induk'){
+        /* Bawahan diletakkan menyebar di bawah atasannya, bukan diratakan
+           sebaris penuh — bentuk yang lebih mudah dibaca pada struktur dalam. */
+        var indukId = null;
+        d.garis.forEach(function(g){ if(String(g.ke)===String(id)) indukId = g.dari; });
+        var pIn = indukId ? posisi[indukId] : null;
+        if(pIn != null){
+          var saudara = [];
+          d.garis.forEach(function(g){ if(String(g.dari)===String(indukId)) saudara.push(g.ke); });
+          var urutSaudara = saudara.indexOf(id);
+          var geser = (urutSaudara - (saudara.length-1)/2) * langkahX;
+          k.x = Math.max(20, Math.round((pIn + geser)/10)*10);
+        } else {
+          k.x = Math.round((mulaiX + i*langkahX)/10)*10;
+        }
+      } else {
+        k.x = Math.max(20, Math.round((mulaiX + i*langkahX)/10)*10);
+      }
+      posisi[id] = k.x;
+    });
+  });
+
+  SO_UBAH = true;
+  soBukaEditor();
+  toast('Bagan dirapikan — ' + (rata==='kiri'?'rata kiri':(rata==='tengah'?'rata tengah':'mengikuti atasan')) + ' ✓');
+}
+
+function soSimpan(){
+  if(!SO_AKTIF) return;
+  tampilLoader(true,'Menyimpan bagan…');
+  callApi('saveStruktur', {
+    ID: SO_AKTIF.ID, Jenis: SO_AKTIF.Jenis, Unit: SO_AKTIF.Unit,
+    Judul: SO_AKTIF.Judul, Subjudul: SO_AKTIF.Subjudul, Urutan: SO_AKTIF.Urutan,
+    data: SO_AKTIF.data
+  }).then(function(){
+    tampilLoader(false); SO_UBAH = false;
+    toast('Bagan tersimpan ✓');
+    bukaStrukturOrganisasi();
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+
+/* ---------- susun otomatis dari data pengguna (opsional) ---------- */
+function soSusunDariPengguna(){
+  var users = (typeof daftarPenggunaCache==='function') ? daftarPenggunaCache() : [];
+  if(!users.length){
+    return toast('Data pengguna belum dimuat. Buka menu Pengguna dulu, lalu coba lagi.', true);
+  }
+  var jenis = SO_AKTIF.Jenis, unit = SO_AKTIF.Unit;
+
+  // saring sesuai jenis bagan
+  var calon = users.filter(function(u){
+    if(String(u.Aktif)==='false') return false;
+    if(jenis==='estate' && unit){
+      return String(u.AksesEstate||'') === unit || String(u.LokasiKerja||'')==='Kebun';
+    }
+    if(jenis==='ho') return String(u.LokasiKerja||'')==='HO';
+    return true;
+  });
+  if(!calon.length) return toast('Tidak ada pengguna yang cocok dengan jenis bagan ini.', true);
+
+  bukaLembar('<h3>👥 Susun dari Data Pengguna</h3>'+
+    '<div class="meta" style="line-height:1.6">Bagan disusun otomatis mengikuti kolom '+
+      '<b>Atasan</b> pada profil masing-masing. Hasilnya tetap dapat digeser dan disunting '+
+      'setelahnya.</div>'+
+    '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#FFF4E5;'+
+      'border-left:3px solid #E8960C;font-size:12.5px;line-height:1.6">'+
+      'Kotak yang sudah ada di bagan ini akan <b>diganti</b>. Fitur ini bersifat opsional — '+
+      'Anda tetap dapat menyusun bagan sepenuhnya secara manual.</div>'+
+    '<div style="margin-top:12px;border:1px solid var(--garis);border-radius:10px;padding:10px;'+
+      'max-height:260px;overflow-y:auto">'+
+      '<div class="aksi-baris" style="margin-bottom:8px">'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="soPilihSemuaUser(true)">Centang semua</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="soPilihSemuaUser(false)">Kosongkan</button>'+
+      '</div>'+
+      calon.map(function(u){
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;cursor:pointer">'+
+          '<input type="checkbox" class="soUser" value="'+esc(u.Username)+'" style="width:auto;margin:0" checked>'+
+          '<span style="flex:1">'+esc(u.Nama||u.Username)+
+            (u.Jabatan?' <span class="meta">— '+esc(u.Jabatan)+'</span>':'')+'</span>'+
+          (u.Atasan?'<span class="meta" style="font-size:10.5px">↑ '+esc(u.Atasan)+'</span>':
+            '<span class="meta" style="font-size:10.5px;color:var(--hijau-700)">puncak</span>')+
+          '</label>';
+      }).join('')+
+    '</div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="soTerapkanDariPengguna()">👥 Susun Bagan</button>');
+}
+function soPilihSemuaUser(c){
+  document.querySelectorAll('.soUser').forEach(function(x){ x.checked=!!c; });
+}
+function soTerapkanDariPengguna(){
+  var pilih = [];
+  document.querySelectorAll('.soUser:checked').forEach(function(x){ pilih.push(x.value); });
+  if(!pilih.length) return toast('Pilih minimal satu orang.', true);
+
+  var users = daftarPenggunaCache() || [];
+  var peta = {};
+  users.forEach(function(u){ peta[String(u.Username).toLowerCase()] = u; });
+
+  var kotak = [], garis = [];
+  var warnaLevel = ['#123B22','#2E7D46','#1565C0','#E8960C','#6A1B9A','#455A64'];
+
+  pilih.forEach(function(un){
+    var u = peta[String(un).toLowerCase()];
+    if(!u) return;
+    kotak.push({ id:'u_'+u.Username, nama:u.Nama||u.Username, jabatan:u.Jabatan||'-',
+                 unit:[u.AksesEstate,u.AksesDivisi].filter(Boolean).join(' · '),
+                 foto:u.Foto||'', x:0, y:0, warna:'#2E7D46' });
+  });
+  // garis dari kolom Atasan, hanya bila atasannya ikut dipilih
+  var adaKotak = {};
+  kotak.forEach(function(k){ adaKotak[k.id]=1; });
+  pilih.forEach(function(un){
+    var u = peta[String(un).toLowerCase()];
+    if(!u || !u.Atasan) return;
+    var idAtasan = 'u_'+u.Atasan;
+    if(adaKotak[idAtasan]) garis.push({ dari:idAtasan, ke:'u_'+u.Username, sisiDari:'bawah', sisiKe:'atas' });
+  });
+
+  SO_AKTIF.data = { kotak:kotak, garis:garis };
+  SO_UBAH = true;
+  soBukaEditor();
+  soRapikan('tengah', 40);
+  // warnai menurut jenjang agar mudah dibaca
+  var indukDari = {};
+  garis.forEach(function(g){ indukDari[g.ke] = g.dari; });
+  SO_AKTIF.data.kotak.forEach(function(k){
+    var lvl = 0, kini = k.id, aman = 0;
+    while(indukDari[kini] && aman++ < 10){ kini = indukDari[kini]; lvl++; }
+    k.warna = warnaLevel[Math.min(lvl, warnaLevel.length-1)];
+  });
+  soBukaEditor();
+  toast(kotak.length+' jabatan disusun dari data pengguna ✓');
+}
+
+/* ---------- cetak dengan pilihan ukuran & orientasi ---------- */
+var SO_KERTAS = {
+  A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189]
+};
+
+function dialogCetakStruktur(id){
+  var s = SO_DAFTAR.filter(function(x){ return x.ID===id; })[0];
+  if(!s) return;
+  var jml = (s.data.kotak||[]).length;
+  // sarankan ukuran menurut banyaknya kotak
+  var saran = jml > 30 ? 'A1' : (jml > 18 ? 'A2' : (jml > 9 ? 'A3' : 'A4'));
+
+  bukaLembar('<h3>🖨️ Cetak Struktur Organisasi</h3>'+
+    '<div class="meta"><b>'+esc(s.Judul)+'</b> · '+jml+' jabatan</div>'+
+    '<label>Ukuran Kertas</label>'+
+    '<select id="soKertas">'+
+      Object.keys(SO_KERTAS).map(function(k){
+        var d = SO_KERTAS[k];
+        return '<option value="'+k+'"'+(k===saran?' selected':'')+'>'+k+' — '+d[0]+' × '+d[1]+' mm'+
+          (k===saran?' (disarankan)':'')+'</option>';
+      }).join('')+
+    '</select>'+
+    '<label>Orientasi</label>'+
+    '<select id="soOrientasi">'+
+      '<option value="landscape" selected>Melintang (landscape)</option>'+
+      '<option value="portrait">Tegak (portrait)</option>'+
+    '</select>'+
+    '<div class="meta" style="margin-top:6px;line-height:1.6">Bagan diperbesar otomatis agar '+
+      'memenuhi kertas. Untuk bagan lebar, <b>melintang</b> biasanya lebih pas.</div>'+
+    '<div style="margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px;line-height:1.6">'+
+      'Saat dialog cetak muncul, pastikan ukuran kertas di sana <b>sama</b> dengan pilihan di atas, '+
+      'dan aktifkan <b>Background graphics</b> agar warna ikut tercetak.</div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="cetakStruktur(\''+esc(id)+'\')">🖨️ Cetak Sekarang</button>');
 }
 
 /* ==================== MULAI ==================== */
