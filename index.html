@@ -1414,7 +1414,7 @@ function kanonik_(val, opsi){
  *    isi API_URL dengan URL Web App /exec, lalu callApi memakai fetch.
  *  - Bila dibuka sebagai file lokal tanpa API_URL: mode demo.
  * ============================================================ */
-var API_URL = 'https://script.google.com/macros/s/AKfycbxnk9lAVB_eDAzZq7Kv2tx9J_9n-L7IJ_YxPW_DSIAxG_i2eN7y0tsF_McKZpJqJ2nh/exec'; // ← ISI dengan URL Web App /exec bila di-host statis (lihat OFFLINE-PWA.md)
+var API_URL = ''; // dikosongkan pada berkas demo — aplikasi berjalan sepenuhnya di peramban tanpa server
 
 var ADA_GAS = (typeof google !== 'undefined' && google.script && google.script.run);
 var MODE_API = !ADA_GAS && !!API_URL;         // host statis → fetch ke GAS
@@ -1760,6 +1760,57 @@ function sesiHabis(){
 }
 
 /* ---------- Data contoh untuk mode demo (di luar GAS) ---------- */
+/* Contoh bagan struktur organisasi untuk berkas demo. */
+function strukturDemo(){
+  function kotak(id,nama,jabatan,label,x,y,warna,unit){
+    return { id:id, nama:nama, jabatan:jabatan, label:label, unit:unit||'',
+             foto:'', x:x, y:y, warna:warna };
+  }
+  function garis(a,b){ return { dari:a, ke:b, sisiDari:'bawah', sisiKe:'atas' }; }
+  return [
+    { ID:'SO-DEMO-1', Jenis:'perusahaan', Unit:'', Urutan:1,
+      Judul:'Struktur Organisasi PT Nusa Sawit Mandiri',
+      Subjudul:'Berlaku sejak Januari 2026', jumlahKotak:7,
+      DiubahPada:'2026-01-05 09:00', DiubahOleh:'Administrator',
+      data:{ kotak:[
+        kotak('d1','H. Sulaiman Rachmat','Direktur Utama','Direksi',420,40,'#123B22'),
+        kotak('d2','Ir. Rina Sari Dewi','General Manager','COO',420,220,'#2E7D46'),
+        kotak('d3','Hesti Rahayu, S.Psi','Manajer SDM &amp; Umum','Dept Head',60,400,'#1565C0'),
+        kotak('d4','Fina Dewi, S.E., Ak.','Manajer Keuangan','Dept Head',300,400,'#1565C0'),
+        kotak('d5','Ir. Bagus Priyono','Manajer Logistik','Dept Head',540,400,'#1565C0'),
+        kotak('d6','Andi Wijaya, S.P.','Estate Manager','Estate',780,400,'#E8960C','Estate Central-A'),
+        kotak('d7','Dedi Kurnia, S.P.','Estate Manager','Estate',1020,400,'#E8960C','Estate North-B')
+      ], garis:[ garis('d1','d2'), garis('d2','d3'), garis('d2','d4'),
+                 garis('d2','d5'), garis('d2','d6'), garis('d2','d7') ] } },
+
+    { ID:'SO-DEMO-2', Jenis:'estate', Unit:'Estate Central-A', Urutan:2,
+      Judul:'Struktur Organisasi Estate Central-A',
+      Subjudul:'Kebun inti — 1.240 ha', jumlahKotak:6,
+      DiubahPada:'2026-01-05 09:10', DiubahOleh:'Administrator',
+      data:{ kotak:[
+        kotak('e1','Andi Wijaya, S.P.','Estate Manager','Manager',300,40,'#123B22'),
+        kotak('e2','Budi Santoso, S.P.','Asisten Kepala','Askep',300,220,'#2E7D46'),
+        kotak('e3','Sutrisno','KTU Kebun','KTU',60,400,'#455A64'),
+        kotak('e4','Joko Purnomo','Asisten Divisi 01','Asisten',300,400,'#1565C0','Divisi 01'),
+        kotak('e5','Wawan Setiadi','Asisten Divisi 02','Asisten',540,400,'#1565C0','Divisi 02'),
+        kotak('e6','Rahmat Hidayat','Mandor Panen','Mandor',300,580,'#6A1B9A','Divisi 01')
+      ], garis:[ garis('e1','e2'), garis('e2','e3'), garis('e2','e4'),
+                 garis('e2','e5'), garis('e4','e6') ] } },
+
+    { ID:'SO-DEMO-3', Jenis:'ho', Unit:'', Urutan:3,
+      Judul:'Struktur Organisasi Kantor Pusat',
+      Subjudul:'Head Office — Pekanbaru', jumlahKotak:5,
+      DiubahPada:'2026-01-05 09:20', DiubahOleh:'Administrator',
+      data:{ kotak:[
+        kotak('h1','Ir. Rina Sari Dewi','General Manager','COO',300,40,'#123B22'),
+        kotak('h2','Hesti Rahayu, S.Psi','Manajer SDM &amp; Umum','HRD',60,220,'#2E7D46'),
+        kotak('h3','Fina Dewi, S.E., Ak.','Manajer Keuangan','Finance',300,220,'#2E7D46'),
+        kotak('h4','Ir. Bagus Priyono','Manajer Logistik','Logistik',540,220,'#2E7D46'),
+        kotak('h5','Nia Kurniasih','Staf Payroll','Staf',60,400,'#455A64')
+      ], garis:[ garis('h1','h2'), garis('h1','h3'), garis('h1','h4'), garis('h2','h5') ] } }
+  ];
+}
+
 function dataDemo(){
   return {
     blocks:[
@@ -8863,9 +8914,9 @@ function hariIniKalender(){
 function renderKalender(){
   /* Data hari libur dimuat sekali lalu disimpan di memori. Bila belum ada,
      ambil dulu baru gambar ulang — supaya penandaan liburnya ikut muncul. */
-  if(LIBUR_CACHE === null){
-    muatLiburKalender().then(function(){ renderKalender(); });
+  if(!Array.isArray(LIBUR_CACHE)){
     LIBUR_CACHE = [];      // cegah permintaan berulang selama menunggu
+    muatLiburKalender().then(function(){ renderKalender(); });
   }
   var fP = (document.getElementById('kalPer')||{}).value || '';
   var fE = (document.getElementById('kalEst')||{}).value || '';
@@ -12283,7 +12334,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '2.8.0';
+var VERSI_APP = '2.9.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -14226,12 +14277,34 @@ function isiLiburBawaan(){
 /* Cache hari libur untuk penandaan di Kalender Kebun. */
 var LIBUR_CACHE = null;
 function muatLiburKalender(paksa){
-  if(LIBUR_CACHE && !paksa) return Promise.resolve(LIBUR_CACHE);
-  return callApi('listHariLibur', {}).then(function(r){ LIBUR_CACHE=r||[]; return LIBUR_CACHE; })
-    .catch(function(){ LIBUR_CACHE=[]; return LIBUR_CACHE; });
+  if(Array.isArray(LIBUR_CACHE) && !paksa) return Promise.resolve(LIBUR_CACHE);
+  if(typeof MODE_DEMO!=='undefined' && MODE_DEMO){
+    LIBUR_CACHE = liburDemo();
+    return Promise.resolve(LIBUR_CACHE);
+  }
+  /* Hasil dipastikan berupa larik. Backend lama atau mode tertentu dapat
+     mengembalikan objek kosong, dan itu pernah membuat Kalender Kebun gagal
+     digambar dengan galat "forEach is not a function". */
+  return callApi('listHariLibur', {})
+    .then(function(r){ LIBUR_CACHE = Array.isArray(r) ? r : []; return LIBUR_CACHE; })
+    .catch(function(){ LIBUR_CACHE = []; return LIBUR_CACHE; });
 }
+
+/** Hari libur contoh untuk berkas demo. */
+function liburDemo(){
+  var t = new Date().getFullYear();
+  return [
+    { Tanggal: t+'-01-01', Keterangan:'Tahun Baru Masehi', Tahun:String(t) },
+    { Tanggal: t+'-05-01', Keterangan:'Hari Buruh Internasional', Tahun:String(t) },
+    { Tanggal: t+'-06-01', Keterangan:'Hari Lahir Pancasila', Tahun:String(t) },
+    { Tanggal: t+'-08-17', Keterangan:'HUT Kemerdekaan RI', Tahun:String(t) },
+    { Tanggal: t+'-08-25', Keterangan:'Cuti Bersama', Tahun:String(t) },
+    { Tanggal: t+'-12-25', Keterangan:'Hari Raya Natal', Tahun:String(t) }
+  ];
+}
+
 function keteranganLibur(iso){
-  if(!LIBUR_CACHE) return '';
+  if(!Array.isArray(LIBUR_CACHE)) return '';
   var k='';
   LIBUR_CACHE.forEach(function(x){ if(String(x.Tanggal).slice(0,10)===iso) k=x.Keterangan||'Libur Nasional'; });
   return k;
@@ -15801,35 +15874,44 @@ function bukaStrukturOrganisasi(){
   muatStruktur();
 }
 
+function gambarDaftarStruktur(){
+    var el=document.getElementById('soDaftar'); if(!el) return;
+  if(!SO_DAFTAR.length){
+    el.innerHTML='<div class="kosong">Belum ada bagan struktur organisasi.'+
+      (SESI&&SESI.peran==='admin'?'<br>Tekan <b>Bagan Baru</b> untuk membuatnya.':'')+'</div>';
+    return;
+  }
+  var grup={};
+  SO_DAFTAR.forEach(function(s){ (grup[s.Jenis]=grup[s.Jenis]||[]).push(s); });
+  el.innerHTML = SO_JENIS.filter(function(j){ return grup[j[0]]; }).map(function(j){
+    return '<h4 style="font-size:13px;margin:14px 0 6px">'+esc(j[1])+'</h4>'+
+      grup[j[0]].map(function(s){
+        return '<div class="item"><div class="kepala">'+
+          '<div><b>'+esc(s.Judul)+'</b>'+
+          (s.Unit?'<div class="meta">'+esc(s.Unit)+'</div>':'')+
+          (s.Subjudul?'<div class="meta">'+esc(s.Subjudul)+'</div>':'')+'</div>'+
+          '<div class="kanan"><span class="chip hijau">'+s.jumlahKotak+' jabatan</span></div></div>'+
+          '<div class="aksi-baris">'+
+            '<button class="btn btn-utama btn-kecil" onclick="lihatStruktur(\''+esc(s.ID)+'\')">👁️ Lihat</button>'+
+            (SESI&&SESI.peran==='admin'
+              ? '<button class="btn btn-sekunder btn-kecil" onclick="editStruktur(\''+esc(s.ID)+'\')">✏️ Susun</button>'+
+                '<button class="btn btn-sekunder btn-kecil" onclick="formStruktur(\''+esc(s.ID)+'\')">⚙️ Judul</button>'+
+                '<button class="btn btn-bahaya btn-kecil" onclick="hapusStruktur(\''+esc(s.ID)+'\')">Hapus</button>' : '')+
+          '</div></div>';
+      }).join('');
+  }).join('');
+}
+
 function muatStruktur(){
   var j=(document.getElementById('soJenis')||{}).value||'';
+  if(typeof MODE_DEMO!=='undefined' && MODE_DEMO){
+    SO_DAFTAR = strukturDemo().filter(function(s){ return !j || s.Jenis===j; });
+    gambarDaftarStruktur();
+    return;
+  }
   callApi('listStruktur', j?{jenis:j}:{}).then(function(r){
     SO_DAFTAR = r||[];
-    var el=document.getElementById('soDaftar'); if(!el) return;
-    if(!SO_DAFTAR.length){
-      el.innerHTML='<div class="kosong">Belum ada bagan struktur organisasi.'+
-        (SESI&&SESI.peran==='admin'?'<br>Tekan <b>Bagan Baru</b> untuk membuatnya.':'')+'</div>';
-      return;
-    }
-    var grup={};
-    SO_DAFTAR.forEach(function(s){ (grup[s.Jenis]=grup[s.Jenis]||[]).push(s); });
-    el.innerHTML = SO_JENIS.filter(function(j){ return grup[j[0]]; }).map(function(j){
-      return '<h4 style="font-size:13px;margin:14px 0 6px">'+esc(j[1])+'</h4>'+
-        grup[j[0]].map(function(s){
-          return '<div class="item"><div class="kepala">'+
-            '<div><b>'+esc(s.Judul)+'</b>'+
-            (s.Unit?'<div class="meta">'+esc(s.Unit)+'</div>':'')+
-            (s.Subjudul?'<div class="meta">'+esc(s.Subjudul)+'</div>':'')+'</div>'+
-            '<div class="kanan"><span class="chip hijau">'+s.jumlahKotak+' jabatan</span></div></div>'+
-            '<div class="aksi-baris">'+
-              '<button class="btn btn-utama btn-kecil" onclick="lihatStruktur(\''+esc(s.ID)+'\')">👁️ Lihat</button>'+
-              (SESI&&SESI.peran==='admin'
-                ? '<button class="btn btn-sekunder btn-kecil" onclick="editStruktur(\''+esc(s.ID)+'\')">✏️ Susun</button>'+
-                  '<button class="btn btn-sekunder btn-kecil" onclick="formStruktur(\''+esc(s.ID)+'\')">⚙️ Judul</button>'+
-                  '<button class="btn btn-bahaya btn-kecil" onclick="hapusStruktur(\''+esc(s.ID)+'\')">Hapus</button>' : '')+
-            '</div></div>';
-        }).join('');
-    }).join('');
+    gambarDaftarStruktur();
   }).catch(function(e){
     var el=document.getElementById('soDaftar');
     if(el) el.innerHTML='<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
@@ -15895,18 +15977,27 @@ function hapusStruktur(id){
 
 
 /* ---------- penggambar bagan (dipakai penyusun & penampil) ---------- */
+function penggalLabel(t){
+  t = String(t||'').trim();
+  return t.length > 20 ? t.slice(0,19)+'…' : t;
+}
+
 function soGambarSVG(data, opsi){
   opsi = opsi || {};
   var kotak = data.kotak || [], garis = data.garis || [];
   if(!kotak.length) return '';
 
-  // ukuran kanvas mengikuti kotak terjauh
+  /* Ruang tambahan di atas untuk pita judul kotak (mis. "COO", "Dept Head").
+     Pita digambar DI LUAR kotak agar tidak memakan ruang nama dan jabatan. */
+  var TINGGI_LABEL = 22;
+  var adaLabel = kotak.some(function(k){ return String(k.label||'').trim(); });
+
   var maksX = 0, maksY = 0;
   kotak.forEach(function(k){
     maksX = Math.max(maksX, (k.x||0) + SO_LEBAR);
     maksY = Math.max(maksY, (k.y||0) + SO_TINGGI);
   });
-  var W = maksX + 40, H = maksY + 40;
+  var W = maksX + 40, H = maksY + 40 + (adaLabel ? TINGGI_LABEL : 0);
 
   function titikSisi(k, sisi){
     var x = k.x||0, y = k.y||0;
@@ -15962,7 +16053,21 @@ function soGambarSVG(data, opsi){
     // nama & jabatan dipenggal agar tidak melimpah keluar kotak
     function penggal(t, maks){ t=String(t||''); return t.length>maks ? t.slice(0,maks-1)+'…' : t; }
 
+    // pita judul di atas kotak — hanya digambar bila diisi
+    var lbl = String(k.label||'').trim();
+    var pita = '';
+    if(lbl){
+      var lebarPita = Math.min(SO_LEBAR, Math.max(56, lbl.length * 7.2 + 18));
+      var xPita = x + (SO_LEBAR - lebarPita)/2;
+      pita = '<rect x="'+xPita+'" y="'+(y-TINGGI_LABEL-4)+'" width="'+lebarPita+'" height="'+TINGGI_LABEL+'" '+
+        'rx="'+(TINGGI_LABEL/2)+'" fill="'+warna+'"/>'+
+        '<text x="'+(x+SO_LEBAR/2)+'" y="'+(y-TINGGI_LABEL/2-1)+'" text-anchor="middle" '+
+        'font-size="10.5" font-weight="700" fill="#FFFFFF" letter-spacing="0.4">'+
+        esc(penggalLabel(lbl))+'</text>';
+    }
+
     return '<g>'+
+      pita+
       '<rect x="'+x+'" y="'+y+'" width="'+SO_LEBAR+'" height="'+SO_TINGGI+'" rx="10" '+
         'fill="#FFFFFF" stroke="'+warna+'" stroke-width="1.6"/>'+
       '<rect x="'+x+'" y="'+y+'" width="'+SO_LEBAR+'" height="5" rx="2.5" fill="'+warna+'"/>'+
@@ -15977,7 +16082,8 @@ function soGambarSVG(data, opsi){
   }).join('');
 
   var gaya = opsi.gaya || 'max-width:none';
-  return '<svg id="'+(opsi.id||'soSvg')+'" viewBox="0 0 '+W+' '+H+'" '+
+  var atas = adaLabel ? -TINGGI_LABEL - 8 : 0;
+  return '<svg id="'+(opsi.id||'soSvg')+'" viewBox="0 '+atas+' '+W+' '+H+'" '+
     (opsi.tanpaUkuran ? '' : 'width="'+W+'" height="'+H+'" ')+
     'preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" '+
     'style="'+gaya+'">'+svgGaris+svgKotak+'</svg>';
@@ -16118,6 +16224,15 @@ function soGambarEditor(){
     maksX = Math.max(maksX, (k.x||0)+SO_LEBAR+80);
     maksY = Math.max(maksY, (k.y||0)+SO_TINGGI+80);
   });
+  /* Pita judul digambar di atas kotak, jadi kotak paling atas perlu diberi
+     jarak agar pitanya tidak terpotong tepi kanvas. */
+  var adaLabel = d.kotak.some(function(k){ return String(k.label||'').trim(); });
+  var yMin = d.kotak.length ? Math.min.apply(null, d.kotak.map(function(k){ return k.y||0; })) : 999;
+  if(adaLabel && yMin < 36){
+    var geser = 36 - yMin;
+    d.kotak.forEach(function(k){ k.y = (k.y||0) + geser; });
+    maksY += geser;
+  }
 
   var svgLatar = soGambarSVG(d, { id:'soSvgEdit' });
   var html = '<div id="soKanvas" style="position:relative;width:'+maksX+'px;height:'+maksY+'px">'+
@@ -16185,6 +16300,15 @@ function soEditKotak(id){
             return '<option value="'+esc(u.Username)+'">'+esc(u.Nama||u.Username)+
               (u.Jabatan?' — '+esc(u.Jabatan):'')+'</option>'; }).join('')+
         '</select>' : '')+
+    '<label>Judul di Atas Kotak</label>'+
+    '<input id="soKLabel" value="'+esc(k.label||'')+'" list="soLabelUmum" placeholder="cth: COO, Dept Head, Manajer HRD">'+
+    '<datalist id="soLabelUmum">'+
+      ['Direksi','COO','CFO','Dept Head','Division Head','Manajer HRD','Manajer Keuangan',
+       'Manajer Logistik','Estate Manager','Askep','KTU','Mandor','Kepala Teknik','QC']
+      .map(function(x){ return '<option value="'+x+'">'; }).join('')+
+    '</datalist>'+
+    '<div class="meta" style="margin-top:4px">Kosongkan bila tidak diperlukan. Pita ini muncul di atas '+
+      'kotak sebagai penanda tingkatan atau bagian.</div>'+
     '<label>Nama *</label><input id="soKNama" value="'+esc(k.nama||'')+'">'+
     '<label>Jabatan *</label><input id="soKJabatan" value="'+esc(k.jabatan||'')+'">'+
     '<label>Unit / Keterangan</label><input id="soKUnit" value="'+esc(k.unit||'')+'" placeholder="cth: Estate LNE">'+
@@ -16210,6 +16334,8 @@ function soIsiDariUser(){
   document.getElementById('soKNama').value = d.Nama || d.Username;
   document.getElementById('soKJabatan').value = d.Jabatan || '';
   document.getElementById('soKUnit').value = [d.AksesEstate,d.AksesDivisi].filter(Boolean).join(' · ');
+  var elLbl = document.getElementById('soKLabel');
+  if(elLbl && !elLbl.value && d.PeranStruktural) elLbl.value = d.PeranStruktural;
   if(d.Foto){
     window._soFotoSementara = d.Foto;
     document.getElementById('soFotoPratinjau').innerHTML =
@@ -16247,6 +16373,7 @@ function soSimpanKotak(id){
   var nama = nilaiEl('soKNama'), jab = nilaiEl('soKJabatan');
   if(!nama || !jab) return toast('Nama dan jabatan wajib diisi.', true);
   k.nama = nama; k.jabatan = jab; k.unit = nilaiEl('soKUnit');
+  k.label = nilaiEl('soKLabel');
   k.warna = nilaiEl('soKWarna') || '#123B22';
   k.foto = window._soFotoSementara || '';
   SO_UBAH = true;
@@ -16497,6 +16624,7 @@ function soTerapkanDariPengguna(){
     var u = peta[String(un).toLowerCase()];
     if(!u) return;
     kotak.push({ id:'u_'+u.Username, nama:u.Nama||u.Username, jabatan:u.Jabatan||'-',
+                 label:u.PeranStruktural||'',      // pita diisi dari peran struktural
                  unit:[u.AksesEstate,u.AksesDivisi].filter(Boolean).join(' · '),
                  foto:u.Foto||'', x:0, y:0, warna:'#2E7D46' });
   });
