@@ -2228,7 +2228,9 @@ function muatData(ulang){
     S = d;
     if(d && d.jendelaDari) JENDELA = { hari: d.jendelaHari, dari: d.jendelaDari };
     try{ batasiDataAkses(); }catch(e1){ console.error('batasiDataAkses:', e1); }
-    if(d && d.sesi) SESI = d.sesi;
+    /* Digabung, bukan ditimpa. Bila sumber data hanya mengirim sebagian kolom
+       sesi, kolom lain dari login — termasuk ModulDiizinkan — tetap utuh. */
+    if(d && d.sesi) SESI = Object.assign({}, SESI || {}, d.sesi);
     try{ simpanCache(); }catch(e2){}
     var gagal = [];
     [['terapkanPengaturan',terapkanPengaturan],['terapkanPeran',terapkanPeran],
@@ -6524,7 +6526,11 @@ function prosesLogin(){
   callApi('login', { username:u, password:p }).then(function(r){
     TOKEN = r.token;
     WAKTU_LOGIN = Date.now();   // untuk mengenali token yang ditolak seketika
-    SESI = { username:r.username, nama:r.nama, peran:r.peran, AksesPerusahaan:r.AksesPerusahaan, AksesEstate:r.AksesEstate, AksesDivisi:r.AksesDivisi };
+    /* Seluruh isi jawaban login disalin apa adanya. Sebelumnya hanya sebagian
+       kolom yang diambil, sehingga ModulDiizinkan terbuang dan pembatasan
+       modul tidak pernah berlaku — kolom baru pun akan ikut terbawa. */
+    SESI = Object.assign({}, r);
+    delete SESI.token;
     try{ localStorage.setItem('sg_token', TOKEN); }catch(e){}
     document.getElementById('layarLogin').style.display='none';
     document.getElementById('loginPass').value='';
@@ -12369,7 +12375,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.1.1';
+var VERSI_APP = '3.1.2';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -17413,7 +17419,7 @@ window.addEventListener('load', function(){
 
   if(MODE_DEMO){
     // demo: langsung masuk sebagai admin
-    SESI = { username:'admin', nama:'Demo Admin', peran:'admin' }; TOKEN='demo';
+    SESI = { username:'admin', nama:'Demo Admin', peran:'admin', ModulDiizinkan:'' }; TOKEN='demo';
     mulaiApp();
     setTimeout(function(){ toast('Mode demo — login dilewati. Buka via URL web app untuk data asli.'); }, 900);
     return;
