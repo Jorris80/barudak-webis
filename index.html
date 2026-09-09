@@ -743,6 +743,7 @@
       <button onclick="formGantiSandi()"><span class="ic">🔑</span>Ganti Kata Sandi</button>
       <button onclick="bukaTentang()"><span class="ic">ℹ️</span>Tentang &amp; Ketentuan</button>
       <button class="adminOnly" onclick="formKunciAI()"><span class="ic">🤖</span>Kunci Asisten AI</button>
+      <button onclick="bukaHalaman('bibitan')"><span class="ic">🌱</span>Pembibitan</button>
       <button onclick="bukaHalaman('rekap')"><span class="ic">📈</span>Rekap Bulanan</button>
       <button onclick="bukaHalaman('workflow')"><span class="ic">✅</span>Workflow Persetujuan</button>
       <button onclick="bukaHalaman('ktu')"><span class="ic">🗂️</span>KTU (Administrasi)</button>
@@ -1188,6 +1189,12 @@
     <div id="panelAlur" style="display:none"></div>
   </section>
   <!-- ================= REKAP BULANAN & ASISTEN AI ================= -->
+  <section class="halaman" id="hal-bibitan">
+    <h2 class="judul">🌱 Pembibitan Kelapa Sawit</h2>
+    <div class="meta">Dari penerimaan kecambah, Pre-Nursery, Main Nursery, seleksi, sampai penyaluran ke lapangan.</div>
+    <div id="isiBibitan" style="margin-top:12px"></div>
+  </section>
+
   <section class="halaman" id="hal-rekap">
     <h2 class="judul">Rekap Bulanan <small id="ringkasRekap"></small></h2>
     <div class="filter-bar">
@@ -3302,7 +3309,7 @@ function bukaHalaman(nama){
   if(el) el.classList.add('aktif');
   document.querySelectorAll('#navBawah button').forEach(function(b){
     b.classList.toggle('aktif', b.dataset.hal === nama ||
-      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu','workflow','rekap'].indexOf(nama)>=0));
+      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu','workflow','rekap','bibitan'].indexOf(nama)>=0));
   });
   // FAB per halaman (hanya untuk yang boleh edit)
   var fabPeta = { blok:'＋', panen:'＋', spb:'＋', pupuk:'＋', sensus:'＋', bkm:'＋', masalah:'＋', jadwal:'＋', alat:'＋', hujan:'＋', sensusbuah:'＋', audit:'＋', traksi:'＋', gudang:'＋', budget:'＋', landclearing:'＋', ktu:'＋', workflow:'＋' };
@@ -3336,6 +3343,7 @@ function bukaHalaman(nama){
      yang sama — bukan dilempar ke Dasbor yang perlu memuat ulang grafiknya. */
   try{ localStorage.setItem('sg_halaman', nama); }catch(e){}
 
+  if(nama === 'bibitan') renderBibitan();
   if(nama === 'workflow') muatWorkflow(false);
   if(nama === 'rekap'){
     var eb=document.getElementById('rkBulan');
@@ -7899,12 +7907,25 @@ function formSpb(id){
   var opsiBlok = bList.map(function(b){ return '<option value="' + esc(b.ID) + '"' + (x && x.IDBlok === b.ID ? ' selected' : '') + '>' + esc(b.ID) + ' - ' + esc(b.Nama || b.Estate) + '</option>'; }).join('');
   var noAuto = 'SPB/' + hariISO(new Date()).replace(/-/g,'') + '/' + Math.floor(100 + Math.random()*900);
 
+  spbMuatSumber(x);
   bukaLembar('<h3>' + (x ? '✏️ Edit SPB Pengiriman' : '🚚 Tambah SPB Pengiriman TBS') + '</h3>' +
     '<div>' +
       '<label>Nomor SPB / Surat Jalan *</label><input id="fspNo" value="' + esc(x ? x.NoSPB : noAuto) + '">' +
       '<div class="grid2">' +
         '<div><label>Tanggal Berangkat *</label><input type="date" id="fspTgl" value="' + (x ? x.Tanggal : hariISO(new Date())) + '"></div>' +
-        '<div><label>Pilih Blok Sumber *</label><select id="fspBlok">' + opsiBlok + '</select></div>' +
+        '<label>Sumber TBS</label>'+
+      '<div class="aksi-baris" style="margin-bottom:8px">'+
+        '<button class="btn btn-utama btn-kecil" id="spbModeSatu" onclick="spbGantiMode(false)">Satu Blok</button>'+
+        '<button class="btn btn-sekunder btn-kecil" id="spbModeMulti" onclick="spbGantiMode(true)">Beberapa Blok</button>'+
+      '</div>'+
+      '<div id="spbSatu">' + saringUnitBlok('fsp', x ? x.IDBlok : '') + '</div>' +
+      '<div id="spbMulti" style="display:none">'+
+        '<div class="meta" style="margin-bottom:6px">Isi tiap blok beserta janjang dan kilogramnya. '+
+          'Total terisi otomatis ke kolom di bawah.</div>'+
+        '<div id="spbSumber"></div>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="spbTambahSumber()">＋ Tambah Blok Sumber</button>'+
+        '<div id="spbTotal" class="meta" style="margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--hijau-50)"></div>'+
+      '</div>' +
       '</div>' +
       '<div class="grid2">' +
         '<div><label>Nama Sopir / Driver</label><input id="fspSopir" placeholder="mis. Ridwan" value="' + esc(x ? x.Sopir : '') + '"></div>' +
@@ -7947,7 +7968,14 @@ function hitungHitunganSpbForm(){
 function simpanSpb(id){
   var no = document.getElementById('fspNo').value.trim();
   var tgl = document.getElementById('fspTgl').value;
-  var idBlok = document.getElementById('fspBlok').value;
+  /* Pada mode beberapa blok, IDBlok diisi blok bermuatan terbesar agar
+     laporan dan penyaringan unit yang sudah ada tetap berjalan. Rincian
+     lengkapnya disimpan terpisah di kolom BlokSumber. */
+  var multiAktif = (document.getElementById('spbMulti')||{}).style &&
+                   document.getElementById('spbMulti').style.display !== 'none';
+  var sumber = multiAktif ? spbSumberBersih() : [];
+  var idBlok = multiAktif ? spbBlokUtama() : nilaiEl('fspBlok');
+  if(multiAktif && !sumber.length) return toast('Isi minimal satu blok sumber.', true);
   var sopir = document.getElementById('fspSopir').value.trim();
   var nopol = document.getElementById('fspNopol').value.trim();
   var jjg = Number(document.getElementById('fspJjg').value) || 0;
@@ -7969,6 +7997,7 @@ function simpanSpb(id){
     NoSPB: no,
     Tanggal: tgl,
     IDBlok: idBlok,
+    BlokSumber: sumber.length ? JSON.stringify(sumber) : '',
     Perusahaan: blk.Perusahaan || '',
     Estate: blk.Estate || '',
     Divisi: blk.Divisi || '',
@@ -8171,7 +8200,7 @@ function formPupuk(id){
     '<div>' +
       '<div class="grid2">' +
         '<div><label>Tanggal Aplikasi *</label><input type="date" id="fpukTgl" value="' + (x ? x.Tanggal : hariISO(new Date())) + '"></div>' +
-        '<div><label>Pilih Blok *</label><select id="fpukBlok" onchange="autoIsiPokokPupuk()">' + opsiBlok + '</select></div>' +
+        '<div>' + saringUnitBlok('fpuk', x ? x.IDBlok : '', { onchange:'autoIsiPokokPupuk()' }) + '</div>' +
       '</div>' +
       '<label>Jenis Pupuk / Nutrisi *</label>' +
       '<select id="fpukJenis">' +
@@ -8408,7 +8437,7 @@ function formSensus(id){
     '<div>' +
       '<div class="grid2">' +
         '<div><label>Tanggal Sensus *</label><input type="date" id="fsnsTgl" value="' + (x ? x.Tanggal : hariISO(new Date())) + '"></div>' +
-        '<div><label>Pilih Blok *</label><select id="fsnsBlok">' + opsiBlok + '</select></div>' +
+        '<div>' + saringUnitBlok('fsns', x ? x.IDBlok : '') + '</div>' +
       '</div>' +
       '<label>Jenis Hama / Penyakit *</label>' +
       '<select id="fsnsHama">' +
@@ -8632,7 +8661,7 @@ function formBkm(id){
     '<div>' +
       '<div class="grid2">' +
         '<div><label>Tanggal Kerja *</label><input type="date" id="fbkmTgl" value="' + (x ? x.Tanggal : hariISO(new Date())) + '"></div>' +
-        '<div><label>Pilih Blok Panen *</label><select id="fbkmBlok">' + opsiBlok + '</select></div>' +
+        '<div>' + saringUnitBlok('fbkm', x ? x.IDBlok : '') + '</div>' +
       '</div>' +
       '<div class="grid2">' +
         '<div><label>Nama Mandor Panen</label><input id="fbkmMandor" placeholder="mis. Mandor Yanto" value="' + esc(x ? x.Mandor : '') + '"></div>' +
@@ -9531,7 +9560,9 @@ function formTraksi(id){
   bukaLembar('<h3>' + (e ? 'Edit Log Traksi' : 'Catat Operasional Traksi &amp; Alat Berat') + '</h3>' +
     filterUnitFormHTML('ftrk') +
     '<div class="grid2">' +
-      '<div><label>Jenis Unit *</label><select id="ftrkJenis">' +
+      saringUnitBlok('ftrk', e ? e.IDBlok : '', { hanyaBlok:true, wajib:false }) +
+    '<div class="meta" style="margin-top:-2px;margin-bottom:8px">Opsional — diisi bila kegiatan alat terkait blok tertentu.</div>' +
+    '<div><label>Jenis Unit *</label><select id="ftrkJenis">' +
         '<option' + (e&&e.JenisUnit==='Dump Truck'?' selected':'') + '>Dump Truck</option>' +
         '<option' + (e&&e.JenisUnit==='Excavator'?' selected':'') + '>Excavator</option>' +
         '<option' + (e&&e.JenisUnit==='Motor Grader'?' selected':'') + '>Motor Grader</option>' +
@@ -9591,6 +9622,7 @@ function simpanTraksi(id){
     StatusUnit: status,
     Operator: operator,
     Tanggal: tgl,
+    IDBlok: nilaiEl('ftrkBlok'),
     Aktivitas: aktivitas,
     Foto: foto,
     Video: video
@@ -10251,7 +10283,9 @@ function formBudget(id){
     filterUnitFormHTML('fbgt') +
     '<label>Judul Anggaran / Kegiatan Biaya *</label><input id="fbgtJudul" value="' + esc(e ? e.Judul : '') + '" placeholder="misal: Pemupukan NPK Granul Semester 1">' +
     '<div class="grid2">' +
-      '<div><label>Kategori Biaya *</label><select id="fbgtKategori">' +
+      saringUnitBlok('fbgt', e ? e.IDBlok : '', { hanyaBlok:true, wajib:false }) +
+    '<div class="meta" style="margin-top:-2px;margin-bottom:8px">Opsional — diisi bila anggaran khusus satu blok.</div>' +
+    '<div><label>Kategori Biaya *</label><select id="fbgtKategori">' +
         '<option' + (e&&e.Kategori==='Pemupukan'?' selected':'') + '>Pemupukan</option>' +
         '<option' + (e&&e.Kategori==='Perawatan'?' selected':'') + '>Perawatan</option>' +
         '<option' + (e&&e.Kategori==='Panen'?' selected':'') + '>Panen</option>' +
@@ -10332,6 +10366,7 @@ function simpanBudget(id){
   var params = {
     id: id || '',
     Judul: judul,
+    IDBlok: nilaiEl('fbgtBlok'),
     Kategori: kat,
     Tahun: thn,
     Bulan: bln,
@@ -12334,7 +12369,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '2.9.0';
+var VERSI_APP = '3.1.1';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -13975,6 +14010,15 @@ function gambarRekap(r){
     barisRekap('Sensus hama', angka(pw.kegiatanSensus,0)+' kali', 'rata serangan '+angka(pw.rataSeranganPersen,1)+'%') +
     barisRekap('Curah hujan', angka(r.cuaca.totalHujanMm,0)+' mm', r.cuaca.hariHujan+' hari hujan'));
 
+  if(r.bibitan && (r.bibitan.stokPN || r.bibitan.stokMN || r.bibitan.salurBulanIni)){
+    html += kartuRekap('🌱 Pembibitan',
+      barisRekap('Stok Pre-Nursery', angka(r.bibitan.stokPN,0)+' bibit') +
+      barisRekap('Stok Main Nursery', angka(r.bibitan.stokMN,0)+' bibit') +
+      barisRekap('Siap tanam', angka(r.bibitan.siapTanam,0)+' bibit') +
+      barisRekap('Afkir bulan ini', angka(r.bibitan.afkirBulanIni,0)+' bibit') +
+      barisRekap('Tersalur bulan ini', angka(r.bibitan.salurBulanIni,0)+' bibit'));
+  }
+
   html += kartuRekap('💰 Kas & Bank',
     barisRekap('Penerimaan', rp(by.kasMasukRp)) +
     barisRekap('Pengeluaran', rp(by.kasKeluarRp)) +
@@ -14027,6 +14071,16 @@ function unduhRekapExcel(){
     {Bagian:'Perhatian', Uraian:'Stok kritis', Nilai:r.perhatian.stokKritis},
     {Bagian:'Perhatian', Uraian:'Jadwal terlambat', Nilai:r.perhatian.jadwalTerlambat}
   ];
+  if(r.bibitan){
+    baris.push({Bagian:'Pembibitan', Uraian:'Stok Pre-Nursery', Nilai:r.bibitan.stokPN});
+    baris.push({Bagian:'Pembibitan', Uraian:'Stok Main Nursery', Nilai:r.bibitan.stokMN});
+    baris.push({Bagian:'Pembibitan', Uraian:'Siap tanam', Nilai:r.bibitan.siapTanam});
+    baris.push({Bagian:'Pembibitan', Uraian:'Afkir bulan ini', Nilai:r.bibitan.afkirBulanIni});
+    baris.push({Bagian:'Pembibitan', Uraian:'Tersalur bulan ini', Nilai:r.bibitan.salurBulanIni});
+  }
+  var _sisa = [
+  ];
+  baris = baris.concat(_sisa);
   (r.produksi.blokTertinggi||[]).forEach(function(b,i){
     baris.push({Bagian:'Blok Tertinggi', Uraian:(i+1)+'. '+b.idBlok+' — '+(b.nama||''), Nilai:b.ton+' ton'});
   });
@@ -14090,6 +14144,15 @@ function cetakRekap(){
       br('Kas keluar', rp(by.kasKeluarRp))+
       br('Saldo periode', rp(by.saldoRp), angka(by.jumlahTransaksi,0)+' transaksi')+
     '</table>'+
+
+    ((r.bibitan && (r.bibitan.stokPN || r.bibitan.stokMN))
+      ? '<h3 class="bagian">PEMBIBITAN</h3><table class="data">'+
+        br('Stok Pre-Nursery', angka(r.bibitan.stokPN,0)+' bibit')+
+        br('Stok Main Nursery', angka(r.bibitan.stokMN,0)+' bibit')+
+        br('Siap tanam', angka(r.bibitan.siapTanam,0)+' bibit')+
+        br('Afkir bulan ini', angka(r.bibitan.afkirBulanIni,0)+' bibit')+
+        br('Tersalur ke lapangan', angka(r.bibitan.salurBulanIni,0)+' bibit')+
+        '</table>' : '')+
 
     '<h3 class="bagian">PERAWATAN &amp; CUACA</h3><table class="data">'+
       br('Kegiatan pemupukan', angka(pw.kegiatanPemupukan,0)+' kali', angka(pw.totalPupukKg,0)+' kg')+
@@ -15061,7 +15124,7 @@ var DAFTAR_MODUL = [
   { grup:'Inti', item:[
     ['dasbor','📊 Dasbor'], ['peta','🗺️ Peta'], ['blok','🌴 Blok'], ['panen','🧺 Panen'] ]},
   { grup:'Operasional', item:[
-    ['masalah','⚠️ Masalah Lapangan'], ['jadwal','🗓️ Jadwal'], ['alat','🚜 Alat Berat'],
+    ['masalah','⚠️ Masalah Lapangan'], ['jadwal','🗓️ Jadwal'], ['bibitan','🌱 Pembibitan'], ['alat','🚜 Alat Berat'],
     ['hujan','🌧️ Curah Hujan'], ['spb','🚛 SPB'], ['pupuk','🧪 Pemupukan'],
     ['sensus','🐛 Sensus Hama'], ['sensusbuah','🍇 Sensus Buah'], ['bkm','📋 BKM & Premi'] ]},
   { grup:'Aset & Biaya', item:[
@@ -15069,6 +15132,7 @@ var DAFTAR_MODUL = [
     ['landclearing','🏗️ Land Clearing'], ['audit','✅ Audit'] ]},
   { grup:'Administrasi', item:[
     ['ktu','🗂️ KTU'], ['workflow','✅ Workflow Persetujuan'], ['rekap','📈 Rekap Bulanan'],
+    ['struktur','🗂️ Struktur Organisasi'],
     ['laporan','📄 Laporan'], ['kalender','📅 Kalender'], ['monmasalah','🔍 Monitoring Masalah'],
     ['lacak','📍 Lacak GPS'] ]}
 ];
@@ -16687,6 +16751,654 @@ function dialogCetakStruktur(id){
       'Saat dialog cetak muncul, pastikan ukuran kertas di sana <b>sama</b> dengan pilihan di atas, '+
       'dan aktifkan <b>Background graphics</b> agar warna ikut tercetak.</div>'+
     '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="cetakStruktur(\''+esc(id)+'\')">🖨️ Cetak Sekarang</button>');
+}
+
+
+/* ==================== SARINGAN UNIT PADA FORM ====================
+ * Memilih blok dari daftar puluhan bahkan ratusan itu melelahkan. Komponen
+ * ini menyaring bertingkat: Perusahaan → Estate → Divisi → Blok, sehingga
+ * daftar blok mengerucut mengikuti unit yang dipilih.
+ *
+ * Nilai Perusahaan/Estate/Divisi juga ikut tersimpan ke baris data, sehingga
+ * laporan per unit tetap benar meski bloknya kemudian dipindah.
+ */
+
+/** Gambar blok saringan. pre = awalan id elemen, agar bisa dipakai banyak form. */
+function saringUnitBlok(pre, terpilih, opsi){
+  opsi = opsi || {};
+  var blokTerpilih = terpilih || '';
+  var awal = (S.blocks||[]).filter(function(x){ return String(x.ID)===String(blokTerpilih); })[0];
+
+  var per = opsi.hanyaBlok ? '' : (awal ? awal.Perusahaan : '');
+  var est = opsi.hanyaBlok ? '' : (awal ? awal.Estate : '');
+  var div = opsi.hanyaBlok ? '' : (awal ? awal.Divisi : '');
+
+  var html = '';
+  if(!opsi.hanyaBlok){
+    html +=
+      '<div class="grid2">'+
+        '<div><label>Perusahaan</label><select id="'+pre+'Per" onchange="saringUnitUbah(\''+pre+'\')">'+
+          '<option value="">Semua Perusahaan</option></select></div>'+
+        '<div><label>Estate</label><select id="'+pre+'Est" onchange="saringUnitUbah(\''+pre+'\')">'+
+          '<option value="">Semua Estate</option></select></div>'+
+      '</div>'+
+      '<label>Divisi</label>'+
+      '<select id="'+pre+'Div" onchange="saringUnitUbah(\''+pre+'\')">'+
+        '<option value="">Semua Divisi</option></select>';
+  }
+  html +=
+    '<label>Blok'+(opsi.wajib===false?'':' *')+'</label>'+
+    '<select id="'+pre+'Blok"'+(opsi.onchange?' onchange="'+opsi.onchange+'"':'')+'>'+
+      '<option value="">— pilih blok —</option></select>'+
+    '<div class="meta" id="'+pre+'Info" style="margin-top:4px"></div>';
+
+  // isi dropdown setelah HTML masuk ke DOM
+  setTimeout(function(){
+    isiSaringUnit(pre, per, est, div, blokTerpilih, opsi);
+  }, 0);
+  return html;
+}
+
+/** Isi ketiga dropdown unit lalu daftar bloknya. */
+function isiSaringUnit(pre, per, est, div, blok, opsi){
+  opsi = opsi || {};
+  /* Memakai blokBolehAkses() agar daftar unit yang muncul hanya yang memang
+     boleh dilihat pengguna — sejalan dengan pembatasan wilayah kerja. */
+  var semua = (typeof blokBolehAkses === 'function') ? blokBolehAkses() : (S.blocks || []);
+
+  function isi(id, nilai, daftar, label){
+    var el = document.getElementById(id); if(!el) return;
+    var unik = [];
+    daftar.forEach(function(v){ if(v && unik.indexOf(v)<0) unik.push(v); });
+    unik.sort();
+    el.innerHTML = '<option value="">'+label+'</option>' +
+      unik.map(function(v){
+        return '<option value="'+esc(v)+'"'+(v===nilai?' selected':'')+'>'+esc(v)+'</option>'; }).join('');
+    // bila pengguna terbatas hanya punya satu pilihan, kunci saja
+    if(unik.length===1){ el.value = unik[0]; el.disabled = true; }
+    else el.disabled = false;
+  }
+
+  if(!opsi.hanyaBlok){
+    isi(pre+'Per', per, semua.map(function(x){ return x.Perusahaan; }), 'Semua Perusahaan');
+    var pNilai = (document.getElementById(pre+'Per')||{}).value || per || '';
+    var sisaE = semua.filter(function(x){ return !pNilai || x.Perusahaan===pNilai; });
+    isi(pre+'Est', est, sisaE.map(function(x){ return x.Estate; }), 'Semua Estate');
+    var eNilai = (document.getElementById(pre+'Est')||{}).value || est || '';
+    var sisaD = sisaE.filter(function(x){ return !eNilai || x.Estate===eNilai; });
+    isi(pre+'Div', div, sisaD.map(function(x){ return x.Divisi; }), 'Semua Divisi');
+  }
+  isiDaftarBlokSaring(pre, blok, opsi);
+}
+
+/** Perbarui daftar blok saat salah satu saringan unit berubah. */
+function saringUnitUbah(pre){
+  var per=(document.getElementById(pre+'Per')||{}).value||'';
+  var est=(document.getElementById(pre+'Est')||{}).value||'';
+  isiSaringUnit(pre, per, est, (document.getElementById(pre+'Div')||{}).value||'', '', {});
+}
+
+/** Isi dropdown blok sesuai saringan unit yang aktif. */
+function isiDaftarBlokSaring(pre, blokTerpilih, opsi){
+  opsi = opsi || {};
+  var el = document.getElementById(pre+'Blok'); if(!el) return;
+  var per=(document.getElementById(pre+'Per')||{}).value||'';
+  var est=(document.getElementById(pre+'Est')||{}).value||'';
+  var div=(document.getElementById(pre+'Div')||{}).value||'';
+
+  var sumber = (typeof blokBolehAkses === 'function') ? blokBolehAkses() : (S.blocks || []);
+  var daftar = sumber.filter(function(b){
+    if(per && b.Perusahaan!==per) return false;
+    if(est && b.Estate!==est) return false;
+    if(div && b.Divisi!==div) return false;
+    return true;
+  }).sort(function(a,b){ return String(a.ID).localeCompare(String(b.ID)); });
+
+  el.innerHTML = '<option value="">— pilih blok —</option>' +
+    daftar.map(function(b){
+      return '<option value="'+esc(b.ID)+'"'+(String(b.ID)===String(blokTerpilih)?' selected':'')+'>'+
+        esc(b.ID)+' — '+esc(b.Nama||'')+(b.LuasHa?' ('+angka(b.LuasHa,1)+' ha)':'')+'</option>';
+    }).join('');
+
+  var info = document.getElementById(pre+'Info');
+  if(info) info.textContent = daftar.length + ' blok tersedia' +
+    (per||est||div ? ' pada unit terpilih' : '');
+}
+
+/** Ambil unit dari blok terpilih — untuk disimpan bersama barisnya. */
+function unitDariBlok(idBlok){
+  var b = (S.blocks||[]).filter(function(x){ return String(x.ID)===String(idBlok); })[0];
+  return b ? { Perusahaan: b.Perusahaan||'', Estate: b.Estate||'', Divisi: b.Divisi||'' }
+           : { Perusahaan:'', Estate:'', Divisi:'' };
+}
+
+
+/* ==================== SPB DARI BEBERAPA BLOK ====================
+ * Satu truk kerap memuat TBS dari beberapa blok sekaligus. Bila hanya satu
+ * blok yang dicatat, produksi blok lain hilang dari laporan dan perhitungan
+ * ton per hektar menjadi keliru.
+ *
+ * Penyelesaiannya: SPB tetap satu baris (satu surat jalan, satu nomor), tetapi
+ * rincian per blok disimpan pada kolom BlokSumber berupa JSON:
+ *   [{ idBlok:'A1', janjang:320, kg:5800 }, { idBlok:'A2', janjang:180, kg:3200 }]
+ *
+ * Kolom IDBlok tetap diisi blok dengan muatan terbesar, supaya laporan lama
+ * dan penyaringan per unit tetap berjalan tanpa diubah.
+ */
+var SPB_SUMBER = [];
+
+/** Beralih antara satu blok dan beberapa blok sumber. */
+function spbGantiMode(multi){
+  var a=document.getElementById('spbSatu'), b=document.getElementById('spbMulti');
+  var t1=document.getElementById('spbModeSatu'), t2=document.getElementById('spbModeMulti');
+  if(!a||!b) return;
+  a.style.display = multi ? 'none' : '';
+  b.style.display = multi ? '' : 'none';
+  if(t1) t1.className = 'btn btn-kecil ' + (multi ? 'btn-sekunder' : 'btn-utama');
+  if(t2) t2.className = 'btn btn-kecil ' + (multi ? 'btn-utama' : 'btn-sekunder');
+  if(multi && !SPB_SUMBER.length) spbTambahSumber();
+}
+
+/** Muat rincian blok sumber pada dokumen yang sedang disunting. */
+function spbMuatSumber(x){
+  SPB_SUMBER = [];
+  if(x && x.BlokSumber){
+    try{
+      var d = typeof x.BlokSumber === 'string' ? JSON.parse(x.BlokSumber) : x.BlokSumber;
+      if(Array.isArray(d)) SPB_SUMBER = d.slice();
+    }catch(e){}
+  }
+  if(SPB_SUMBER.length > 1){
+    setTimeout(function(){ spbGantiMode(true); spbGambarSumber(); }, 30);
+  }
+}
+
+function spbTambahSumber(data){
+  SPB_SUMBER.push(data || { idBlok:'', janjang:'', kg:'' });
+  spbGambarSumber();
+}
+function spbHapusSumber(i){
+  SPB_SUMBER.splice(i,1);
+  spbGambarSumber();
+}
+function spbGambarSumber(){
+  var el = document.getElementById('spbSumber'); if(!el) return;
+  var daftar = ((typeof blokBolehAkses === 'function') ? blokBolehAkses() : (S.blocks || []))
+    .slice().sort(function(a,b){ return String(a.ID).localeCompare(String(b.ID)); });
+
+  el.innerHTML = SPB_SUMBER.map(function(s, i){
+    return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">'+
+      '<select class="spbBlok" style="flex:1.4" onchange="spbBacaSumber();spbHitungTotal()">'+
+        '<option value="">— blok —</option>'+
+        daftar.map(function(b){
+          return '<option value="'+esc(b.ID)+'"'+(String(b.ID)===String(s.idBlok)?' selected':'')+'>'+
+            esc(b.ID)+' — '+esc(b.Nama||'')+'</option>'; }).join('')+
+      '</select>'+
+      '<input class="spbJjg" type="number" placeholder="janjang" style="flex:1" value="'+esc(s.janjang||'')+'" '+
+        'oninput="spbBacaSumber();spbHitungTotal()">'+
+      '<input class="spbKg" type="number" placeholder="kg" style="flex:1" value="'+esc(s.kg||'')+'" '+
+        'oninput="spbBacaSumber();spbHitungTotal()">'+
+      '<button class="btn btn-sekunder btn-kecil" style="flex:0 0 auto" onclick="spbHapusSumber('+i+')">✕</button>'+
+      '</div>';
+  }).join('') || '<div class="meta" style="padding:6px 0">Belum ada blok sumber.</div>';
+  spbHitungTotal();
+}
+function spbBacaSumber(){
+  var blok=document.querySelectorAll('#spbSumber .spbBlok');
+  var jjg=document.querySelectorAll('#spbSumber .spbJjg');
+  var kg=document.querySelectorAll('#spbSumber .spbKg');
+  SPB_SUMBER = [];
+  for(var i=0;i<blok.length;i++){
+    SPB_SUMBER.push({ idBlok:blok[i].value, janjang:jjg[i].value, kg:kg[i].value });
+  }
+}
+function spbHitungTotal(){
+  var tj=0, tk=0, isi=0;
+  SPB_SUMBER.forEach(function(s){
+    if(s.idBlok){ isi++; tj += Number(s.janjang)||0; tk += Number(s.kg)||0; }
+  });
+  var el=document.getElementById('spbTotal');
+  if(el) el.innerHTML = isi
+    ? '<b>'+isi+' blok</b> · total <b>'+angka(tj,0)+'</b> janjang · <b>'+angka(tk,0)+'</b> kg'
+    : 'Isi minimal satu blok sumber.';
+  // isi otomatis ke kolom utama
+  var ej=document.getElementById('fspJjg'), ek=document.getElementById('fspEstKg');
+  if(isi && ej) ej.value = tj;
+  if(isi && ek) ek.value = tk;
+}
+/** Blok dengan muatan terbesar — dipakai sebagai IDBlok utama. */
+function spbBlokUtama(){
+  var terbesar = null, maks = -1;
+  SPB_SUMBER.forEach(function(s){
+    if(!s.idBlok) return;
+    var v = Number(s.kg)||Number(s.janjang)||0;
+    if(v > maks){ maks = v; terbesar = s.idBlok; }
+  });
+  return terbesar || '';
+}
+/** Rincian siap simpan, hanya baris yang berisi. */
+function spbSumberBersih(){
+  return SPB_SUMBER.filter(function(s){ return s.idBlok; })
+    .map(function(s){ return { idBlok:s.idBlok, janjang:Number(s.janjang)||0, kg:Number(s.kg)||0 }; });
+}
+
+
+/* ==================== PEMBIBITAN ==================== */
+var BIBIT = { batch:[], ringkas:null, aktif:null };
+var ABNORMAL_PN = ['Daun Sempit (Narrow Leaf)','Daun Rumput (Grass Leaf)',
+  'Daun Menggulung (Rolled Leaf)','Daun Terpuntir (Twisted Leaf)',
+  'Daun Berkerut (Crinkle Leaf)','Collante','Chimaera','Albino',
+  'Kerdil (Runt)','Pertumbuhan Tegak (Upright)'];
+var ABNORMAL_MN = ['Tegak (Erect / Upright)','Puncak Datar (Flat Top)',
+  'Ruas Panjang (Wide Internode)','Ruas Pendek (Short Internode)',
+  'Daun Lemah (Limp / Droopy)','Juvenil (Juvenile)','Chimaera',
+  'Anak Daun Lebar (Wide Leaflet)','Kerdil (Runt)','Terserang Penyakit'];
+var KEGIATAN_MUTASI = ['Tanam PN','Transplanting ke MN','Afkir Seleksi',
+  'Mati / Rusak','Penyaluran ke Lapangan','Koreksi Stok'];
+var SUMBER_KECAMBAH = ['PPKS Marihat','Socfindo','London Sumatra (Lonsum)',
+  'Topaz / Asian Agri','Dami Mas','Bakti / Sampoerna Agro','Tunggal Yunus','Lainnya'];
+
+function renderBibitan(){
+  var el = document.getElementById('isiBibitan');
+  if(el) el.innerHTML = '<div class="kosong">Memuat data bibitan…</div>';
+  callApi('ringkasBibitan', {}).then(function(r){
+    BIBIT.ringkas = r; BIBIT.batch = r.batch || [];
+    gambarBibitan();
+  }).catch(function(e){
+    if(el) el.innerHTML = '<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+  });
+}
+
+function gambarBibitan(){
+  var r = BIBIT.ringkas; if(!r) return;
+  var t = r.total;
+  var el = document.getElementById('isiBibitan'); if(!el) return;
+
+  el.innerHTML =
+    '<div class="kpi-grid" style="margin-bottom:12px">'+
+      kpiKotak('Stok Pre-Nursery', angka(t.stokPN,0), '#2E7D46')+
+      kpiKotak('Stok Main Nursery', angka(t.stokMN,0), '#1565C0')+
+      kpiKotak('Siap Tanam', angka(t.siapTanam,0), '#E8960C')+
+      kpiKotak('Afkir Rata-rata', angka(r.persenAfkirRata,1)+'%',
+        r.persenAfkirRata>25?'#C62828':'#2E7D46')+
+    '</div>'+
+
+    '<div class="aksi-baris" style="margin-bottom:12px;flex-wrap:wrap">'+
+      (bolehEdit()?'<button class="btn btn-utama btn-kecil" onclick="formBibitBatch()">＋ Batch Kecambah</button>':'')+
+      '<button class="btn btn-sekunder btn-kecil" onclick="formKebutuhanBibit()">🧮 Hitung Kebutuhan</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="lihatMutuPemasok()">🏅 Mutu Pemasok</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="eksporBibitan()">⬇ Excel</button>'+
+    '</div>'+
+
+    (r.abnormal && r.abnormal.length
+      ? '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">🔬 Kelainan Terbanyak Saat Seleksi</b>'+
+        '<div style="margin-top:8px">'+
+        r.abnormal.slice(0,5).map(function(a){
+          var pct = t.afkir>0 ? Math.round(a.jumlah/t.afkir*100) : 0;
+          return '<div style="padding:5px 0;border-bottom:1px solid var(--garis)">'+
+            '<div style="display:flex;justify-content:space-between;font-size:12.5px">'+
+              '<span>'+esc(a.jenis)+'</span><b>'+angka(a.jumlah,0)+'</b></div>'+
+            '<div style="height:4px;border-radius:2px;background:var(--garis);margin-top:3px">'+
+              '<div style="height:100%;width:'+pct+'%;background:var(--sawit);border-radius:2px"></div></div>'+
+            '</div>';
+        }).join('')+
+        '<div class="meta" style="margin-top:8px">Sebaran ini membantu menilai mutu kecambah dari pemasok '+
+          'dan menentukan perbaikan teknis di bibitan.</div>'+
+        '</div></div>'
+      : '')+
+
+    '<h4 style="font-size:13px;margin:14px 0 6px">Batch Kecambah ('+r.jumlahBatch+')</h4>'+
+    (BIBIT.batch.length
+      ? BIBIT.batch.map(kartuBatchBibit).join('')
+      : '<div class="kosong">Belum ada batch. Tekan <b>＋ Batch Kecambah</b> untuk mencatat kedatangan pertama.</div>');
+}
+
+function kartuBatchBibit(b){
+  var warnaUmur = b.umurBulan===null ? 'var(--abu)'
+    : (b.umurBulan>=10 ? 'var(--hijau-700)' : (b.umurBulan>=3 ? '#1565C0' : '#E8960C'));
+  var tahap = b.umurBulan===null ? 'Belum ditanam'
+    : (b.umurBulan<3 ? 'Pre-Nursery' : (b.umurBulan<10 ? 'Main Nursery' : 'Siap Tanam'));
+  return '<div class="item">'+
+    '<div class="kepala"><div><b>'+esc(b.NoBatch)+'</b>'+
+      '<div class="meta">'+esc(b.Sumber||'-')+(b.Varietas?' · '+esc(b.Varietas):'')+
+      (b.LokasiBibitan?' · '+esc(b.LokasiBibitan):'')+'</div></div>'+
+      '<div class="kanan"><span class="chip" style="background:'+warnaUmur+';color:#fff">'+esc(tahap)+'</span>'+
+      (b.umurBulan!==null?'<div class="meta" style="font-size:10.5px">'+b.umurBulan+' bulan</div>':'')+
+      '</div></div>'+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:var(--abu)">'+
+      '<span>Kecambah <b style="color:var(--tinta)">'+angka(b.jumlahAwal,0)+'</b></span>'+
+      (b.belumTanam?'<span>Belum tanam <b style="color:var(--tinta)">'+angka(b.belumTanam,0)+'</b></span>':'')+
+      '<span>PN <b style="color:var(--tinta)">'+angka(b.stokPN,0)+'</b></span>'+
+      '<span>MN <b style="color:var(--tinta)">'+angka(b.stokMN,0)+'</b></span>'+
+      '<span>Tersalur <b style="color:var(--tinta)">'+angka(b.tersalur,0)+'</b></span>'+
+      '<span style="color:'+(b.persenAfkir>25?'var(--merah)':'inherit')+'">Afkir <b>'+angka(b.persenAfkir,1)+'%</b></span>'+
+    '</div>'+
+    '<div class="aksi-baris" style="flex-wrap:wrap">'+
+      '<button class="btn btn-utama btn-kecil" onclick="detailBatchBibit(\''+esc(b.ID)+'\')">🔍 Detail</button>'+
+      (bolehEdit()?'<button class="btn btn-sekunder btn-kecil" onclick="formBibitMutasi(\''+esc(b.ID)+'\')">↔ Mutasi</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="formBibitRawat(\''+esc(b.ID)+'\')">💧 Perawatan</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="formBibitBatch(\''+esc(b.ID)+'\')">✏️ Edit</button>':'')+
+    '</div></div>';
+}
+
+
+/* ---------- form batch kecambah ---------- */
+function formBibitBatch(id){
+  var b = id ? BIBIT.batch.filter(function(x){ return x.ID===id; })[0] : null;
+  bukaLembar('<h3>'+(b?'✏️ Ubah Batch':'🌱 Batch Kecambah Baru')+'</h3>'+
+    '<div class="grid2">'+
+      '<div><label>Nomor Batch *</label><input id="bbNo" value="'+esc(b?b.NoBatch:'BTC-'+new Date().getFullYear()+'-')+'"></div>'+
+      '<div><label>Tanggal Datang *</label><input type="date" id="bbTgl" value="'+esc(b?b.Tanggal:hariISO(new Date()))+'"></div>'+
+    '</div>'+
+    '<label>Sumber / Produsen Kecambah *</label>'+
+    '<input id="bbSumber" list="bbSumberList" value="'+esc(b?b.Sumber:'')+'" placeholder="cth: PPKS Marihat">'+
+    '<datalist id="bbSumberList">'+SUMBER_KECAMBAH.map(function(s){
+      return '<option value="'+esc(s)+'">'; }).join('')+'</datalist>'+
+    '<div class="grid2">'+
+      '<div><label>Varietas</label><input id="bbVarietas" value="'+esc(b?b.Varietas:'')+'" placeholder="cth: DxP Simalungun"></div>'+
+      '<div><label>Nomor Sertifikat</label><input id="bbSertifikat" value="'+esc(b?b.NoSertifikat:'')+'"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Jumlah Kecambah *</label><input type="number" id="bbJumlah" value="'+esc(b?b.JumlahKecambah:'')+'" oninput="hitungNilaiBatch()"></div>'+
+      '<div><label>Harga per Kecambah (Rp)</label><input type="number" id="bbHarga" value="'+esc(b?b.HargaSatuanRp:'')+'" oninput="hitungNilaiBatch()"></div>'+
+    '</div>'+
+    '<div id="bbNilai" class="meta" style="margin-top:4px"></div>'+
+    '<div class="grid2">'+
+      '<div><label>Perusahaan</label><input id="bbPer" value="'+esc(b?b.Perusahaan:'')+'"></div>'+
+      '<div><label>Estate</label><input id="bbEst" value="'+esc(b?b.Estate:'')+'"></div>'+
+    '</div>'+
+    '<label>Lokasi Bibitan</label><input id="bbLokasi" value="'+esc(b?b.LokasiBibitan:'')+'" placeholder="cth: Bibitan Sentral Blok Z">'+
+    '<label>Status</label><select id="bbStatus">'+
+      ['Aktif','Selesai'].map(function(s){
+        return '<option'+((b&&b.Status===s)?' selected':'')+'>'+s+'</option>'; }).join('')+'</select>'+
+    '<label>Catatan</label><textarea id="bbCatatan" rows="2">'+esc(b?b.Catatan:'')+'</textarea>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="simpanBibitBatch(\''+esc(id||'')+'\')">💾 Simpan Batch</button>'+
+    (b && SESI && SESI.peran==='admin'
+      ? '<button class="btn btn-bahaya btn-blok" style="margin-top:8px" onclick="hapusBibitBatch(\''+esc(id)+'\')">🗑 Hapus Batch</button>' : ''));
+  hitungNilaiBatch();
+}
+function hitungNilaiBatch(){
+  var j=Number(nilaiEl('bbJumlah'))||0, h=Number(nilaiEl('bbHarga'))||0;
+  var el=document.getElementById('bbNilai');
+  if(el) el.innerHTML = (j&&h) ? 'Nilai batch: <b>'+rp(j*h)+'</b>' : '';
+}
+function simpanBibitBatch(id){
+  if(!nilaiEl('bbNo')) return toast('Nomor batch wajib diisi.', true);
+  if(!(Number(nilaiEl('bbJumlah'))>0)) return toast('Jumlah kecambah harus lebih dari nol.', true);
+  tampilLoader(true,'Menyimpan…');
+  callApi('saveBibitanBatch', {
+    ID:id||'', NoBatch:nilaiEl('bbNo'), Tanggal:nilaiEl('bbTgl'), Sumber:nilaiEl('bbSumber'),
+    Varietas:nilaiEl('bbVarietas'), NoSertifikat:nilaiEl('bbSertifikat'),
+    JumlahKecambah:nilaiEl('bbJumlah'), HargaSatuanRp:nilaiEl('bbHarga'),
+    Perusahaan:nilaiEl('bbPer'), Estate:nilaiEl('bbEst'), LokasiBibitan:nilaiEl('bbLokasi'),
+    Status:nilaiEl('bbStatus'), Catatan:nilaiEl('bbCatatan')
+  }).then(function(){ tampilLoader(false); tutupLembar(); toast('Batch tersimpan ✓'); renderBibitan(); })
+   .catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+function hapusBibitBatch(id){
+  if(!confirm('Hapus batch ini?')) return;
+  callApi('deleteBibitanBatch',{id:id}).then(function(){
+    tutupLembar(); toast('Batch dihapus ✓'); renderBibitan();
+  }).catch(function(e){ toast(e.message, true); });
+}
+
+/* ---------- form mutasi ---------- */
+function formBibitMutasi(idBatch){
+  BIBIT.aktifId = idBatch;
+  var b = BIBIT.batch.filter(function(x){ return x.ID===idBatch; })[0];
+  if(!b) return;
+  bukaLembar('<h3>↔ Mutasi Bibit</h3>'+
+    '<div class="meta"><b>'+esc(b.NoBatch)+'</b> · '+esc(b.Sumber||'')+'</div>'+
+    '<div style="margin-top:8px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px;line-height:1.7">'+
+      'Belum ditanam <b>'+angka(b.belumTanam,0)+'</b> · '+
+      'Stok PN <b>'+angka(b.stokPN,0)+'</b> · '+
+      'Stok MN <b>'+angka(b.stokMN,0)+'</b>'+
+    '</div>'+
+    '<label>Jenis Kegiatan *</label>'+
+    '<select id="bmKegiatan" onchange="bmUbahKegiatan()">'+
+      KEGIATAN_MUTASI.map(function(k){ return '<option>'+esc(k)+'</option>'; }).join('')+
+    '</select>'+
+    '<div class="grid2">'+
+      '<div><label>Tahap *</label><select id="bmTahap" onchange="bmUbahKegiatan()">'+
+        ['Pre-Nursery','Main Nursery'].map(function(t){ return '<option>'+t+'</option>'; }).join('')+
+      '</select></div>'+
+      '<div><label>Tanggal *</label><input type="date" id="bmTgl" value="'+hariISO(new Date())+'"></div>'+
+    '</div>'+
+    '<label>Jumlah Bibit *</label><input type="number" id="bmJumlah" placeholder="0">'+
+    '<div id="bmBatas" class="meta" style="margin-top:4px"></div>'+
+    '<div id="bmAbnormalWrap" style="display:none">'+
+      '<label>Jenis Kelainan *</label><select id="bmAbnormal"></select>'+
+      '<div class="meta" style="margin-top:4px">Dicatat agar mutu kecambah tiap pemasok dapat dinilai.</div>'+
+    '</div>'+
+    '<div id="bmBlokWrap" style="display:none">'+
+      saringUnitBlok('bmb', '', { wajib:false })+
+    '</div>'+
+    '<label>Petugas</label><input id="bmPetugas" value="'+esc(SESI?(SESI.nama||SESI.username):'')+'">'+
+    '<label>Catatan</label><textarea id="bmCatatan" rows="2"></textarea>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="simpanBibitMutasi(\''+esc(idBatch)+'\')">💾 Simpan Mutasi</button>');
+  bmUbahKegiatan();
+}
+function bmUbahKegiatan(){
+  var keg = nilaiEl('bmKegiatan'), tahap = nilaiEl('bmTahap');
+  var wA = document.getElementById('bmAbnormalWrap');
+  var wB = document.getElementById('bmBlokWrap');
+  var eT = document.getElementById('bmTahap');
+
+  // tahap mengikuti kegiatan agar tidak keliru
+  if(keg==='Tanam PN' && eT){ eT.value='Pre-Nursery'; eT.disabled=true; }
+  else if((keg==='Transplanting ke MN') && eT){ eT.value='Pre-Nursery'; eT.disabled=true; }
+  else if(keg==='Penyaluran ke Lapangan' && eT){ eT.value='Main Nursery'; eT.disabled=true; }
+  else if(eT){ eT.disabled=false; }
+
+  if(wA){
+    var perlu = (keg==='Afkir Seleksi');
+    wA.style.display = perlu ? '' : 'none';
+    if(perlu){
+      var daftar = nilaiEl('bmTahap')==='Pre-Nursery' ? ABNORMAL_PN : ABNORMAL_MN;
+      document.getElementById('bmAbnormal').innerHTML =
+        daftar.map(function(a){ return '<option>'+esc(a)+'</option>'; }).join('');
+    }
+  }
+  if(wB) wB.style.display = (keg==='Penyaluran ke Lapangan') ? '' : 'none';
+
+  // tampilkan batas stok yang berlaku
+  var b = BIBIT.batch.filter(function(x){ return x.ID===BIBIT.aktifId; })[0];
+  var el = document.getElementById('bmBatas');
+  if(el && b){
+    var maks = keg==='Tanam PN' ? b.belumTanam
+      : (keg==='Transplanting ke MN' ? b.stokPN
+      : (keg==='Penyaluran ke Lapangan' ? b.stokMN
+      : (nilaiEl('bmTahap')==='Pre-Nursery' ? b.stokPN : b.stokMN)));
+    el.textContent = keg==='Koreksi Stok' ? 'Koreksi boleh bernilai negatif untuk mengurangi stok.'
+      : 'Maksimal ' + angka(maks,0) + ' bibit.';
+  }
+}
+function simpanBibitMutasi(idBatch){
+  var jml = Number(nilaiEl('bmJumlah'))||0;
+  if(!jml) return toast('Jumlah bibit wajib diisi.', true);
+  tampilLoader(true,'Menyimpan…');
+  callApi('saveBibitanMutasi', {
+    IDBatch:idBatch, Tanggal:nilaiEl('bmTgl'), Tahap:nilaiEl('bmTahap'),
+    Kegiatan:nilaiEl('bmKegiatan'), Jumlah:jml,
+    JenisAbnormal:nilaiEl('bmKegiatan')==='Afkir Seleksi'?nilaiEl('bmAbnormal'):'',
+    IDBlokTujuan:nilaiEl('bmbBlok'), Petugas:nilaiEl('bmPetugas'), Catatan:nilaiEl('bmCatatan')
+  }).then(function(){ tampilLoader(false); tutupLembar(); toast('Mutasi tersimpan ✓'); renderBibitan(); })
+   .catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ---------- form perawatan ---------- */
+function formBibitRawat(idBatch){
+  var b = BIBIT.batch.filter(function(x){ return x.ID===idBatch; })[0];
+  if(!b) return;
+  var kegiatan = ['Penyiraman','Pemupukan','Penyemprotan Hama','Penyemprotan Penyakit',
+                  'Penyiangan Gulma','Konsolidasi Polybag','Seleksi Rutin','Lainnya'];
+  bukaLembar('<h3>💧 Perawatan Bibitan</h3>'+
+    '<div class="meta"><b>'+esc(b.NoBatch)+'</b></div>'+
+    '<div class="grid2">'+
+      '<div><label>Tanggal *</label><input type="date" id="brTgl" value="'+hariISO(new Date())+'"></div>'+
+      '<div><label>Tahap</label><select id="brTahap">'+
+        ['Pre-Nursery','Main Nursery'].map(function(t){ return '<option>'+t+'</option>'; }).join('')+
+      '</select></div>'+
+    '</div>'+
+    '<label>Jenis Kegiatan *</label><select id="brKegiatan">'+
+      kegiatan.map(function(k){ return '<option>'+esc(k)+'</option>'; }).join('')+'</select>'+
+    '<label>Bahan / Pupuk</label><input id="brBahan" placeholder="cth: NPK 15-15-6-4">'+
+    '<div class="grid2">'+
+      '<div><label>Dosis</label><input id="brDosis" placeholder="cth: 10"></div>'+
+      '<div><label>Satuan</label><input id="brSatuan" placeholder="gram/bibit"></div>'+
+    '</div>'+
+    '<label>Jumlah Bibit Dirawat</label><input type="number" id="brJumlah" placeholder="0">'+
+    '<label>Petugas</label><input id="brPetugas" value="'+esc(SESI?(SESI.nama||SESI.username):'')+'">'+
+    '<label>Catatan</label><textarea id="brCatatan" rows="2"></textarea>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="simpanBibitRawat(\''+esc(idBatch)+'\')">💾 Simpan</button>');
+}
+function simpanBibitRawat(idBatch){
+  tampilLoader(true,'Menyimpan…');
+  callApi('saveBibitanRawat', {
+    IDBatch:idBatch, Tanggal:nilaiEl('brTgl'), Tahap:nilaiEl('brTahap'),
+    JenisKegiatan:nilaiEl('brKegiatan'), Bahan:nilaiEl('brBahan'), Dosis:nilaiEl('brDosis'),
+    Satuan:nilaiEl('brSatuan'), JumlahBibit:nilaiEl('brJumlah'),
+    Petugas:nilaiEl('brPetugas'), Catatan:nilaiEl('brCatatan')
+  }).then(function(){ tampilLoader(false); tutupLembar(); toast('Perawatan tercatat ✓'); })
+   .catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ---------- detail batch ---------- */
+function detailBatchBibit(id){
+  var b = BIBIT.batch.filter(function(x){ return x.ID===id; })[0];
+  if(!b) return;
+  BIBIT.aktifId = id;
+  tampilLoader(true,'Memuat riwayat…');
+  Promise.all([
+    callApi('listBibitanMutasi',{idBatch:id}).catch(function(){ return []; }),
+    callApi('listBibitanRawat',{idBatch:id}).catch(function(){ return []; })
+  ]).then(function(h){
+    tampilLoader(false);
+    var mutasi=h[0]||[], rawat=h[1]||[];
+    function baris(l,v){ return v!==''&&v!=null?'<div style="display:flex;justify-content:space-between;'+
+      'padding:5px 0;border-bottom:1px solid var(--garis)"><span style="color:var(--abu);font-size:12.5px">'+
+      esc(l)+'</span><b style="font-size:13px">'+v+'</b></div>':''; }
+
+    bukaLembar('<h3>🌱 '+esc(b.NoBatch)+'</h3>'+
+      '<div class="meta">'+esc(b.Sumber||'-')+(b.Varietas?' · '+esc(b.Varietas):'')+'</div>'+
+
+      '<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin:12px 0">'+
+        kpiKotak('Stok PN', angka(b.stokPN,0), '#2E7D46')+
+        kpiKotak('Stok MN', angka(b.stokMN,0), '#1565C0')+
+        kpiKotak('Umur', b.umurBulan!==null?b.umurBulan+' bln':'-', '#E8960C')+
+      '</div>'+
+
+      '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Neraca Bibit</b><div style="margin-top:6px">'+
+        baris('Kecambah datang', angka(b.jumlahAwal,0))+
+        baris('Belum ditanam', b.belumTanam?angka(b.belumTanam,0):'')+
+        baris('Afkir Pre-Nursery', b.afkirPN?angka(b.afkirPN,0):'')+
+        baris('Afkir Main Nursery', b.afkirMN?angka(b.afkirMN,0):'')+
+        baris('Mati / rusak', b.totalMati?angka(b.totalMati,0):'')+
+        baris('Tersalur ke lapangan', b.tersalur?angka(b.tersalur,0):'')+
+        baris('Sisa di bibitan', angka(b.stokPN+b.stokMN,0))+
+        baris('Persentase afkir', '<span style="color:'+(b.persenAfkir>25?'var(--merah)':'var(--hijau-700)')+'">'+
+          angka(b.persenAfkir,1)+'%</span>')+
+        baris('Persentase lolos', angka(b.persenLolos,1)+'%')+
+        (b.TotalRp?baris('Nilai batch', rp(b.TotalRp)):'')+
+      '</div></div>'+
+
+      '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">↔ Riwayat Mutasi ('+mutasi.length+')</b>'+
+      '<div style="margin-top:6px;max-height:230px;overflow-y:auto">'+
+        (mutasi.length ? mutasi.map(function(m){
+          return '<div style="padding:6px 0;border-bottom:1px solid var(--garis);font-size:12.5px">'+
+            '<div style="display:flex;justify-content:space-between">'+
+              '<b>'+esc(m.Kegiatan)+'</b><b>'+angka(m.Jumlah,0)+'</b></div>'+
+            '<div class="meta" style="font-size:11px">'+esc(fmtTgl(m.Tanggal))+' · '+esc(m.Tahap||'')+
+              (m.JenisAbnormal?' · '+esc(m.JenisAbnormal):'')+
+              (m.IDBlokTujuan?' · ke blok '+esc(m.IDBlokTujuan):'')+
+              (m.Petugas?' · '+esc(m.Petugas):'')+'</div></div>';
+        }).join('') : '<div class="meta">Belum ada mutasi.</div>')+
+      '</div></div>'+
+
+      '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">💧 Perawatan ('+rawat.length+')</b>'+
+      '<div style="margin-top:6px;max-height:190px;overflow-y:auto">'+
+        (rawat.length ? rawat.map(function(r){
+          return '<div style="padding:6px 0;border-bottom:1px solid var(--garis);font-size:12.5px">'+
+            '<b>'+esc(r.JenisKegiatan)+'</b>'+(r.Bahan?' — '+esc(r.Bahan):'')+
+            '<div class="meta" style="font-size:11px">'+esc(fmtTgl(r.Tanggal))+
+              (r.Dosis?' · '+esc(r.Dosis)+' '+esc(r.Satuan||''):'')+
+              (r.JumlahBibit?' · '+angka(r.JumlahBibit,0)+' bibit':'')+'</div></div>';
+        }).join('') : '<div class="meta">Belum ada catatan perawatan.</div>')+
+      '</div></div>'+
+
+      (bolehEdit()?'<div class="aksi-baris" style="flex-wrap:wrap">'+
+        '<button class="btn btn-utama btn-kecil" onclick="tutupLembar();formBibitMutasi(\''+esc(id)+'\')">↔ Mutasi Baru</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="tutupLembar();formBibitRawat(\''+esc(id)+'\')">💧 Perawatan</button>'+
+      '</div>':''));
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ---------- kebutuhan bibit ---------- */
+function formKebutuhanBibit(){
+  bukaLembar('<h3>🧮 Hitung Kebutuhan Bibit</h3>'+
+    '<div class="meta">Membandingkan rencana tanam dengan bibit yang siap disalurkan.</div>'+
+    '<div class="grid2" style="margin-top:10px">'+
+      '<div><label>Luas Rencana Tanam (ha) *</label><input type="number" id="kbLuas" value="100" oninput="hitungKebutuhan()"></div>'+
+      '<div><label>SPH (pokok/ha)</label><input type="number" id="kbSph" value="136" oninput="hitungKebutuhan()"></div>'+
+    '</div>'+
+    '<label>Cadangan Sisipan (%)</label><input type="number" id="kbCad" value="5" oninput="hitungKebutuhan()">'+
+    '<div class="meta" style="margin-top:4px">Standar 136 pokok/ha dengan jarak tanam 9×9 m segitiga. '+
+      'Cadangan 5% untuk penyisipan bibit mati.</div>'+
+    '<div id="kbHasil" style="margin-top:14px"></div>');
+  hitungKebutuhan();
+}
+function hitungKebutuhan(){
+  var el=document.getElementById('kbHasil'); if(!el) return;
+  el.innerHTML='<div class="meta">Menghitung…</div>';
+  callApi('kebutuhanBibit', { luasHa:nilaiEl('kbLuas'), sph:nilaiEl('kbSph'),
+    persenCadangan:nilaiEl('kbCad') }).then(function(k){
+    el.innerHTML =
+      '<div class="kpi-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:10px">'+
+        kpiKotak('Kebutuhan', angka(k.kebutuhan,0)+' bibit', '#1565C0')+
+        kpiKotak('Siap Tanam', angka(k.tersedia,0)+' bibit', k.cukup?'#2E7D46':'#C62828')+
+      '</div>'+
+      '<div style="padding:12px;border-radius:8px;font-size:12.5px;line-height:1.65;background:'+
+        (k.cukup?'var(--hijau-50)':'#FBEAE7')+';border-left:3px solid '+
+        (k.cukup?'var(--hijau-700)':'var(--merah)')+'">'+
+        (k.cukup
+          ? '✅ <b>Bibit mencukupi.</b> Kelebihan '+angka(k.selisih,0)+' bibit dapat dipakai '+
+            'untuk penyisipan atau rencana tanam berikutnya.'
+          : '⚠️ <b>Bibit kurang '+angka(Math.abs(k.selisih),0)+'.</b><br>'+
+            'Perlu memesan sekitar <b>'+angka(k.kecambahDipesan,0)+' kecambah</b> — '+
+            'sudah memperhitungkan susut wajar 20% dari kecambah sampai bibit siap tanam.<br>'+
+            '<span class="meta">Kecambah perlu dipesan ±12 bulan sebelum jadwal tanam.</span>')+
+      '</div>';
+  }).catch(function(e){ el.innerHTML='<div class="meta" style="color:var(--merah)">'+esc(e.message)+'</div>'; });
+}
+
+/* ---------- mutu pemasok ---------- */
+function lihatMutuPemasok(){
+  var r = BIBIT.ringkas; if(!r) return;
+  bukaLembar('<h3>🏅 Mutu Kecambah per Pemasok</h3>'+
+    '<div class="meta">Persentase afkir menjadi ukuran mutu kecambah yang dikirim tiap produsen.</div>'+
+    '<div style="margin-top:12px">'+
+      (r.pemasok.length ? r.pemasok.map(function(p){
+        var warna = p.persenAfkir>25?'var(--merah)':(p.persenAfkir>15?'#E8960C':'var(--hijau-700)');
+        return '<div class="item"><div class="kepala"><div><b>'+esc(p.sumber)+'</b>'+
+          '<div class="meta">'+p.batch+' batch · '+angka(p.kecambah,0)+' kecambah</div></div>'+
+          '<div class="kanan"><b style="color:'+warna+';font-size:16px">'+angka(p.persenAfkir,1)+'%</b>'+
+          '<div class="meta" style="font-size:10.5px">afkir</div></div></div></div>';
+      }).join('') : '<div class="kosong">Belum ada data.</div>')+
+    '</div>'+
+    '<div class="meta" style="margin-top:12px;line-height:1.6">Afkir di bawah 15% tergolong wajar. '+
+      'Di atas 25% perlu ditelusuri — bisa berasal dari mutu kecambah, atau dari cara perawatan di bibitan.</div>');
+}
+
+function eksporBibitan(){
+  if(!BIBIT.batch.length) return toast('Belum ada data untuk diekspor.', true);
+  unduhExcel(BIBIT.batch.map(function(b){
+    return { 'No Batch':b.NoBatch, 'Tanggal':b.Tanggal, 'Sumber':b.Sumber, 'Varietas':b.Varietas,
+      'Kecambah':b.jumlahAwal, 'Belum Tanam':b.belumTanam, 'Stok PN':b.stokPN, 'Stok MN':b.stokMN,
+      'Afkir PN':b.afkirPN, 'Afkir MN':b.afkirMN, 'Mati':b.totalMati, 'Tersalur':b.tersalur,
+      'Umur (bln)':b.umurBulan, 'Siap Tanam':b.siapTanam,
+      '% Afkir':b.persenAfkir, '% Lolos':b.persenLolos, 'Nilai (Rp)':b.TotalRp,
+      'Perusahaan':b.Perusahaan, 'Estate':b.Estate, 'Lokasi':b.LokasiBibitan, 'Status':b.Status };
+  }), 'bibitan_'+hariISO(new Date()), 'Pembibitan');
 }
 
 /* ==================== MULAI ==================== */
