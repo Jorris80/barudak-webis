@@ -12376,7 +12376,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.3.0';
+var VERSI_APP = '3.4.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -12653,7 +12653,8 @@ function renderWf(){
       '<button class="btn btn-sekunder btn-kecil" onclick="bukaDetailWf(\''+esc(x.ID)+'\')">🔍 Detail</button>'+
       (x.perluSaya?'<button class="btn btn-utama btn-kecil" onclick="bukaDetailWf(\''+esc(x.ID)+'\')">✍️ Tindak Lanjuti</button>':'')+
       (['Diajukan','Diproses'].indexOf(x.Status)>=0 && !x.perluSaya
-        ? '<button class="btn btn-sekunder btn-kecil" onclick="kirimPengingat(\''+esc(x.ID)+'\')">🔔 Ingatkan</button>' : '')+
+        ? '<button class="btn btn-sekunder btn-kecil" onclick="kirimPengingat(\''+esc(x.ID)+'\')">🔔 Ingatkan</button>'+
+          '<button class="btn btn-sekunder btn-kecil" onclick="kirimTautanTtd(\''+esc(x.ID)+'\')">📲 Tautan TTD</button>' : '')+
       '</div></div>';
   }).join('');
 }
@@ -17622,6 +17623,59 @@ function jalankanPangkasLogSekarang(){
     toast(angka(r.dipindah,0)+' baris dipindah ke arsip ✓');
     muatPemeliharaanLog();
   }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+
+/* ==================== KIRIM TAUTAN PERSETUJUAN VIA WHATSAPP ==================== */
+function kirimTautanTtd(docId){
+  tampilLoader(true,'Menyiapkan tautan…');
+  callApi('tautanTtd', { docId:docId }).then(function(r){
+    tampilLoader(false);
+    var waUrl = 'https://wa.me/' + (r.nomorWA||'') + '?text=' + encodeURIComponent(r.pesanWA);
+    bukaLembar('<h3>📲 Kirim Tautan Persetujuan</h3>'+
+      '<div class="meta" style="line-height:1.6">Penerima dapat langsung melihat dokumen dan '+
+        'menandatanganinya <b>tanpa membuka aplikasi</b> dan tanpa perlu akun.</div>'+
+
+      '<div class="kartu" style="margin-top:12px">'+
+        barisProfil('Menunggu persetujuan', esc(r.approverNama))+
+        barisProfil('Langkah', esc(r.namaLangkah))+
+        barisProfil('Berlaku sampai', esc(fmtTgl(r.kadaluarsa)))+
+        (r.nomorWA ? barisProfil('Nomor WhatsApp', '+'+esc(r.nomorWA)) : '')+
+      '</div>'+
+
+      (r.nomorWA
+        ? '<a class="btn btn-utama btn-blok" style="margin-top:12px;text-align:center;text-decoration:none" '+
+          'href="'+esc(waUrl)+'" target="_blank" rel="noopener">📲 Kirim lewat WhatsApp</a>'
+        : '<div style="margin-top:12px;padding:10px 12px;border-radius:8px;background:#FFF4E5;'+
+          'border-left:3px solid #E8960C;font-size:12.5px;line-height:1.6">⚠️ Nomor WhatsApp '+
+          esc(r.approverNama)+' belum terisi di data pengguna. Salin tautan di bawah lalu kirim manual.</div>'+
+          '<a class="btn btn-sekunder btn-blok" style="margin-top:8px;text-align:center;text-decoration:none" '+
+          'href="'+esc('https://wa.me/?text='+encodeURIComponent(r.pesanWA))+'" target="_blank" rel="noopener">'+
+          '📲 Buka WhatsApp (pilih kontak)</a>')+
+
+      '<label style="margin-top:14px">Tautan</label>'+
+      '<input id="ttdUrl" value="'+esc(r.url)+'" readonly onclick="this.select()">'+
+      '<button class="btn btn-sekunder btn-blok" style="margin-top:8px" onclick="salinTautanTtd()">📋 Salin Tautan</button>'+
+
+      '<div style="margin-top:16px;padding:12px;border-radius:8px;background:var(--hijau-50);'+
+        'font-size:12.5px;line-height:1.65">'+
+        '<b>Pengamanan tautan</b><br>'+
+        '• Terikat pada satu langkah persetujuan saja<br>'+
+        '• Hanya dapat dipakai <b>sekali</b><br>'+
+        '• Kedaluwarsa otomatis setelah 7 hari<br>'+
+        '• Tidak memberi akses ke data lain di aplikasi'+
+      '</div>');
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+function salinTautanTtd(){
+  var el = document.getElementById('ttdUrl'); if(!el) return;
+  el.select(); el.setSelectionRange(0, 99999);
+  try{
+    if(navigator.clipboard) navigator.clipboard.writeText(el.value);
+    else document.execCommand('copy');
+    toast('Tautan disalin ✓');
+  }catch(e){ toast('Salin manual dari kolom di atas.', true); }
 }
 
 /* ==================== MULAI ==================== */
