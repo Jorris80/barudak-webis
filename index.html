@@ -761,6 +761,7 @@
       <button class="adminOnly" onclick="bukaKelolaRingkasan()"><span class="ic">⚡</span>Ringkasan Bulanan</button>
       <button class="adminOnly" onclick="bukaArsipTahunan()"><span class="ic">🗄️</span>Arsip Tahunan</button>
       <button class="adminOnly" onclick="bukaStatistikData()"><span class="ic">📊</span>Ukuran Data</button>
+      <button class="adminOnly" onclick="bukaPemeliharaanJejak()"><span class="ic">🧹</span>Pemeliharaan Data</button>
       <button class="adminOnly" onclick="bukaCadangan()"><span class="ic">💾</span>Cadangkan Data</button>
     </div>
     <p style="text-align:center;margin-top:16px;font-size:11.5px;color:var(--abu)">
@@ -3800,7 +3801,7 @@ function pasangPintasanKeyboard(){
       else if(k === '8' || k === 's'){ e.preventDefault(); bukaHalaman('spb'); toast('Pintasan: Surat Jalan SPB'); }
       else if(k === '9' || k === 'g'){ e.preventDefault(); bukaHalaman('pupuk'); toast('Pintasan: Gudang Pupuk'); }
       else if(k === '0' || k === 'e'){ e.preventDefault(); bukaHalaman('bkm'); toast('Pintasan: BKM & Premi'); }
-      else if(k === 'l'){ e.preventDefault(); bukaHalaman('lc'); toast('Pintasan: Monitoring LC'); }
+      else if(k === 'l'){ e.preventDefault(); bukaHalaman('landclearing'); toast('Pintasan: Monitoring LC'); }
       else if(k === 'r'){ e.preventDefault(); muatData(true); }
       else if(k === 'k'){ e.preventDefault(); bukaModalPintasan(); }
       return;
@@ -12375,7 +12376,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.1.2';
+var VERSI_APP = '3.3.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -15138,7 +15139,7 @@ var DAFTAR_MODUL = [
     ['landclearing','🏗️ Land Clearing'], ['audit','✅ Audit'] ]},
   { grup:'Administrasi', item:[
     ['ktu','🗂️ KTU'], ['workflow','✅ Workflow Persetujuan'], ['rekap','📈 Rekap Bulanan'],
-    ['struktur','🗂️ Struktur Organisasi'],
+    ['struktur','🗂️ Struktur Organisasi'], ['log','📋 Log Aktivitas'],
     ['laporan','📄 Laporan'], ['kalender','📅 Kalender'], ['monmasalah','🔍 Monitoring Masalah'],
     ['lacak','📍 Lacak GPS'] ]}
 ];
@@ -15153,6 +15154,10 @@ function modulDiizinkan(){
   var izin = {};
   s.split(',').forEach(function(x){ x=x.trim(); if(x) izin[x]=1; });
   izin['dasbor']=1;                                        // dasbor selalu boleh
+  /* 'lainnya' adalah wadah menu, bukan modul. Tanpa baris ini tombol Lainnya
+     tampil tetapi halamannya ditolak, sehingga pengguna terbatas tidak dapat
+     mencapai satu pun modul yang sebenarnya diizinkan untuknya. */
+  izin['lainnya']=1;
   return izin;
 }
 function bolehBukaModul(nama){
@@ -15179,6 +15184,29 @@ function terapkanAksesModul(){
     if(!m) return;                       // bukan tombol halaman → biarkan
     b.style.display = (!izin || izin[m[1]]) ? '' : 'none';
   });
+
+  /* Bila seluruh isi menu Lainnya tersembunyi, jelaskan keadaannya — jangan
+     biarkan pengguna melihat halaman kosong tanpa keterangan. */
+  var grid = document.querySelector('#hal-lainnya .menu-grid');
+  if(grid){
+    var adaTampak = false;
+    grid.querySelectorAll('button').forEach(function(b){
+      if(b.style.display !== 'none') adaTampak = true;
+    });
+    var ket = document.getElementById('lainnyaKosong');
+    if(!adaTampak && !ket){
+      ket = document.createElement('div');
+      ket.id = 'lainnyaKosong';
+      ket.className = 'kosong';
+      ket.style.marginTop = '10px';
+      ket.innerHTML = 'Belum ada modul tambahan untuk akun Anda.<br>'+
+        '<span class="meta">Modul yang dapat Anda buka tersedia di navigasi bawah. '+
+        'Hubungi admin bila memerlukan akses lain.</span>';
+      grid.parentNode.insertBefore(ket, grid.nextSibling);
+    } else if(adaTampak && ket){
+      ket.remove();
+    }
+  }
 }
 
 
@@ -15522,6 +15550,13 @@ function bukaStatistikData(){
             '</div></div>';
         }).join('')+
       '</div></div>'+
+      (s.sheet[0] && s.sheet[0].sheet==='LogAktivitas'
+        ? '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#FFF4E5;'+
+          'border-left:3px solid #E8960C;font-size:12.5px;line-height:1.6">'+
+          '⚠️ Log Aktivitas adalah sheet terbesar. Sheet ini tumbuh paling cepat karena setiap '+
+          'perubahan data menambah satu baris.'+
+          '<div style="margin-top:8px"><button class="btn btn-sekunder btn-kecil" '+
+          'onclick="tutupLembar();bukaPemeliharaanJejak()">🧹 Buka Pemeliharaan Data</button></div></div>' : '')+
       '<div class="meta" style="margin-top:12px;line-height:1.6">Sheet bertanda <b>berjendela</b> hanya '+
         'dimuat sebagian saat aplikasi dibuka, sehingga ukurannya tidak memperlambat pemakaian '+
         'sehari-hari. Data lama tetap utuh dan dapat dipanggil dari halaman Laporan.</div>';
@@ -17405,6 +17440,188 @@ function eksporBibitan(){
       '% Afkir':b.persenAfkir, '% Lolos':b.persenLolos, 'Nilai (Rp)':b.TotalRp,
       'Perusahaan':b.Perusahaan, 'Estate':b.Estate, 'Lokasi':b.LokasiBibitan, 'Status':b.Status };
   }), 'bibitan_'+hariISO(new Date()), 'Pembibitan');
+}
+
+
+/* ==================== PEMELIHARAAN LOG (ADMIN) ==================== */
+function bukaPemeliharaanLog(){ bukaPemeliharaanJejak(); }
+
+/* ==================== PEMELIHARAAN DATA JEJAK (ADMIN) ==================== */
+var JEJAK_AKTIF = null;
+
+function bukaPemeliharaanJejak(){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin.', true);
+  bukaLembar('<h3>🧹 Pemeliharaan Data</h3>'+
+    '<div class="meta" style="line-height:1.6">Sheet <b>jejak</b> boleh dipangkas karena tidak ada '+
+      'perhitungan yang bergantung padanya. Catatan lama <b>dipindahkan ke arsip tahunan</b>, bukan dihapus.</div>'+
+    '<div id="pjIsi" style="margin-top:12px"><div class="kosong">Memeriksa…</div></div>'+
+    '<div style="margin-top:16px;padding:12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px;line-height:1.65">'+
+      '<b>Sheet transaksi tidak ada di sini.</b><br>Panen, BKM, SPB, dan sejenisnya tidak dipangkas '+
+      'berdasarkan umur, melainkan diarsipkan per tahun lewat menu <b>🗄️ Arsip Tahunan</b> — dan itu '+
+      'mensyaratkan ringkasan bulanan sudah dihitung lebih dulu.'+
+      '<div style="margin-top:8px"><button class="btn btn-sekunder btn-kecil" '+
+      'onclick="tutupLembar();bukaArsipTahunan()">🗄️ Buka Arsip Tahunan</button></div></div>'+
+    '<div class="meta" style="margin-top:12px;line-height:1.6"><b>Tidak pernah dipangkas:</b> data acuan '+
+      '(Blok, Pengguna, Pengaturan, Layer, Alat Berat, Hari Libur, Struktur Organisasi), '+
+      'Ringkasan Bulanan, serta Mutasi Bibitan — stok bibit dihitung dari seluruh riwayat mutasinya, '+
+      'sehingga memangkasnya akan membuat angka stok keliru.</div>');
+  muatPemeliharaanJejak();
+}
+
+function muatPemeliharaanJejak(){
+  callApi('ringkasJejak', {}).then(function(r){
+    var el=document.getElementById('pjIsi'); if(!el) return;
+    if(!r || !r.length){ el.innerHTML='<div class="kosong">Tidak ada sheet jejak.</div>'; return; }
+    el.innerHTML = r.map(function(x){
+      var bahaya = x.total > 40000;
+      var dini = x.perkiraanHariSampaiPenuh !== null && x.perkiraanHariSampaiPenuh !== undefined
+                 && x.perkiraanHariSampaiPenuh < 365;
+      return '<div class="item">'+
+        '<div class="kepala"><div><b>'+esc(x.judul)+'</b>'+
+          '<div class="meta">'+esc(x.keterangan||'')+'</div></div>'+
+          '<div class="kanan"><b style="color:'+(bahaya?'var(--merah)':'var(--tinta)')+';font-size:15px">'+
+          angka(x.total,0)+'</b><div class="meta" style="font-size:10.5px">baris</div></div></div>'+
+        (x.galat ? '<div class="meta" style="color:var(--merah)">'+esc(x.galat)+'</div>' :
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:var(--abu)">'+
+          '<span>Akan dipindah <b style="color:var(--tinta)">'+angka(x.akanDipindah,0)+'</b></span>'+
+          '<span>Tersisa <b style="color:var(--tinta)">'+angka(x.tersisa,0)+'</b></span>'+
+          '<span>Simpan <b style="color:var(--tinta)">'+x.simpanRutinHari+' hari</b>'+
+            (x.pakaiPenting?' · penting <b style="color:var(--tinta)">'+x.simpanPentingHari+' hari</b>':'')+'</span>'+
+        '</div>'+
+        (dini ? '<div style="margin-top:6px;padding:8px 10px;border-radius:6px;background:#FFF4E5;font-size:12px">'+
+          '⚠️ Mencapai 50.000 baris dalam ±'+angka(Math.max(0,x.perkiraanHariSampaiPenuh),0)+' hari.</div>' : '')+
+        '<div class="aksi-baris">'+
+          '<button class="btn btn-sekunder btn-kecil" onclick="formMasaSimpan(\''+esc(x.sheet)+'\','+
+            x.simpanRutinHari+','+x.simpanPentingHari+','+(x.pakaiPenting?'true':'false')+')">⚙️ Masa Simpan</button>'+
+          (x.akanDipindah>0
+            ? '<button class="btn btn-utama btn-kecil" onclick="pangkasSheet(\''+esc(x.sheet)+'\','+x.akanDipindah+')">'+
+              '🧹 Pangkas ('+angka(x.akanDipindah,0)+')</button>' : '')+
+        '</div>')+
+        '</div>';
+    }).join('')+
+    '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px;line-height:1.6">'+
+      '<b>Pemangkasan otomatis</b> — seluruh sheet jejak sekaligus, tiap tanggal 1. Jalankan sekali dari '+
+      'editor Apps Script: <span style="font-family:monospace">pasangPangkasLogOtomatis()</span></div>';
+  }).catch(function(e){
+    var el=document.getElementById('pjIsi');
+    if(el) el.innerHTML='<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+  });
+}
+
+function formMasaSimpan(sheet, rutin, penting, pakaiPenting){
+  JEJAK_AKTIF = sheet;
+  bukaLembar('<h3>⚙️ Masa Simpan</h3>'+
+    '<div class="meta">Sheet <b>'+esc(sheet)+'</b> — lama catatan bertahan di berkas aktif '+
+      'sebelum dipindah ke arsip.</div>'+
+    '<label>Catatan '+(pakaiPenting?'Rutin ':'')+'(hari) *</label>'+
+    '<input type="number" id="msRutin" value="'+rutin+'" min="30" max="3650">'+
+    (pakaiPenting
+      ? '<label>Catatan Penting (hari) *</label>'+
+        '<input type="number" id="msPenting" value="'+penting+'" min="30" max="3650">'+
+        '<div class="meta" style="margin-top:4px;line-height:1.6"><b>Catatan penting</b> mencakup '+
+          'penghapusan data, perubahan pengguna dan hak akses, reset sandi, lisensi, pemulihan data, '+
+          'dan perubahan pengaturan.</div>'
+      : '<div class="meta" style="margin-top:4px">Sheet ini tidak membedakan kategori — seluruh barisnya '+
+        'diperlakukan sama.</div>')+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="simpanMasaSimpanJejak()">💾 Simpan</button>');
+}
+function simpanMasaSimpanJejak(){
+  var pt = document.getElementById('msPenting');
+  callApi('aturSimpanLog', { sheet:JEJAK_AKTIF, rutin:nilaiEl('msRutin'),
+    penting: pt ? pt.value : nilaiEl('msRutin') })
+    .then(function(){ toast('Masa simpan diperbarui ✓'); bukaPemeliharaanJejak(); })
+    .catch(function(e){ toast(e.message, true); });
+}
+function pangkasSheet(sheet, jumlah){
+  if(!confirm('Pindahkan '+jumlah+' baris lama dari '+sheet+' ke berkas arsip tahunan?\n\n'+
+     'Data tidak dihapus — hanya berpindah berkas, dan jumlahnya diverifikasi lebih dulu.')) return;
+  tampilLoader(true,'Memindahkan catatan lama…');
+  callApi('pangkasLog', { sheet:sheet }).then(function(r){
+    tampilLoader(false);
+    toast(angka(r.dipindah,0)+' baris dipindah ke arsip ✓');
+    muatPemeliharaanJejak();
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+function bukaPemeliharaanLogLama(){
+  if(!SESI || SESI.peran!=='admin') return toast('Hanya admin.', true);
+  bukaLembar('<h3>🧹 Pemeliharaan Log Aktivitas</h3>'+
+    '<div class="meta" style="line-height:1.6">Log adalah sheet yang paling cepat tumbuh. '+
+      'Catatan lama <b>dipindahkan ke berkas arsip tahunan</b>, bukan dihapus — jejak audit tetap utuh.</div>'+
+    '<div id="plIsi" style="margin-top:12px"><div class="kosong">Memeriksa…</div></div>');
+  muatPemeliharaanLog();
+}
+
+function muatPemeliharaanLog(){
+  callApi('pratinjauPangkasLog', {}).then(function(r){
+    var el=document.getElementById('plIsi'); if(!el) return;
+    var bahaya = r.total > 40000;
+    var perhatian = r.perkiraanHariSampaiPenuh !== null && r.perkiraanHariSampaiPenuh < 365;
+
+    el.innerHTML =
+      '<div class="kpi-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:10px">'+
+        kpiKotak('Baris Sekarang', angka(r.total,0), bahaya?'#C62828':'#1565C0')+
+        kpiKotak('Akan Dipindah', angka(r.akanDipindah,0), '#E8960C')+
+      '</div>'+
+
+      (r.perkiraanHariSampaiPenuh !== null
+        ? '<div style="padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.6;margin-bottom:12px;'+
+          'background:'+(perhatian?'#FFF4E5':'var(--hijau-50)')+';border-left:3px solid '+
+          (perhatian?'#E8960C':'var(--hijau-700)')+'">'+
+          (perhatian?'⚠️ ':'✅ ')+'Pada laju sekarang, log mencapai 50.000 baris dalam sekitar <b>'+
+          angka(Math.max(0,r.perkiraanHariSampaiPenuh),0)+' hari</b>'+
+          (perhatian?'. Sebaiknya pemangkasan otomatis diaktifkan.':'.')+
+          '</div>' : '')+
+
+      '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Rincian</b><div style="margin-top:6px">'+
+        barisProfil('Catatan rutin', angka(r.rutin,0)+' baris')+
+        barisProfil('Catatan penting', angka(r.penting,0)+' baris')+
+        barisProfil('Tersisa setelah pangkas', angka(r.tersisa,0)+' baris')+
+      '</div>'+
+      (r.perTahun.length
+        ? '<div class="meta" style="margin-top:8px">Akan dipindah per tahun: '+
+          r.perTahun.map(function(x){ return esc(x.tahun)+' ('+angka(x.jumlah,0)+')'; }).join(' · ')+'</div>'
+        : '')+
+      '</div>'+
+
+      '<h4 style="font-size:13px;margin:14px 0 6px">Masa Simpan di Berkas Aktif</h4>'+
+      '<div class="grid2">'+
+        '<div><label>Catatan Rutin (hari)</label><input type="number" id="plRutin" value="'+r.simpanRutinHari+'" min="30" max="3650"></div>'+
+        '<div><label>Catatan Penting (hari)</label><input type="number" id="plPenting" value="'+r.simpanPentingHari+'" min="30" max="3650"></div>'+
+      '</div>'+
+      '<div class="meta" style="margin-top:4px;line-height:1.6"><b>Catatan penting</b> mencakup penghapusan data, '+
+        'perubahan pengguna dan hak akses, reset sandi, lisensi, pemulihan data, dan perubahan pengaturan — '+
+        'disimpan lebih lama karena diperlukan saat audit.</div>'+
+      '<button class="btn btn-sekunder btn-blok" style="margin-top:8px" onclick="simpanMasaSimpanLog()">💾 Simpan Masa Simpan</button>'+
+
+      '<div style="margin-top:16px;padding:12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px;line-height:1.6">'+
+        '<b>Pemangkasan otomatis</b><br>Agar berjalan sendiri tiap tanggal 1, jalankan sekali dari editor '+
+        'Apps Script: <span style="font-family:monospace">pasangPangkasLogOtomatis()</span></div>'+
+
+      '<button class="btn btn-utama btn-blok" style="margin-top:12px" onclick="jalankanPangkasLogSekarang()">'+
+        '🧹 Pangkas Sekarang ('+angka(r.akanDipindah,0)+' baris)</button>'+
+      (r.akanDipindah===0?'<div class="meta" style="margin-top:6px;text-align:center">Belum ada catatan yang melewati masa simpan.</div>':'');
+  }).catch(function(e){
+    var el=document.getElementById('plIsi');
+    if(el) el.innerHTML='<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+  });
+}
+
+function simpanMasaSimpanLog(){
+  callApi('aturSimpanLog', { rutin:nilaiEl('plRutin'), penting:nilaiEl('plPenting') })
+    .then(function(){ toast('Masa simpan diperbarui ✓'); muatPemeliharaanLog(); })
+    .catch(function(e){ toast(e.message, true); });
+}
+
+function jalankanPangkasLogSekarang(){
+  if(!confirm('Pindahkan catatan lama ke berkas arsip tahunan?\n\n'+
+     'Data tidak dihapus — hanya berpindah berkas, dan jumlahnya diverifikasi lebih dulu.')) return;
+  tampilLoader(true,'Memindahkan catatan lama…');
+  callApi('pangkasLog', {}).then(function(r){
+    tampilLoader(false);
+    toast(angka(r.dipindah,0)+' baris dipindah ke arsip ✓');
+    muatPemeliharaanLog();
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
 }
 
 /* ==================== MULAI ==================== */
