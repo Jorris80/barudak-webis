@@ -2269,6 +2269,7 @@ function terapkanPengaturan(){
   tampilkanCakupanAkses();
   try{ terapkanAksesModul(); }catch(e){}
   try{ terapkanTataLetak(); }catch(e){}
+  try{ pasangTombolGrafik(); }catch(e){}
   var st = S.settings || {};
   document.getElementById('hdJudul').textContent = st.judulAplikasi || 'SawitGIS Mandiri';
   document.getElementById('hdSub').textContent = st.subjudul || '';
@@ -3346,6 +3347,7 @@ function bukaHalaman(nama){
      yang sama — bukan dilempar ke Dasbor yang perlu memuat ulang grafiknya. */
   try{ localStorage.setItem('sg_halaman', nama); }catch(e){}
 
+  setTimeout(function(){ try{ pasangTombolGrafik(); }catch(e){} }, 350);
   if(nama === 'bibitan') renderBibitan();
   if(nama === 'workflow') muatWorkflow(false);
   if(nama === 'rekap'){
@@ -8908,14 +8910,17 @@ function formGanoderma(id){
 }
 
 function bacaFotoAkar(input){
-  if(input.files && input.files[0]){
-    var r = new FileReader();
-    r.onload = function(evt){
-      document.getElementById('fgFotoVal').value = evt.target.result;
-      document.getElementById('prinjauFotoAkar').innerHTML = '<img src="' + evt.target.result + '" style="max-height:100px;border-radius:6px">';
-    };
-    r.readAsDataURL(input.files[0]);
-  }
+  var f = input.files && input.files[0];
+  if(!f) return;
+  /* Dikompres lebih dulu. Sebelumnya foto disimpan apa adanya ke dalam sel —
+     foto ponsel 4 MB menjadi sekitar 5,5 juta karakter, jauh melampaui batas
+     50.000 karakter per sel, sehingga penyimpanan gagal atau terpotong. */
+  kompresGambar(f, 1024, 0.7).then(function(dataUrl){
+    document.getElementById('fgFotoVal').value = dataUrl;
+    document.getElementById('prinjauFotoAkar').innerHTML =
+      '<img src="' + dataUrl + '" style="max-height:100px;border-radius:6px">' +
+      '<div class="meta" style="margin-top:4px">' + Math.round(dataUrl.length/1024) + ' KB setelah dikompres</div>';
+  }).catch(function(){ toast('Gagal memproses foto.', true); });
 }
 
 function simpanGanoderma(id){
@@ -12394,7 +12399,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.4.6';
+var VERSI_APP = '3.5.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -14254,7 +14259,7 @@ function tanyaCepat(t){ document.getElementById('aiInput').value=t; kirimAI(); }
 function tampilPesanAI(peran, teks, alat){
   var el=document.getElementById('aiPercakapan');
   var kanan = peran==='user';
-  var isi = esc(teks).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
+  var isi = (peran==='ai' ? aiUbahTabel(teks) : esc(teks)).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
   el.innerHTML += '<div style="display:flex;justify-content:'+(kanan?'flex-end':'flex-start')+';margin-bottom:10px">'+
     '<div style="max-width:86%;padding:9px 12px;border-radius:12px;font-size:13px;line-height:1.55;'+
       (kanan?'background:var(--hijau-700);color:#fff;border-bottom-right-radius:3px'
@@ -17694,6 +17699,182 @@ function salinTautanTtd(){
     else document.execCommand('copy');
     toast('Tautan disalin ✓');
   }catch(e){ toast('Salin manual dari kolom di atas.', true); }
+}
+
+
+/* ==================== TABEL & SALIN DARI JAWABAN AI ====================
+ * Jawaban asisten sering berisi angka yang ingin dipindahkan ke laporan.
+ * Menyalinnya sebagai teks biasa membuat susunannya hilang, jadi tabel
+ * disalin sebagai HTML — Word, PowerPoint, dan Excel membacanya sebagai
+ * tabel sungguhan, bukan deretan teks.
+ */
+var AI_TABEL = {};          // penampung data tiap tabel yang ditampilkan
+var AI_TABEL_NO = 0;
+
+/** Ubah tabel bergaya markdown pada jawaban AI menjadi tabel sungguhan. */
+function aiUbahTabel(teks){
+  var baris = String(teks || '').split('\n');
+  var keluar = [], i = 0;
+
+  function barisTabel(s){ return /^\s*\|.*\|\s*$/.test(s); }
+  function pemisah(s){ return /^\s*\|[\s:|-]+\|\s*$/.test(s); }
+  function pecah(s){
+    return s.trim().replace(/^\||\|$/g, '').split('|').map(function(x){ return x.trim(); });
+  }
+
+  while(i < baris.length){
+    if(barisTabel(baris[i]) && i+1 < baris.length && pemisah(baris[i+1])){
+      var judul = pecah(baris[i]);
+      var isi = [];
+      i += 2;
+      while(i < baris.length && barisTabel(baris[i])){ isi.push(pecah(baris[i])); i++; }
+      keluar.push(aiGambarTabel(judul, isi));
+    } else {
+      keluar.push(esc(baris[i]).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'));
+      i++;
+    }
+  }
+  return keluar.join('<br>').replace(/(<br>)?(<div class="aiTabelBungkus")/g, '$2');
+}
+
+function aiGambarTabel(judul, isi){
+  var id = 'aiTbl' + (++AI_TABEL_NO);
+  AI_TABEL[id] = { judul: judul, isi: isi };
+
+  var th = judul.map(function(k){
+    return '<th style="padding:6px 9px;background:var(--hijau-700);color:#fff;'+
+      'font-size:11.5px;text-align:left;white-space:nowrap">'+esc(k)+'</th>';
+  }).join('');
+
+  var tr = isi.map(function(r, n){
+    return '<tr style="background:'+(n%2?'#fff':'var(--hijau-50)')+'">'+
+      r.map(function(c){
+        var angka = /^[\d.,\s%+-]+$/.test(c) && /\d/.test(c);
+        return '<td style="padding:5px 9px;font-size:12px;border-bottom:1px solid var(--garis);'+
+          'text-align:'+(angka?'right':'left')+'">'+esc(c)+'</td>';
+      }).join('')+'</tr>';
+  }).join('');
+
+  return '<div class="aiTabelBungkus" style="margin:8px 0">'+
+    '<div style="overflow-x:auto;border:1px solid var(--garis);border-radius:8px">'+
+      '<table id="'+id+'" style="border-collapse:collapse;width:100%;min-width:280px">'+
+      '<thead><tr>'+th+'</tr></thead><tbody>'+tr+'</tbody></table>'+
+    '</div>'+
+    '<div class="aiTabelAksi" style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap">'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="aiSalinTabel(\''+id+'\')">📋 Salin</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="aiUnduhTabel(\''+id+'\')">⬇ Excel</button>'+
+    '</div></div>';
+}
+
+/** Salin sebagai HTML agar susunan tabelnya terbawa ke Word, PPT, dan Excel. */
+function aiSalinTabel(id){
+  var t = AI_TABEL[id]; if(!t) return;
+  var el = document.getElementById(id);
+  var html = el ? el.outerHTML : '';
+  var teks = [t.judul.join('\t')].concat(t.isi.map(function(r){ return r.join('\t'); })).join('\n');
+
+  function cadangan(){
+    /* Bila papan klip kaya tidak tersedia, salin sebagai teks bertab —
+       masih dapat ditempel ke Excel sebagai kolom terpisah. */
+    var ta = document.createElement('textarea');
+    ta.value = teks; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); toast('Tabel disalin ✓'); }
+    catch(e){ toast('Gagal menyalin.', true); }
+    document.body.removeChild(ta);
+  }
+
+  if(navigator.clipboard && window.ClipboardItem){
+    try{
+      navigator.clipboard.write([ new ClipboardItem({
+        'text/html': new Blob([html], {type:'text/html'}),
+        'text/plain': new Blob([teks], {type:'text/plain'})
+      })]).then(function(){
+        toast('Tabel disalin — tempel ke Word, PowerPoint, atau Excel ✓');
+      }).catch(cadangan);
+      return;
+    }catch(e){}
+  }
+  cadangan();
+}
+
+function aiUnduhTabel(id){
+  var t = AI_TABEL[id]; if(!t) return;
+  var baris = t.isi.map(function(r){
+    var o = {};
+    t.judul.forEach(function(k, i){ o[k || ('Kolom'+(i+1))] = r[i] || ''; });
+    return o;
+  });
+  unduhExcel(baris, 'tabel_asisten_'+hariISO(new Date()), 'Asisten');
+}
+
+/* ==================== SALIN GRAFIK SEBAGAI GAMBAR ====================
+ * Berlaku untuk seluruh grafik di aplikasi, bukan hanya jawaban asisten.
+ * Grafik digambar di atas elemen canvas, sehingga dapat langsung diubah
+ * menjadi gambar tanpa pustaka tambahan.
+ */
+function salinGrafik(idCanvas){
+  var c = document.getElementById(idCanvas);
+  if(!c || !c.toBlob) return toast('Grafik belum siap.', true);
+
+  /* Latar dibuat putih. Tanpa ini, grafik bertransparansi akan tampak
+     hitam saat ditempel ke PowerPoint bertema gelap. */
+  var tmp = document.createElement('canvas');
+  tmp.width = c.width; tmp.height = c.height;
+  var ctx = tmp.getContext('2d');
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, tmp.width, tmp.height);
+  ctx.drawImage(c, 0, 0);
+
+  tmp.toBlob(function(blob){
+    if(!blob) return toast('Gagal menyiapkan gambar.', true);
+    if(navigator.clipboard && window.ClipboardItem){
+      navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ])
+        .then(function(){ toast('Grafik disalin — tempel ke PowerPoint atau Word ✓'); })
+        .catch(function(){ unduhBlob(blob, idCanvas+'.png'); toast('Papan klip ditolak — grafik diunduh.'); });
+    } else {
+      unduhBlob(blob, idCanvas+'.png');
+      toast('Grafik diunduh sebagai gambar.');
+    }
+  }, 'image/png');
+}
+
+function unduhGrafik(idCanvas){
+  var c = document.getElementById(idCanvas);
+  if(!c) return toast('Grafik belum siap.', true);
+  var tmp = document.createElement('canvas');
+  tmp.width = c.width; tmp.height = c.height;
+  var ctx = tmp.getContext('2d');
+  ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0,0,tmp.width,tmp.height);
+  ctx.drawImage(c, 0, 0);
+  tmp.toBlob(function(blob){ if(blob) unduhBlob(blob, idCanvas+'_'+hariISO(new Date())+'.png'); }, 'image/png');
+}
+
+function unduhBlob(blob, nama){
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nama;
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 1200);
+}
+
+/** Pasang tombol salin & unduh pada setiap grafik yang ada di halaman. */
+function pasangTombolGrafik(){
+  document.querySelectorAll('.wadah-grafik').forEach(function(w){
+    if(w._adaTombol) return;
+    var c = w.querySelector('canvas');
+    if(!c || !c.id) return;
+    var bar = document.createElement('div');
+    bar.className = 'no-cetak';
+    bar.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;margin-top:4px';
+    bar.innerHTML =
+      '<button class="btn btn-sekunder btn-kecil" onclick="salinGrafik(\''+c.id+'\')" '+
+        'title="Salin sebagai gambar untuk ditempel ke PowerPoint atau Word">📋 Salin</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="unduhGrafik(\''+c.id+'\')" '+
+        'title="Unduh sebagai berkas PNG">⬇ PNG</button>';
+    w.parentNode.insertBefore(bar, w.nextSibling);
+    w._adaTombol = true;
+  });
 }
 
 /* ==================== MULAI ==================== */
