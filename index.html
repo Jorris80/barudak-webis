@@ -6650,9 +6650,27 @@ function renderPengguna(){
     document.getElementById('daftarPengguna')._users = users;
   }).catch(function(e){ toast(e.message, true); });
 }
+/* Data lengkap diambil dulu dari server sebelum form digambar. Daftar pengguna
+   yang tersimpan di layar sengaja tidak memuat kolom kepegawaian, sehingga
+   mengisinya dari sana membuat kolom-kolom itu selalu tampak kosong. */
 function formPengguna(username){
+  if(username){
+    tampilLoader(true,'Memuat data pengguna…');
+    callApi('getUserDetail', { username:username }).then(function(u){
+      tampilLoader(false);
+      gambarFormPengguna(username, u);
+    }).catch(function(e){
+      tampilLoader(false);
+      toast(e.message, true);
+    });
+    return;
+  }
+  gambarFormPengguna('', null);
+}
+
+function gambarFormPengguna(username, uDetail){
   var users = document.getElementById('daftarPengguna')._users || [];
-  var u = username ? users.find(function(x){ return String(x.Username)===String(username); }) : null;
+  var u = uDetail || (username ? users.find(function(x){ return String(x.Username)===String(username); }) : null);
   bukaLembar('<h3>'+(u?'Edit Pengguna':'Tambah Pengguna')+'</h3>'+
     '<label>Foto Profil</label>'+
     '<div style="display:flex;align-items:center;gap:12px">'+
@@ -12376,7 +12394,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.4.2';
+var VERSI_APP = '3.4.5';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
