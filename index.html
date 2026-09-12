@@ -4547,6 +4547,7 @@ function gambarPeta(){
 
 /* ---------- PMTiles ---------- */
 var PMTILES_SIAP = null;
+var PMTILES_GAGAL = '';
 
 /** Muat pustaka PMTiles sekali saja, saat benar-benar dibutuhkan. */
 function pastikanPMTiles(){
@@ -4617,6 +4618,14 @@ function pasangPMTiles(d, wadah, op){
               'dan pastikan alamatnya dapat diakses publik.';
     }
     toast('Lapisan "'+d.Nama+'": '+pesan, true);
+    /* Alih-alih menyuruh pengguna menebak, tawarkan pengujian yang menyebut
+       penyebabnya dengan tepat. */
+    PMTILES_GAGAL = d.URL;
+    setTimeout(function(){
+      if(confirm('Lapisan "'+d.Nama+'" gagal dimuat.\n\nJalankan uji koneksi untuk mengetahui penyebabnya?')){
+        bukaUjiPMTiles(d.URL);
+      }
+    }, 600);
   });
 }
 
@@ -6462,9 +6471,9 @@ function ubahFieldLayer(){
         d.style.cssText = 'margin-top:6px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12px;line-height:1.6';
         d.innerHTML = 'Isi alamat <b>langsung ke berkas .pmtiles</b>, bukan folder. '+
           'Batas tampilan dan tingkat perbesaran diambil otomatis dari berkasnya.'+
-          '<div style="margin-top:6px"><b>Bila gambar tidak muncul</b>, hampir selalu karena '+
-          'pengaturan CORS pada bucket belum mengizinkan permintaan Range. '+
-          'Lihat panduan di menu Bantuan.</div>';
+          '<div style="margin-top:8px">'+
+          '<button class="btn btn-sekunder btn-kecil" onclick="bukaUjiPMTiles()">🔍 Uji Koneksi</button>'+
+          '</div>';
         inp.parentNode.insertBefore(d, inp.nextSibling);
       }
     } else if(ket){ ket.remove(); }
@@ -12513,7 +12522,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.7.1';
+var VERSI_APP = '3.7.2';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -18293,6 +18302,142 @@ function paksaPerbarui(){
     var u = location.origin + location.pathname + '?segar=' + Date.now();
     location.replace(u);
   }).catch(function(){ location.reload(true); });
+}
+
+
+/* ==================== UJI KONEKSI PMTILES ====================
+ * Kegagalan memuat PMTiles bisa berasal dari enam sebab yang berbeda, dan
+ * peramban tidak membedakannya di JavaScript — semuanya muncul sebagai galat
+ * jaringan yang sama. Pengujian ini memisahkannya satu per satu supaya
+ * pengguna tahu persis apa yang harus diperbaiki.
+ */
+function bukaUjiPMTiles(urlAwal){
+  var u = urlAwal || (document.getElementById('lyURL')||{}).value || '';
+  bukaLembar('<h3>🔍 Uji Koneksi PMTiles</h3>'+
+    '<div class="meta">Memeriksa berkas langkah demi langkah untuk mengetahui penyebab '+
+      'sebenarnya, bukan menebak.</div>'+
+    '<label style="margin-top:10px">Alamat berkas .pmtiles</label>'+
+    '<input id="ujURL" value="'+esc(u)+'" placeholder="https://pub-xxxx.r2.dev/ortho.pmtiles">'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:10px" onclick="jalankanUjiPMTiles()">▶ Jalankan Uji</button>'+
+    '<div id="ujHasil" style="margin-top:14px"></div>');
+}
+
+function ujBaris(status, judul, ket){
+  var ikon = status==='ok' ? '✅' : (status==='warn' ? '⚠️' : '❌');
+  var warna = status==='ok' ? 'var(--hijau-50)' : (status==='warn' ? '#FFF4E5' : '#FBEAE7');
+  var tepi = status==='ok' ? 'var(--hijau-700)' : (status==='warn' ? '#E8960C' : 'var(--merah)');
+  return '<div style="padding:9px 11px;border-radius:8px;background:'+warna+
+    ';border-left:3px solid '+tepi+';margin-bottom:7px;font-size:12.5px;line-height:1.6">'+
+    ikon+' <b>'+esc(judul)+'</b>'+(ket?'<br>'+ket:'')+'</div>';
+}
+
+function jalankanUjiPMTiles(){
+  var url = (document.getElementById('ujURL')||{}).value.trim();
+  var el = document.getElementById('ujHasil');
+  if(!url) return toast('Isi alamat berkasnya dulu.', true);
+  el.innerHTML = '<div class="kosong">Menguji…</div>';
+
+  var hasil = [];
+  function tulis(){ el.innerHTML = hasil.join(''); }
+
+  // --- 1. bentuk alamat ---
+  if(!/^https:\/\//i.test(url)){
+    hasil.push(ujBaris('gagal','Alamat harus diawali https://',
+      'Peramban menolak memuat berkas dari alamat tanpa https.'));
+    return tulis();
+  }
+  if(!/\.pmtiles(\?|$)/i.test(url)){
+    hasil.push(ujBaris('warn','Alamat tidak berakhiran .pmtiles',
+      'Pastikan menunjuk langsung ke berkasnya, bukan ke folder.'));
+  }
+  hasil.push(ujBaris('ok','Bentuk alamat wajar', esc(url)));
+  tulis();
+
+  /* Permintaan pertama dengan mode cors dan header Range — inilah yang
+     sesungguhnya dipakai PMTiles. */
+  fetch(url, { method:'GET', mode:'cors', headers:{ 'Range':'bytes=0-15' } })
+    .then(function(res){
+      // --- 2. kode jawaban ---
+      if(res.status === 206){
+        hasil.push(ujBaris('ok','Permintaan Range diterima (206)',
+          'Bucket melayani pembacaan sebagian berkas — ini yang dibutuhkan PMTiles.'));
+      } else if(res.status === 200){
+        hasil.push(ujBaris('warn','Range diabaikan, berkas dikirim utuh (200)',
+          'Masih dapat berjalan, tetapi seluruh berkas akan terunduh. '+
+          'Tambahkan <b>range</b> pada AllowedHeaders agar hemat kuota.'));
+      } else if(res.status === 403){
+        hasil.push(ujBaris('gagal','Akses ditolak (403)',
+          'Bucket belum dibuka untuk umum. Buka R2 → Settings → '+
+          '<b>Public Development URL</b> → Allow Access, atau pasang domain khusus.'));
+        return tulis();
+      } else if(res.status === 404){
+        hasil.push(ujBaris('gagal','Berkas tidak ditemukan (404)',
+          'Nama berkas atau jalurnya keliru. Perhatikan huruf besar-kecil.'));
+        return tulis();
+      } else {
+        hasil.push(ujBaris('gagal','Jawaban tidak wajar ('+res.status+')', esc(res.statusText||'')));
+        return tulis();
+      }
+
+      // --- 3. header yang dibuka ---
+      var cr = res.headers.get('content-range');
+      var cl = res.headers.get('content-length');
+      if(cr){
+        hasil.push(ujBaris('ok','Header content-range terbaca', esc(cr)));
+      } else {
+        hasil.push(ujBaris(res.status===206?'gagal':'warn','Header content-range tidak terbaca',
+          'Tambahkan <b>content-range</b> pada <b>ExposeHeaders</b> di kebijakan CORS. '+
+          'Tanpa itu peramban tidak dapat mengetahui bagian mana yang diterima.'));
+      }
+
+      // --- 4. isi berkas benar-benar PMTiles? ---
+      return res.arrayBuffer().then(function(buf){
+        var b = new Uint8Array(buf);
+        var tanda = '';
+        for(var i=0;i<7 && i<b.length;i++) tanda += String.fromCharCode(b[i]);
+        if(tanda === 'PMTiles'){
+          var versi = b.length > 7 ? b[7] : 0;
+          hasil.push(ujBaris(versi>=3 ? 'ok':'gagal',
+            'Berkas dikenali sebagai PMTiles versi '+versi,
+            versi>=3 ? 'Versi ini didukung aplikasi.'
+                     : 'Aplikasi memerlukan versi 3. Ubah dengan: <span style="font-family:monospace">pmtiles convert lama.pmtiles baru.pmtiles</span>'));
+        } else {
+          hasil.push(ujBaris('gagal','Isi berkas bukan PMTiles',
+            'Tujuh huruf pertama berbunyi "'+esc(tanda.replace(/[^\x20-\x7E]/g,'·'))+'", '+
+            'seharusnya "PMTiles". Berkas mungkin rusak saat diunggah, atau alamatnya '+
+            'menunjuk halaman galat.'));
+        }
+        hasil.push(ujBaris('ok','Pengujian selesai',
+          'Bila seluruh baris di atas bertanda hijau namun peta tetap kosong, '+
+          'periksa tingkat perbesaran — foto udara umumnya baru tampak pada zoom tinggi.'));
+        tulis();
+      });
+    })
+    .catch(function(e){
+      /* Peramban tidak membedakan galat CORS dari galat jaringan. Permintaan
+         kedua dengan mode no-cors memisahkannya: bila yang ini berhasil,
+         berkasnya terjangkau dan yang menghalangi pasti CORS. */
+      fetch(url, { method:'GET', mode:'no-cors' })
+        .then(function(){
+          hasil.push(ujBaris('gagal','Diblokir kebijakan CORS',
+            'Berkasnya terjangkau, tetapi bucket menolak permintaan dari alamat aplikasi ini '+
+            '(<b>'+esc(location.origin)+'</b>).<br><br>'+
+            'Buka R2 → bucket → Settings → CORS Policy, lalu pastikan '+
+            '<b>AllowedOrigins</b> memuat alamat di atas — atau isi <b>"*"</b> bila aplikasi '+
+            'dibuka lewat Apps Script yang alamatnya berubah-ubah.<br><br>'+
+            'Pastikan juga <b>AllowedHeaders</b> memuat <b>range</b> '+
+            '(jangan memakai <b>"*"</b> — pada R2 itu tidak bekerja).'));
+          tulis();
+        })
+        .catch(function(){
+          hasil.push(ujBaris('gagal','Berkas tidak terjangkau sama sekali',
+            'Bukan soal CORS. Kemungkinan: alamat salah, bucket belum dibuka untuk umum, '+
+            'atau perangkat sedang tanpa internet.<br><br>'+
+            'Coba buka alamat ini langsung di tab peramban baru — bila muncul pesan '+
+            'akses ditolak, berarti buckenya masih tertutup.'));
+          tulis();
+        });
+    });
 }
 
 /* ==================== MULAI ==================== */
