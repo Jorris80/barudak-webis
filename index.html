@@ -4544,6 +4544,81 @@ function gambarPeta(){
   if(batas.length) peta.fitBounds(batas, { padding:[24,24] });
 }
 
+/* ---------- PMTiles ---------- */
+var PMTILES_SIAP = null;
+
+/** Muat pustaka PMTiles sekali saja, saat benar-benar dibutuhkan. */
+function pastikanPMTiles(){
+  if(PMTILES_SIAP) return PMTILES_SIAP;
+  if(window.pmtiles && window.pmtiles.leafletRasterLayer){
+    PMTILES_SIAP = Promise.resolve();
+    return PMTILES_SIAP;
+  }
+  /* Dimuat lewat tag script biasa; seluruh fungsinya tersedia pada variabel
+     global `pmtiles`. Disediakan CDN cadangan agar tidak bergantung satu
+     penyedia — di kebun, gangguan jaringan lebih sering daripada di kantor. */
+  PMTILES_SIAP = muatSkrip('https://unpkg.com/pmtiles@4.3.0/dist/pmtiles.js')
+    .catch(function(){ return muatSkrip('https://cdn.jsdelivr.net/npm/pmtiles@4.3.0/dist/pmtiles.js'); })
+    .then(function(){
+      if(!window.pmtiles || !window.pmtiles.leafletRasterLayer){
+        throw new Error('Pustaka PMTiles termuat tetapi tidak lengkap.');
+      }
+    })
+    .catch(function(e){
+      PMTILES_SIAP = null;
+      throw new Error('Gagal memuat pustaka PMTiles. Periksa sambungan internet.');
+    });
+  return PMTILES_SIAP;
+}
+
+/**
+ * Pasang berkas PMTiles ke dalam wadah lapisan.
+ *
+ * Dua ragam didukung:
+ *   raster — foto udara, ortofoto, citra satelit (paling umum)
+ *   vector — memerlukan gaya tersendiri, belum ditangani di sini
+ */
+function pasangPMTiles(d, wadah, op){
+  pastikanPMTiles().then(function(){
+    var p = new pmtiles.PMTiles(d.URL);
+
+    return p.getHeader().then(function(hdr){
+      /* tileType 1 = MVT (vektor), selebihnya raster (PNG/JPEG/WEBP) */
+      if(hdr.tileType === 1){
+        toast('Lapisan "'+d.Nama+'" berformat vektor. Saat ini hanya PMTiles raster (foto udara) yang didukung.', true);
+        return;
+      }
+
+      var lapisan = pmtiles.leafletRasterLayer(p, {
+        opacity: op,
+        attribution: esc(d.Nama),
+        maxNativeZoom: hdr.maxZoom,
+        maxZoom: Number(d.MaxZoom) || 22,
+        minZoom: Number(d.MinZoom) || 0
+      });
+      wadah.addLayer(lapisan);
+
+      /* Batas dan zoom diambil dari berkasnya sendiri bila belum diisi,
+         sehingga pengguna tidak perlu mengetiknya manual. */
+      if(!d.Bounds && hdr.minLon != null){
+        try{
+          d._bounds = [[hdr.minLat, hdr.minLon], [hdr.maxLat, hdr.maxLon]];
+        }catch(e){}
+      }
+    });
+  }).catch(function(e){
+    var pesan = String(e.message||e);
+    /* Kegagalan paling sering bukan pada berkasnya, melainkan pengaturan CORS
+       di penyimpanan objek. Pesan diarahkan ke sana supaya tidak menebak. */
+    if(/fetch|network|CORS|Failed/i.test(pesan)){
+      pesan = 'Berkas PMTiles tidak dapat dibaca. Periksa pengaturan CORS pada bucket ' +
+              '(harus mengizinkan metode GET dan HEAD, header Range, serta membuka Content-Range), ' +
+              'dan pastikan alamatnya dapat diakses publik.';
+    }
+    toast('Lapisan "'+d.Nama+'": '+pesan, true);
+  });
+}
+
 /* Bangun objek Leaflet dari definisi layer di sheet LayerPeta. */
 function bangunLayerKustom(d){
   var op = (d.Opacity===''||d.Opacity==null) ? 1 : Number(d.Opacity);
@@ -4569,6 +4644,15 @@ function bangunLayerKustom(d){
       });
       isiVektorURL(d, g);
       return g;
+    }
+    if(d.Tipe==='pmtiles'){
+      /* PMTiles adalah satu berkas berisi seluruh ubin peta. Pustakanya membaca
+         berkas itu lewat permintaan Range HTTP, sehingga hanya bagian yang
+         terlihat di layar yang diunduh — cocok untuk foto udara berukuran
+         puluhan gigabyte di penyimpanan objek seperti Cloudflare R2. */
+      var wadahPM = L.layerGroup();
+      pasangPMTiles(d, wadahPM, op);
+      return wadahPM;
     }
     if(d.Tipe==='mbtiles'){
       var grp = L.layerGroup();
@@ -6326,6 +6410,7 @@ function formLayer(id){
     xyz:'XYZ Tiles (drone/MBTiles ter-tile)', wms:'WMS (GeoServer/QGIS Server)',
     imageOverlay:'Image Overlay (1 gambar + bounds)', geojson:'GeoJSON (dari URL)',
     kml:'KML (dari URL)', shp:'Shapefile .zip (dari URL)', mbtiles:'MBTiles raster (dari URL)',
+    pmtiles:'PMTiles — foto udara / ortofoto (R2, S3, atau hosting biasa)',
     maptiler:'MapTiler — peta dasar berlisensi (pakai kunci API)'
   };
   bukaLembar('<h3>'+(d?'Edit Layer':'Tambah Layer Peta')+'</h3>'+
@@ -6360,6 +6445,29 @@ function formLayer(id){
   ubahFieldLayer();
 }
 function ubahFieldLayer(){
+  /* Petunjuk khusus PMTiles: kesalahan paling sering bukan pada berkasnya,
+     melainkan pengaturan CORS di penyimpanan objek. */
+  setTimeout(function(){
+    var t = (document.getElementById('lyTipe')||{}).value;
+    var lb = document.getElementById('lbURL');
+    var inp = document.getElementById('lyURL');
+    var ket = document.getElementById('ketPMTiles');
+    if(t === 'pmtiles'){
+      if(lb) lb.textContent = 'URL berkas .pmtiles *';
+      if(inp) inp.placeholder = 'https://pub-xxxx.r2.dev/ortho-2026.pmtiles';
+      if(!ket && inp){
+        var d = document.createElement('div');
+        d.id = 'ketPMTiles';
+        d.style.cssText = 'margin-top:6px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12px;line-height:1.6';
+        d.innerHTML = 'Isi alamat <b>langsung ke berkas .pmtiles</b>, bukan folder. '+
+          'Batas tampilan dan tingkat perbesaran diambil otomatis dari berkasnya.'+
+          '<div style="margin-top:6px"><b>Bila gambar tidak muncul</b>, hampir selalu karena '+
+          'pengaturan CORS pada bucket belum mengizinkan permintaan Range. '+
+          'Lihat panduan di menu Bantuan.</div>';
+        inp.parentNode.insertBefore(d, inp.nextSibling);
+      }
+    } else if(ket){ ket.remove(); }
+  }, 0);
   var t = document.getElementById('lyTipe').value;
   var mt = document.getElementById('fieldMaptiler');
   if(mt) mt.style.display = (t==='maptiler') ? 'block' : 'none';
@@ -12404,7 +12512,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.6.1';
+var VERSI_APP = '3.7.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
