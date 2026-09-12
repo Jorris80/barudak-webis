@@ -739,6 +739,7 @@
       <button onclick="bukaHalaman('budget')"><span class="ic">💰</span>Budgeting Kebun</button>
       <button onclick="bukaStrukturOrganisasi()"><span class="ic">🗂️</span>Struktur Organisasi</button>
       <button onclick="bukaProfil()"><span class="ic">🪪</span>Profil Saya</button>
+      <button onclick="bukaAturPin()"><span class="ic">🔐</span>PIN Akses Luring</button>
       <button onclick="bukaAturTataLetak()"><span class="ic">🎛️</span>Tata Letak Modul</button>
       <button onclick="formGantiSandi()"><span class="ic">🔑</span>Ganti Kata Sandi</button>
       <button onclick="bukaTentang()"><span class="ic">ℹ️</span>Tentang &amp; Ketentuan</button>
@@ -6535,6 +6536,7 @@ function prosesLogin(){
     SESI = Object.assign({}, r);
     delete SESI.token;
     try{ localStorage.setItem('sg_token', TOKEN); }catch(e){}
+    try{ segarkanMasaPin(); }catch(e){}
     document.getElementById('layarLogin').style.display='none';
     document.getElementById('loginPass').value='';
     btn.disabled=false; btn.textContent='Masuk';
@@ -6545,6 +6547,9 @@ function prosesLogin(){
   });
 }
 function logout(){
+  /* PIN sengaja ikut dihapus saat keluar. Bila perangkat berpindah tangan,
+     pemilik berikutnya tidak boleh dapat membuka data pengguna sebelumnya. */
+  try{ hapusPin(); }catch(e){}
   if(!confirm('Keluar dari aplikasi?')) return;
   callApi('logout', {}).catch(function(){});
   /* Jangan memakai location.reload(): di dalam iframe Apps Script yang dimuat
@@ -12399,7 +12404,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.5.0';
+var VERSI_APP = '3.6.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -17877,6 +17882,232 @@ function pasangTombolGrafik(){
   });
 }
 
+
+/* ==================== BUKA LURING DENGAN PIN ====================
+ * Sesi berumur 6 jam. Bila mandor berada di kebun tanpa sinyal dan sesinya
+ * berakhir, layar login menjadi jalan buntu — masuk kembali memerlukan
+ * jaringan yang justru tidak ada.
+ *
+ * Penyelesaiannya: PIN enam angka yang disiapkan SAAT MASIH ADA SINYAL.
+ * PIN tidak pernah dikirim ke server; yang disimpan di perangkat hanya
+ * ringkasannya (hash), sehingga PIN aslinya tidak dapat dibaca kembali.
+ *
+ * Batas yang dijaga:
+ *   1. Berlaku paling lama 7 hari sejak login daring terakhir
+ *   2. Hanya membuka data yang sudah tersimpan di perangkat
+ *   3. Input baru masuk antrean, terkirim saat sinyal kembali
+ *   4. Menu administratif tetap terkunci sampai login daring
+ *   5. Lima kali salah, PIN terhapus dan wajib login daring
+ */
+var PIN_MAKS_HARI = 7;
+var PIN_MAKS_SALAH = 5;
+
+function sha256Lokal(teks){
+  if(window.crypto && crypto.subtle){
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(teks))
+      .then(function(buf){
+        return Array.from(new Uint8Array(buf))
+          .map(function(b){ return ('0'+b.toString(16)).slice(-2); }).join('');
+      });
+  }
+  /* Peramban lama tanpa SubtleCrypto: PIN luring tidak ditawarkan sama sekali,
+     lebih baik daripada memakai penyandian seadanya. */
+  return Promise.reject(new Error('Perangkat tidak mendukung penguncian PIN.'));
+}
+
+function pinTersedia(){ return !!(window.crypto && crypto.subtle); }
+
+function bacaPin(){
+  try{ return JSON.parse(localStorage.getItem('sg_pin')||'null'); }catch(e){ return null; }
+}
+function simpanPin(obj){
+  try{ localStorage.setItem('sg_pin', JSON.stringify(obj)); }catch(e){}
+}
+function hapusPin(){
+  try{ localStorage.removeItem('sg_pin'); }catch(e){}
+}
+
+/** Apakah PIN masih boleh dipakai? */
+function pinMasihBerlaku(){
+  var p = bacaPin();
+  if(!p || !p.hash || !p.username) return false;
+  var umur = (Date.now() - (p.terakhirDaring||0)) / 86400000;
+  return umur <= PIN_MAKS_HARI && (p.salah||0) < PIN_MAKS_SALAH;
+}
+
+/** Dipanggil setiap kali login daring berhasil — memperbarui masa berlaku. */
+function segarkanMasaPin(){
+  var p = bacaPin();
+  if(p && SESI && p.username === SESI.username){
+    p.terakhirDaring = Date.now();
+    p.salah = 0;
+    simpanPin(p);
+  }
+}
+
+/* ---------- pengaturan PIN ---------- */
+function bukaAturPin(){
+  if(!SESI) return;
+  if(!pinTersedia()) return toast('Peramban ini tidak mendukung penguncian PIN.', true);
+  if(OFFLINE) return toast('PIN hanya dapat diatur saat aplikasi terhubung jaringan.', true);
+
+  var p = bacaPin();
+  var aktif = !!(p && p.username === SESI.username);
+  bukaLembar('<h3>🔐 PIN Akses Luring</h3>'+
+    '<div class="meta" style="line-height:1.65">Agar tetap dapat membuka aplikasi di kebun '+
+      'ketika tidak ada sinyal dan sesi Anda sudah berakhir. Siapkan sekarang selagi '+
+      'jaringan masih ada.</div>'+
+
+    (aktif
+      ? '<div style="margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);'+
+        'font-size:12.5px;line-height:1.6">✅ PIN sudah aktif untuk akun <b>'+esc(SESI.username)+'</b>.'+
+        '<div class="meta" style="margin-top:4px">Berlaku sampai '+
+        esc(fmtTgl(new Date(((p.terakhirDaring||0) + PIN_MAKS_HARI*86400000)).toISOString().slice(0,10)))+
+        '. Masa berlaku diperbarui otomatis tiap kali Anda masuk dengan jaringan.</div></div>'
+      : '')+
+
+    '<label style="margin-top:14px">PIN Baru (6 angka) *</label>'+
+    '<input type="password" id="pinBaru" inputmode="numeric" maxlength="6" placeholder="••••••" '+
+      'oninput="this.value=this.value.replace(/[^0-9]/g,\'\')">'+
+    '<label>Ulangi PIN *</label>'+
+    '<input type="password" id="pinUlang" inputmode="numeric" maxlength="6" placeholder="••••••" '+
+      'oninput="this.value=this.value.replace(/[^0-9]/g,\'\')">'+
+
+    '<div style="margin-top:12px;padding:12px;border-radius:8px;background:#FFF4E5;'+
+      'border-left:3px solid #E8960C;font-size:12.5px;line-height:1.65">'+
+      '<b>Yang perlu diketahui</b><br>'+
+      '• Berlaku paling lama '+PIN_MAKS_HARI+' hari sejak terakhir masuk dengan jaringan<br>'+
+      '• Hanya membuka data yang sudah tersimpan di perangkat ini<br>'+
+      '• Input baru masuk antrean dan terkirim saat sinyal kembali<br>'+
+      '• Menu administratif tetap terkunci sampai Anda masuk dengan jaringan<br>'+
+      '• Salah '+PIN_MAKS_SALAH+' kali, PIN terhapus dan wajib masuk dengan jaringan'+
+    '</div>'+
+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="simpanPinBaru()">💾 Simpan PIN</button>'+
+    (aktif ? '<button class="btn btn-bahaya btn-blok" style="margin-top:8px" onclick="matikanPin()">🗑 Matikan PIN</button>' : ''));
+}
+
+function simpanPinBaru(){
+  var a = nilaiEl('pinBaru'), b = nilaiEl('pinUlang');
+  if(!/^\d{6}$/.test(a)) return toast('PIN harus tepat 6 angka.', true);
+  if(a !== b) return toast('Kedua PIN tidak sama.', true);
+  if(/^(\d)\1{5}$/.test(a) || a==='123456' || a==='654321'){
+    return toast('PIN terlalu mudah ditebak. Gunakan kombinasi lain.', true);
+  }
+  sha256Lokal(a + '|' + SESI.username + '|sawitgis').then(function(hash){
+    simpanPin({ username: SESI.username, nama: SESI.nama, hash: hash,
+                terakhirDaring: Date.now(), salah: 0 });
+    tutupLembar();
+    toast('PIN akses luring tersimpan ✓');
+  }).catch(function(e){ toast(e.message, true); });
+}
+
+function matikanPin(){
+  if(!confirm('Matikan PIN akses luring?\n\nAnda tidak akan bisa membuka aplikasi di lokasi tanpa sinyal.')) return;
+  hapusPin();
+  tutupLembar();
+  toast('PIN dimatikan.');
+}
+
+/* ---------- layar buka dengan PIN ---------- */
+function tampilLayarPin(alasan){
+  var p = bacaPin();
+  if(!p) return false;
+  var sisa = PIN_MAKS_SALAH - (p.salah||0);
+  var hariSisa = Math.max(0, Math.ceil(PIN_MAKS_HARI - (Date.now()-(p.terakhirDaring||0))/86400000));
+
+  var el = document.getElementById('layarLogin');
+  el.style.display = 'flex';
+  var kotak = el.querySelector('.kotak-login') || el.firstElementChild;
+  if(!kotak) return false;
+  kotak.innerHTML =
+    '<div style="text-align:center;margin-bottom:14px">'+
+      '<div style="font-size:34px">🔐</div>'+
+      '<h2 style="margin:6px 0 2px;font-size:19px">Buka dengan PIN</h2>'+
+      '<div class="meta">'+esc(p.nama||p.username)+'</div>'+
+    '</div>'+
+    '<div style="padding:10px 12px;border-radius:8px;background:#FFF4E5;font-size:12.5px;'+
+      'line-height:1.6;margin-bottom:12px">'+esc(alasan||'Tidak ada jaringan.')+
+      ' Anda dapat melanjutkan dengan data yang tersimpan di perangkat ini.'+
+      '<div class="meta" style="margin-top:4px">Sisa masa berlaku '+hariSisa+' hari. '+
+      'Sambungkan jaringan sebelum habis agar data terkirim.</div></div>'+
+    '<label>PIN</label>'+
+    '<input type="password" id="pinMasuk" inputmode="numeric" maxlength="6" placeholder="••••••" '+
+      'oninput="this.value=this.value.replace(/[^0-9]/g,\'\')" onkeydown="if(event.key===\'Enter\')bukaDenganPin()">'+
+    '<div id="pinPesan" class="meta" style="margin-top:6px">Sisa percobaan: '+sisa+'</div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:12px" onclick="bukaDenganPin()">Buka Aplikasi</button>'+
+    '<button class="btn btn-sekunder btn-blok" style="margin-top:8px" onclick="kembaliKeLogin()">Masuk dengan Kata Sandi</button>';
+  setTimeout(function(){ var i=document.getElementById('pinMasuk'); if(i) i.focus(); }, 200);
+  return true;
+}
+
+function kembaliKeLogin(){ location.reload(); }
+
+function bukaDenganPin(){
+  var p = bacaPin(); if(!p) return;
+  var pin = nilaiEl('pinMasuk');
+  if(!/^\d{6}$/.test(pin)) return toast('Masukkan 6 angka.', true);
+
+  sha256Lokal(pin + '|' + p.username + '|sawitgis').then(function(hash){
+    var el = document.getElementById('pinPesan');
+    if(hash !== p.hash){
+      p.salah = (p.salah||0) + 1;
+      var sisa = PIN_MAKS_SALAH - p.salah;
+      if(sisa <= 0){
+        hapusPin();
+        if(el){ el.style.color='var(--merah)'; el.textContent='PIN dihapus karena salah '+PIN_MAKS_SALAH+' kali. Masuk dengan kata sandi saat ada jaringan.'; }
+        return;
+      }
+      simpanPin(p);
+      if(el){ el.style.color='var(--merah)'; el.textContent='PIN salah. Sisa percobaan: '+sisa; }
+      return;
+    }
+
+    /* PIN benar — pulihkan sesi tersimpan dan jalankan dalam mode luring. */
+    p.salah = 0; simpanPin(p);
+    var c = bacaCache(), sesiSimpan = null;
+    try{ sesiSimpan = JSON.parse(localStorage.getItem('sg_sesi')||'null'); }catch(e){}
+    if(!c || !sesiSimpan){
+      if(el){ el.style.color='var(--merah)'; el.textContent='Data tersimpan tidak ditemukan. Perlu masuk dengan jaringan.'; }
+      return;
+    }
+    SESI = sesiSimpan;
+    OFFLINE = true;
+    LURING_PIN = true;
+    document.getElementById('layarLogin').style.display='none';
+    tampilLoader(true,'Membuka data tersimpan…');
+    pastikanPustaka().catch(function(){}).then(function(){
+      S = c;
+      try{ batasiDataAkses(); terapkanPengaturan(); terapkanPeran(); isiOpsiBlok(); renderSemua(); }catch(e){}
+      try{ terapkanAksesModul(); terapkanTataLetak(); kunciMenuLuring(); }catch(e){}
+      perbaruiStatusOffline();
+      tampilLoader(false);
+      toast('Mode luring — input akan terkirim saat sinyal kembali.', true);
+    });
+  }).catch(function(e){ toast(e.message, true); });
+}
+
+var LURING_PIN = false;
+
+/** Kunci menu yang tidak boleh dijalankan tanpa jaringan. */
+function kunciMenuLuring(){
+  if(!LURING_PIN) return;
+  var terlarang = ['bukaPengguna','bukaPengaturan','bukaCadangan','bukaArsipTahunan',
+    'bukaKelolaRingkasan','bukaPemeliharaanJejak','bukaStatistikData','bukaLisensi',
+    'bukaKunciAI','bukaKelolaHakCuti','bukaHariLibur'];
+  document.querySelectorAll('#hal-lainnya .menu-grid button').forEach(function(b){
+    var oc = b.getAttribute('onclick')||'';
+    for(var i=0;i<terlarang.length;i++){
+      if(oc.indexOf(terlarang[i]) >= 0){
+        b.style.opacity='.4';
+        b.setAttribute('onclick', "toast('Menu ini memerlukan jaringan. Sambungkan dulu, lalu masuk dengan kata sandi.', true)");
+        b.title = 'Perlu jaringan';
+        break;
+      }
+    }
+  });
+}
+
 /* ==================== MULAI ==================== */
 window.addEventListener('load', function(){
   initThemeOnLoad();
@@ -17903,9 +18134,17 @@ window.addEventListener('load', function(){
          offline. Sebelumnya keduanya ditangani sama sehingga muncul pesan
          "Offline" lalu memantul kembali ke login. */
       if(err && err.sesiHabis){
-        TOKEN=''; SESI=null;
+        TOKEN='';
         try{ localStorage.removeItem('sg_token'); }catch(e){}
         tampilLoader(false);
+        /* Bila PIN luring sudah disiapkan dan datanya masih ada di perangkat,
+           tawarkan membuka dengan PIN. Tanpa ini, pengguna di kebun tanpa
+           sinyal menemui layar login yang tidak mungkin dilewati. */
+        if(pinMasihBerlaku() && bacaCache()){
+          SESI=null;
+          if(tampilLayarPin('Sesi Anda telah berakhir.')) return;
+        }
+        SESI=null;
         document.getElementById('layarLogin').style.display='flex';
         var pesanLogin=document.getElementById('loginPesan');
         if(pesanLogin){ pesanLogin.className='galat'; pesanLogin.textContent='Sesi Anda telah berakhir. Silakan masuk kembali.'; }
@@ -17920,6 +18159,9 @@ window.addEventListener('load', function(){
           S = c; batasiDataAkses(); terapkanPengaturan(); terapkanPeran(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline();
           toast('Offline — masuk dengan data tersimpan. Akan sinkron saat online.', true);
         });
+      } else if(pinMasihBerlaku() && bacaCache()){
+        tampilLoader(false);
+        tampilLayarPin('Tidak ada jaringan.');
       } else {
         document.getElementById('layarLogin').style.display='flex';
       }
