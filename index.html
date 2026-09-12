@@ -742,6 +742,7 @@
       <button onclick="bukaAturPin()"><span class="ic">🔐</span>PIN Akses Luring</button>
       <button onclick="bukaAturTataLetak()"><span class="ic">🎛️</span>Tata Letak Modul</button>
       <button onclick="formGantiSandi()"><span class="ic">🔑</span>Ganti Kata Sandi</button>
+      <button onclick="bukaPerbaruiApl()"><span class="ic">🔄</span>Perbarui Aplikasi</button>
       <button onclick="bukaTentang()"><span class="ic">ℹ️</span>Tentang &amp; Ketentuan</button>
       <button class="adminOnly" onclick="formKunciAI()"><span class="ic">🤖</span>Kunci Asisten AI</button>
       <button onclick="bukaHalaman('bibitan')"><span class="ic">🌱</span>Pembibitan</button>
@@ -12512,7 +12513,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.7.0';
+var VERSI_APP = '3.7.1';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -18234,6 +18235,64 @@ function kunciMenuLuring(){
       }
     }
   });
+}
+
+
+/* ==================== PAKSA PERBARUI APLIKASI ====================
+ * Pada PWA, berkas lama dapat tertahan di cache perangkat meski versi baru
+ * sudah diunggah. Menu ini membersihkan seluruh cache dan service worker,
+ * lalu memuat ulang — tanpa perlu membongkar pengaturan peramban.
+ */
+function bukaPerbaruiApl(){
+  var swAda = ('serviceWorker' in navigator);
+  bukaLembar('<h3>🔄 Perbarui Aplikasi</h3>'+
+    '<div class="kartu" style="margin-top:10px">'+
+      barisProfil('Versi terpasang', esc(VERSI_APP))+
+      barisProfil('Mode', ADA_GAS ? 'Apps Script' : (MODE_DEMO ? 'Demo' : 'PWA'))+
+      barisProfil('Service Worker', swAda ? 'aktif' : 'tidak dipakai')+
+    '</div>'+
+
+    '<div class="meta" style="margin-top:10px;line-height:1.65">Bila fitur terbaru belum muncul '+
+      'padahal berkas sudah diunggah, kemungkinan perangkat masih memakai salinan lama. '+
+      'Tombol di bawah membersihkannya.</div>'+
+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="paksaPerbarui()">'+
+      '🔄 Bersihkan &amp; Muat Ulang</button>'+
+
+    '<div style="margin-top:16px;padding:12px;border-radius:8px;background:var(--hijau-50);'+
+      'font-size:12.5px;line-height:1.65">'+
+      '<b>Bila sesudah ini versinya masih lama</b>, berarti berkas di server memang belum '+
+      'terbarui. Periksa bahwa <b>index.html</b> dan <b>sw.js</b> keduanya sudah diunggah, '+
+      'lalu tunggu satu dua menit — GitHub Pages perlu waktu menyebarkan perubahan.'+
+    '</div>');
+}
+
+function paksaPerbarui(){
+  if(!confirm('Bersihkan data sementara lalu muat ulang aplikasi?\n\n'+
+     'Data yang sudah tersimpan di server tidak terpengaruh. '+
+     'Input yang masih dalam antrean akan hilang bila belum terkirim.')) return;
+
+  tampilLoader(true,'Membersihkan salinan lama…');
+  var tugas = [];
+
+  /* Cache PWA dibuang seluruhnya, bukan hanya versi tertentu — supaya sisa
+     dari versi lama mana pun ikut terangkat. */
+  if(window.caches && caches.keys){
+    tugas.push(caches.keys().then(function(k){
+      return Promise.all(k.map(function(n){ return caches.delete(n); }));
+    }).catch(function(){}));
+  }
+  if('serviceWorker' in navigator){
+    tugas.push(navigator.serviceWorker.getRegistrations().then(function(rs){
+      return Promise.all(rs.map(function(r){ return r.unregister(); }));
+    }).catch(function(){}));
+  }
+
+  Promise.all(tugas).then(function(){
+    /* Penanda waktu ditambahkan agar peramban tidak mengambil dari cache HTTP. */
+    var u = location.origin + location.pathname + '?segar=' + Date.now();
+    location.replace(u);
+  }).catch(function(){ location.reload(true); });
 }
 
 /* ==================== MULAI ==================== */
