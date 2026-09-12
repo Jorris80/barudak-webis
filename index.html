@@ -12404,7 +12404,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.6.0';
+var VERSI_APP = '3.6.1';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -14275,6 +14275,17 @@ function tampilPesanAI(peran, teks, alat){
   el.scrollTop = el.scrollHeight;
 }
 
+var AI_ULANG = '';
+
+/** Ulangi pertanyaan terakhir tanpa perlu mengetik ulang. */
+function ulangiTanyaAI(){
+  if(!AI_ULANG) return;
+  var t=document.getElementById('aiTombolUlang'); if(t) t.remove();
+  var inp=document.getElementById('aiInput');
+  if(inp) inp.value = AI_ULANG;
+  kirimAI();
+}
+
 function kirimAI(){
   var inp=document.getElementById('aiInput');
   var teks=(inp.value||'').trim();
@@ -14296,6 +14307,15 @@ function kirimAI(){
   }).catch(function(e){
     var t=document.getElementById('aiTunggu'); if(t) t.remove();
     tampilPesanAI('ai', '⚠️ ' + e.message);
+    /* Untuk galat yang sifatnya sementara, sediakan tombol coba lagi agar
+       pengguna tidak perlu mengetik ulang pertanyaannya. */
+    if(/penuh permintaan|sibuk|sementara|coba lagi/i.test(e.message||'')){
+      AI_ULANG = teks;
+      var el2=document.getElementById('aiPercakapan');
+      el2.innerHTML += '<div id="aiTombolUlang" style="padding:4px 12px 10px">'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="ulangiTanyaAI()">↻ Coba Lagi</button></div>';
+      el2.scrollTop = el2.scrollHeight;
+    }
   });
 }
 
