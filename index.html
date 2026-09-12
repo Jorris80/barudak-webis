@@ -505,6 +505,17 @@
       <!-- Tombol Melayang Unduh PNG -->
       <!-- Diletakkan di kanan-BAWAH: kanan-atas dipakai kontrol layer Leaflet,
            yang melebar saat dibuka sehingga sebelumnya saling menimpa. -->
+      <select id="pilihGayaBatas" class="no-cetak" onchange="ubahGayaBatas(this.value)"
+        title="Ketebalan dan warna batas blok"
+        style="position:absolute;bottom:28px;left:10px;z-index:500;background:#fff;
+        box-shadow:0 2px 8px rgba(0,0,0,0.22);border:1px solid var(--garis);
+        font-weight:700;color:var(--hijau-900);padding:6px 10px;border-radius:8px;
+        font-size:12px;width:auto;margin:0">
+        <option value="auto">Batas: Otomatis</option>
+        <option value="normal">Batas: Normal</option>
+        <option value="kontras">Batas: Kontras</option>
+        <option value="tebal">Batas: Tebal + Halo</option>
+      </select>
       <button id="btnDownloadPNG" class="btn btn-sekunder btn-kecil no-cetak" style="position:absolute;bottom:28px;right:10px;z-index:500;background:#ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.22);border:1px solid var(--garis);display:flex;align-items:center;gap:6px;font-weight:700;color:var(--hijau-900);padding:6px 12px;border-radius:8px;" onclick="unduhPetaPNG()" title="Tangkap area peta sebagai gambar PNG">📷 Unduh PNG</button>
 
       <!-- Tooltip Zoom & Skala Peta -->
@@ -4480,8 +4491,75 @@ function unggahGeoJSONKustom(input){
   };
   reader.readAsText(file);
 }
+/* ==================== GAYA BATAS BLOK ====================
+ * Di atas foto udara, garis hijau nyaris tidak terlihat karena latarnya juga
+ * hijau. Mode kontras memakai teknik kartografi baku: garis terang tipis
+ * ditumpuk di atas garis gelap tebal, sehingga tetap terbaca di atas latar
+ * terang maupun gelap.
+ */
+var GAYA_BATAS = 'auto';   // auto | normal | kontras | tebal
+
+function bacaGayaBatas(){
+  try{ return localStorage.getItem('sg_gayabatas') || 'auto'; }catch(e){ return 'auto'; }
+}
+function simpanGayaBatas(v){
+  GAYA_BATAS = v;
+  try{ localStorage.setItem('sg_gayabatas', v); }catch(e){}
+}
+
+/** Apakah ada lapisan citra (foto udara / satelit) yang sedang aktif? */
+function adaCitraAktif(){
+  var ada = false;
+  (S.layers || []).forEach(function(l){
+    if(String(l.Aktif) === 'false' || l.Aktif === false) return;
+    if(['pmtiles','xyz','wms','mbtiles','imageOverlay','maptiler'].indexOf(l.Tipe) >= 0) ada = true;
+  });
+  /* Peta dasar satelit juga dihitung — latarnya sama gelapnya. */
+  if(typeof PETA_DASAR !== 'undefined' && /satelit|satellite|imagery/i.test(String(PETA_DASAR||''))) ada = true;
+  return ada;
+}
+
+/** Mode yang benar-benar dipakai saat menggambar. */
+function modeBatasEfektif(){
+  var g = GAYA_BATAS || bacaGayaBatas();
+  if(g !== 'auto') return g;
+  return adaCitraAktif() ? 'kontras' : 'normal';
+}
+
+/**
+ * Susun gaya poligon blok. Pada mode kontras dikembalikan DUA lapis:
+ * lapis bawah gelap sebagai halo, lapis atas terang sebagai garisnya.
+ */
+function ubahGayaBatas(v){
+  simpanGayaBatas(v);
+  gambarPeta();
+  var ket = { auto:'menyesuaikan otomatis', normal:'normal',
+              kontras:'kontras — kuning berhalo gelap', tebal:'tebal berhalo putih' };
+  toast('Batas blok: ' + (ket[v]||v));
+}
+
+function gayaPoligonBlok(warna, mode){
+  if(mode === 'kontras'){
+    return {
+      halo:  { color:'#1A1A1A', weight:5, opacity:.55, fill:false },
+      utama: { color:'#FFEB3B', weight:2.2, opacity:1,
+               fillColor:warna, fillOpacity:.10 }
+    };
+  }
+  if(mode === 'tebal'){
+    return {
+      halo:  { color:'#FFFFFF', weight:6, opacity:.85, fill:false },
+      utama: { color:warna, weight:2.6, opacity:1, fillColor:warna, fillOpacity:.25 }
+    };
+  }
+  return { halo:null, utama:{ color:warna, weight:2, fillColor:warna, fillOpacity:.4 } };
+}
+
 function gambarPeta(){
   if(!pastikanPeta()) return;
+  GAYA_BATAS = bacaGayaBatas();
+  var selGaya = document.getElementById('pilihGayaBatas');
+  if(selGaya && selGaya.value !== GAYA_BATAS) selGaya.value = GAYA_BATAS;
   grupBlok.clearLayers(); grupTitik.clearLayers(); grupLabel.clearLayers();
   if(grupLiveUtama) grupLiveUtama.clearLayers();
   var batas = [];
@@ -4494,7 +4572,12 @@ function gambarPeta(){
     // satu ring → gambar biasa; banyak ring → multipolygon (tiap ring jadi bidang terpisah)
     var latlngs = (rings.length===1) ? rings[0] : rings.map(function(r){ return [r]; });
     var warna = warnaBlokTema(b);
-    var pg = L.polygon(latlngs, { color:warna, weight:2, fillColor:warna, fillOpacity:.4 });
+    var gaya = gayaPoligonBlok(warna, modeBatasEfektif());
+    /* Halo digambar lebih dulu agar berada di bawah garis utamanya. */
+    if(gaya.halo){
+      L.polygon(latlngs, gaya.halo).addTo(grupBlok);
+    }
+    var pg = L.polygon(latlngs, gaya.utama);
     pg.bindPopup(
       '<b>'+esc(b.Nama)+'</b><br>'+esc(b.Divisi||'')+' · '+esc(b.Estate||'')+'<br>'+
       'Luas: '+angka(b.LuasHa,1)+' ha · '+angka(b.JumlahPokok,0)+' pokok · Tanam '+esc(b.TahunTanam||'-')+'<br>'+
@@ -12522,7 +12605,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.7.2';
+var VERSI_APP = '3.8.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -18348,8 +18431,39 @@ function jalankanUjiPMTiles(){
   }
   if(!/\.pmtiles(\?|$)/i.test(url)){
     hasil.push(ujBaris('warn','Alamat tidak berakhiran .pmtiles',
-      'Pastikan menunjuk langsung ke berkasnya, bukan ke folder.'));
+      'Umumnya alamat harus menunjuk berkas, misalnya '+
+      '<span style="font-family:monospace">…/ortho-2026.pmtiles</span>. '+
+      'Bila nama berkas Anda memang tanpa akhiran, abaikan peringatan ini.'));
   }
+  /* Kesalahan paling sering: memakai alamat endpoint S3 (…r2.cloudflarestorage.com)
+     yang menuntut penandatanganan AWS. Alamat itu tidak akan pernah bisa dibaca
+     langsung dari peramban, berapa kali pun pengaturan CORS diperbaiki. */
+  if(/\.r2\.cloudflarestorage\.com/i.test(url)){
+    hasil.push(ujBaris('gagal','Alamat ini endpoint S3, bukan alamat publik',
+      'Alamat <b>…r2.cloudflarestorage.com</b> hanya untuk aplikasi yang menandatangani '+
+      'permintaan dengan kunci rahasia. Peramban tidak dapat memakainya, dan mengubah CORS '+
+      'tidak akan menolong.<br><br>'+
+      '<b>Yang diperlukan salah satu dari ini:</b><br>'+
+      '• Buka R2 → bucket → <b>Settings</b> → <b>Public Development URL</b> → '+
+      '<b>Allow Access</b>. Alamatnya menjadi <span style="font-family:monospace">'+
+      'https://pub-xxxxxxxx.r2.dev/</span><br>'+
+      '• Atau pasang <b>Custom Domain</b>, misalnya '+
+      '<span style="font-family:monospace">https://peta.perusahaan.com/</span>'));
+    tulis();
+    return;
+  }
+
+  /* Nama bucket bukan nama berkas — alamat harus menunjuk objeknya. */
+  var jalur = url.replace(/^https:\/\/[^\/]+/i, '');
+  if(!jalur || jalur === '/'){
+    hasil.push(ujBaris('gagal','Alamat menunjuk akar, bukan berkas',
+      'Tambahkan nama berkasnya di belakang, misalnya '+
+      '<span style="font-family:monospace">/ortho-2026.pmtiles</span>. '+
+      'Nama berkas dapat dilihat di R2 → bucket → tab <b>Objects</b>.'));
+    tulis();
+    return;
+  }
+
   hasil.push(ujBaris('ok','Bentuk alamat wajar', esc(url)));
   tulis();
 
