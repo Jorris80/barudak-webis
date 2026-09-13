@@ -4532,6 +4532,8 @@ function modeBatasEfektif(){
  */
 function ubahGayaBatas(v){
   simpanGayaBatas(v);
+  /* Hanya blok yang perlu digambar ulang. Memanggil gambarPeta() akan ikut
+     menyentuh lapisan kustom dan membuat foto udara berkedip. */
   gambarPeta();
   var ket = { auto:'menyesuaikan otomatis', normal:'normal',
               kontras:'kontras — kuning berhalo gelap', tebal:'tebal berhalo putih' };
@@ -4784,21 +4786,66 @@ function isiMBTilesURL(d, grp){
 function isAktif(v){ return v===true || v==='true' || v==='TRUE' || v==='Ya' || v===1; }
 
 /* Sinkronkan layer kustom dari S.layers ke peta + kontrol. */
+/* Tanda pengenal isi sebuah lapisan. Bila tandanya sama, lapisannya tidak
+   perlu dibangun ulang. */
+function sidikLayer(d){
+  return [d.Tipe, d.URL, d.Param, d.Opacity, d.MinZoom, d.MaxZoom, d.Nama].join('|');
+}
+
+var sidikLapisan = {};
+
+/**
+ * Susun lapisan kustom pada peta.
+ *
+ * Sebelumnya seluruh lapisan dibongkar lalu dibangun ulang setiap kali peta
+ * digambar. Untuk PMTiles yang pemuatannya asinkron, itu menimbulkan dua
+ * masalah: centangnya kembali ke keadaan tersimpan (seolah mati sendiri),
+ * dan berkasnya diunduh ulang setiap kali.
+ *
+ * Kini lapisan hanya dibangun ulang bila isinya benar-benar berubah, dan
+ * keadaan nyala-mati yang sedang dipilih pengguna dipertahankan.
+ */
 function renderLayerKustom(){
   if(!peta || !kontrolLayer) return;
+
+  var daftar = (S.layers||[]).slice()
+    .sort(function(a,b){ return (Number(a.Urutan)||0)-(Number(b.Urutan)||0); });
+
+  var adaSekarang = {};
+  daftar.forEach(function(d){ adaSekarang[d.ID] = 1; });
+
+  /* Buang hanya lapisan yang memang sudah tidak ada di daftar. */
   Object.keys(lapisanKustom).forEach(function(id){
-    peta.removeLayer(lapisanKustom[id]);
-    kontrolLayer.removeLayer(lapisanKustom[id]);
+    if(adaSekarang[id]) return;
+    try{ peta.removeLayer(lapisanKustom[id]); kontrolLayer.removeLayer(lapisanKustom[id]); }catch(e){}
     delete lapisanKustom[id];
+    delete sidikLapisan[id];
   });
-  (S.layers||[]).slice().sort(function(a,b){ return (Number(a.Urutan)||0)-(Number(b.Urutan)||0); })
-    .forEach(function(d){
-      var lyr = bangunLayerKustom(d);
-      if(!lyr) return;
-      lapisanKustom[d.ID] = lyr;
-      kontrolLayer.addOverlay(lyr, '🗺 '+esc(d.Nama));
-      if(isAktif(d.Aktif)) lyr.addTo(peta);
-    });
+
+  daftar.forEach(function(d){
+    var sidik = sidikLayer(d);
+    var lama = lapisanKustom[d.ID];
+
+    if(lama && sidikLapisan[d.ID] === sidik){
+      /* Tidak berubah — biarkan apa adanya, termasuk keadaan nyala-matinya.
+         Inilah yang mencegah centang lapisan foto udara terlepas sendiri. */
+      return;
+    }
+
+    /* Isinya berubah: ingat dulu apakah sedang menyala, lalu bangun ulang. */
+    var sedangMenyala = lama ? peta.hasLayer(lama) : isAktif(d.Aktif);
+    if(lama){
+      try{ peta.removeLayer(lama); kontrolLayer.removeLayer(lama); }catch(e){}
+      delete lapisanKustom[d.ID];
+    }
+
+    var lyr = bangunLayerKustom(d);
+    if(!lyr) return;
+    lapisanKustom[d.ID] = lyr;
+    sidikLapisan[d.ID] = sidik;
+    kontrolLayer.addOverlay(lyr, '🗺 '+esc(d.Nama));
+    if(sedangMenyala) lyr.addTo(peta);
+  });
 }
 function petaKeSeluruhBlok(){ gambarPeta(); }
 function lokasiSaya(){
@@ -12605,7 +12652,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.8.0';
+var VERSI_APP = '3.8.1';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -18571,6 +18618,15 @@ window.addEventListener('load', function(){
     setTimeout(function(){ toast('Mode demo — login dilewati. Buka via URL web app untuk data asli.'); }, 900);
     return;
   }
+  /* Token sudah terhapus — misalnya karena sesi sebelumnya berakhir. Tanpa
+     cabang ini, pengguna langsung dibawa ke layar login, dan PIN luring yang
+     sudah disiapkan tidak pernah ditawarkan. Inilah yang membuat PIN terasa
+     tidak berfungsi. */
+  if(!TOKEN && pinMasihBerlaku() && bacaCache()){
+    tampilLoader(false);
+    if(tampilLayarPin('Sesi sebelumnya sudah berakhir.')) return;
+  }
+
   if(TOKEN){
     // coba pulihkan sesi
     callApi('me', {}).then(function(r){
