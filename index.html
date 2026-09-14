@@ -756,6 +756,7 @@
       <button onclick="bukaPerbaruiApl()"><span class="ic">🔄</span>Perbarui Aplikasi</button>
       <button onclick="bukaTentang()"><span class="ic">ℹ️</span>Tentang &amp; Ketentuan</button>
       <button class="adminOnly" onclick="formKunciAI()"><span class="ic">🤖</span>Kunci Asisten AI</button>
+      <button onclick="bukaHalaman('borongan')"><span class="ic">🤝</span>Borongan</button>
       <button onclick="bukaHalaman('bibitan')"><span class="ic">🌱</span>Pembibitan</button>
       <button onclick="bukaHalaman('rekap')"><span class="ic">📈</span>Rekap Bulanan</button>
       <button onclick="bukaHalaman('workflow')"><span class="ic">✅</span>Workflow Persetujuan</button>
@@ -1203,6 +1204,12 @@
     <div id="panelAlur" style="display:none"></div>
   </section>
   <!-- ================= REKAP BULANAN & ASISTEN AI ================= -->
+  <section class="halaman" id="hal-borongan">
+    <h2 class="judul">🤝 Kegiatan Borongan</h2>
+    <div class="meta">Kontrak, realisasi kerja, verifikasi, dan pembayaran borongan panen maupun perawatan.</div>
+    <div id="isiBorongan" style="margin-top:12px"></div>
+  </section>
+
   <section class="halaman" id="hal-bibitan">
     <h2 class="judul">🌱 Pembibitan Kelapa Sawit</h2>
     <div class="meta">Dari penerimaan kecambah, Pre-Nursery, Main Nursery, seleksi, sampai penyaluran ke lapangan.</div>
@@ -1587,7 +1594,12 @@ function callApi(action, params){
   if(MODE_DEMO) return apiDemo(action, params);
   return new Promise(function(res, rej){
     function offlineFallback(){
-      OFFLINE = true; perbaruiStatusOffline();
+      /* Tandai offline hanya bila perangkat memang melaporkan tidak ada
+         jaringan. Bila perangkat menyatakan online, kemungkinan besar
+         gangguan sesaat di server — data tetap dilayani dari simpanan,
+         tetapi aplikasi tidak berpindah ke mode offline. */
+      var perangkatOnline = (typeof navigator.onLine === 'boolean') ? navigator.onLine : true;
+      if(!perangkatOnline){ OFFLINE = true; perbaruiStatusOffline(); }
       if(AKSI_BACA[action]){
         if(action==='getAllData'){ var c=bacaCache(); if(c){ res(c); return; } }
         rej(new Error('Sedang offline dan tidak ada data tersimpan.'));
@@ -1607,7 +1619,22 @@ function callApi(action, params){
     }
     if(OFFLINE && action==='getAllData'){ var c=bacaCache(); if(c){ res(c); return; } }
 
-    transportServer(action, params).then(function(jsonStr){
+    /* Satu kegagalan sesaat TIDAK boleh langsung dianggap offline. Di jaringan
+       seluler kebun, permintaan sering gagal sekali lalu berhasil pada
+       percobaan berikutnya. Sebelumnya kegagalan pertama langsung memunculkan
+       "Mode Offline" padahal sinyalnya ada. */
+    function kirimDenganUlang(sisa){
+      return transportServer(action, params).catch(function(e){
+        var perangkatOnline = (typeof navigator.onLine === 'boolean') ? navigator.onLine : true;
+        if(sisa > 0 && perangkatOnline){
+          return new Promise(function(r){ setTimeout(r, 900); })
+            .then(function(){ return kirimDenganUlang(sisa - 1); });
+        }
+        throw e;
+      });
+    }
+
+    kirimDenganUlang(1).then(function(jsonStr){
       var r; try{ r = JSON.parse(jsonStr); }catch(e){ return offlineFallback(); }
       OFFLINE = false; perbaruiStatusOffline();
       if(r.ok){ res(r.data); }
@@ -3326,7 +3353,7 @@ function bukaHalaman(nama){
   if(el) el.classList.add('aktif');
   document.querySelectorAll('#navBawah button').forEach(function(b){
     b.classList.toggle('aktif', b.dataset.hal === nama ||
-      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu','workflow','rekap','bibitan'].indexOf(nama)>=0));
+      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu','workflow','rekap','bibitan','borongan'].indexOf(nama)>=0));
   });
   // FAB per halaman (hanya untuk yang boleh edit)
   var fabPeta = { blok:'＋', panen:'＋', spb:'＋', pupuk:'＋', sensus:'＋', bkm:'＋', masalah:'＋', jadwal:'＋', alat:'＋', hujan:'＋', sensusbuah:'＋', audit:'＋', traksi:'＋', gudang:'＋', budget:'＋', landclearing:'＋', ktu:'＋', workflow:'＋' };
@@ -3361,6 +3388,7 @@ function bukaHalaman(nama){
   try{ localStorage.setItem('sg_halaman', nama); }catch(e){}
 
   setTimeout(function(){ try{ pasangTombolGrafik(); }catch(e){} }, 350);
+  if(nama === 'borongan') renderBorongan();
   if(nama === 'bibitan') renderBibitan();
   if(nama === 'workflow') muatWorkflow(false);
   if(nama === 'rekap'){
@@ -12652,7 +12680,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.8.1';
+var VERSI_APP = '3.9.1';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -14294,6 +14322,16 @@ function gambarRekap(r){
     barisRekap('Sensus hama', angka(pw.kegiatanSensus,0)+' kali', 'rata serangan '+angka(pw.rataSeranganPersen,1)+'%') +
     barisRekap('Curah hujan', angka(r.cuaca.totalHujanMm,0)+' mm', r.cuaca.hariHujan+' hari hujan'));
 
+  if(r.borongan && (r.borongan.volume || r.borongan.nilaiKerja || r.borongan.dibayar)){
+    html += kartuRekap('🤝 Borongan',
+      barisRekap('Kontrak aktif', angka(r.borongan.kontrakAktif,0)) +
+      barisRekap('Volume kerja', angka(r.borongan.volume,0)) +
+      barisRekap('Nilai pekerjaan', rp(r.borongan.nilaiKerja)) +
+      barisRekap('Dibayar bulan ini', rp(r.borongan.dibayar)) +
+      (r.borongan.belumVerifikasi
+        ? barisRekap('Belum diverifikasi', angka(r.borongan.belumVerifikasi,0)) : ''));
+  }
+
   if(r.bibitan && (r.bibitan.stokPN || r.bibitan.stokMN || r.bibitan.salurBulanIni)){
     html += kartuRekap('🌱 Pembibitan',
       barisRekap('Stok Pre-Nursery', angka(r.bibitan.stokPN,0)+' bibit') +
@@ -14355,6 +14393,12 @@ function unduhRekapExcel(){
     {Bagian:'Perhatian', Uraian:'Stok kritis', Nilai:r.perhatian.stokKritis},
     {Bagian:'Perhatian', Uraian:'Jadwal terlambat', Nilai:r.perhatian.jadwalTerlambat}
   ];
+  if(r.borongan){
+    baris.push({Bagian:'Borongan', Uraian:'Kontrak aktif', Nilai:r.borongan.kontrakAktif});
+    baris.push({Bagian:'Borongan', Uraian:'Volume kerja', Nilai:r.borongan.volume});
+    baris.push({Bagian:'Borongan', Uraian:'Nilai pekerjaan', Nilai:r.borongan.nilaiKerja});
+    baris.push({Bagian:'Borongan', Uraian:'Dibayar bulan ini', Nilai:r.borongan.dibayar});
+  }
   if(r.bibitan){
     baris.push({Bagian:'Pembibitan', Uraian:'Stok Pre-Nursery', Nilai:r.bibitan.stokPN});
     baris.push({Bagian:'Pembibitan', Uraian:'Stok Main Nursery', Nilai:r.bibitan.stokMN});
@@ -14428,6 +14472,14 @@ function cetakRekap(){
       br('Kas keluar', rp(by.kasKeluarRp))+
       br('Saldo periode', rp(by.saldoRp), angka(by.jumlahTransaksi,0)+' transaksi')+
     '</table>'+
+
+    ((r.borongan && (r.borongan.volume || r.borongan.nilaiKerja))
+      ? '<h3 class="bagian">BORONGAN</h3><table class="data">'+
+        br('Kontrak aktif', angka(r.borongan.kontrakAktif,0))+
+        br('Volume kerja', angka(r.borongan.volume,0))+
+        br('Nilai pekerjaan', rp(r.borongan.nilaiKerja))+
+        br('Dibayar bulan ini', rp(r.borongan.dibayar))+
+        '</table>' : '')+
 
     ((r.bibitan && (r.bibitan.stokPN || r.bibitan.stokMN))
       ? '<h3 class="bagian">PEMBIBITAN</h3><table class="data">'+
@@ -15428,7 +15480,7 @@ var DAFTAR_MODUL = [
   { grup:'Inti', item:[
     ['dasbor','📊 Dasbor'], ['peta','🗺️ Peta'], ['blok','🌴 Blok'], ['panen','🧺 Panen'] ]},
   { grup:'Operasional', item:[
-    ['masalah','⚠️ Masalah Lapangan'], ['jadwal','🗓️ Jadwal'], ['bibitan','🌱 Pembibitan'], ['alat','🚜 Alat Berat'],
+    ['masalah','⚠️ Masalah Lapangan'], ['jadwal','🗓️ Jadwal'], ['bibitan','🌱 Pembibitan'], ['borongan','🤝 Borongan'], ['alat','🚜 Alat Berat'],
     ['hujan','🌧️ Curah Hujan'], ['spb','🚛 SPB'], ['pupuk','🧪 Pemupukan'],
     ['sensus','🐛 Sensus Hama'], ['sensusbuah','🍇 Sensus Buah'], ['bkm','📋 BKM & Premi'] ]},
   { grup:'Aset & Biaya', item:[
@@ -18263,8 +18315,15 @@ function simpanPinBaru(){
     return toast('PIN terlalu mudah ditebak. Gunakan kombinasi lain.', true);
   }
   sha256Lokal(a + '|' + SESI.username + '|sawitgis').then(function(hash){
+    /* Cuplikan sesi ikut disimpan di sini. Sebelumnya pembukaan bergantung
+       pada kunci sg_sesi yang ditulis terpisah saat menyimpan cache — bila
+       kunci itu belum sempat tertulis, PIN benar pun ditolak dengan pesan
+       "Data tersimpan tidak ditemukan". */
     simpanPin({ username: SESI.username, nama: SESI.nama, hash: hash,
-                terakhirDaring: Date.now(), salah: 0 });
+                terakhirDaring: Date.now(), salah: 0,
+                sesi: JSON.parse(JSON.stringify(SESI)) });
+    /* Pastikan cache terbaru ikut tersimpan, supaya ada yang dibuka nanti. */
+    try{ simpanCache(); }catch(e){}
     tutupLembar();
     toast('PIN akses luring tersimpan ✓');
   }).catch(function(e){ toast(e.message, true); });
@@ -18288,6 +18347,7 @@ function tampilLayarPin(alasan){
   el.style.display = 'flex';
   var kotak = el.querySelector('.kotak-login') || el.firstElementChild;
   if(!kotak) return false;
+  if(LOGIN_ASLI === null) LOGIN_ASLI = kotak.innerHTML;
   kotak.innerHTML =
     '<div style="text-align:center;margin-bottom:14px">'+
       '<div style="font-size:34px">🔐</div>'+
@@ -18309,7 +18369,30 @@ function tampilLayarPin(alasan){
   return true;
 }
 
-function kembaliKeLogin(){ location.reload(); }
+/* Memuat ulang halaman akan menampilkan layar PIN lagi, sehingga tombol ini
+   terasa tidak berfungsi. Yang benar: kembalikan isi layar login apa adanya
+   dan tandai agar PIN tidak ditawarkan lagi pada sesi ini. */
+var LOGIN_ASLI = null;
+
+function kembaliKeLogin(){
+  try{ sessionStorage.setItem('sg_lewatiPin','1'); }catch(e){}
+  var el = document.getElementById('layarLogin');
+  var kotak = el ? (el.querySelector('.kotak-login') || el.firstElementChild) : null;
+  if(kotak && LOGIN_ASLI !== null){
+    kotak.innerHTML = LOGIN_ASLI;
+    try{ terapkanMerekLogin(); }catch(e){}
+    el.style.display = 'flex';
+    setTimeout(function(){
+      var u = document.getElementById('loginUser'); if(u) u.focus();
+    }, 150);
+    return;
+  }
+  location.reload();
+}
+
+function lewatiPinSesiIni(){
+  try{ return sessionStorage.getItem('sg_lewatiPin') === '1'; }catch(e){ return false; }
+}
 
 function bukaDenganPin(){
   var p = bacaPin(); if(!p) return;
@@ -18335,8 +18418,15 @@ function bukaDenganPin(){
     p.salah = 0; simpanPin(p);
     var c = bacaCache(), sesiSimpan = null;
     try{ sesiSimpan = JSON.parse(localStorage.getItem('sg_sesi')||'null'); }catch(e){}
-    if(!c || !sesiSimpan){
-      if(el){ el.style.color='var(--merah)'; el.textContent='Data tersimpan tidak ditemukan. Perlu masuk dengan jaringan.'; }
+    /* Urutan cadangan: sesi tersimpan, lalu cuplikan di catatan PIN. */
+    if(!sesiSimpan && p.sesi) sesiSimpan = p.sesi;
+    if(!sesiSimpan && p.username){
+      sesiSimpan = { username: p.username, nama: p.nama || p.username,
+                     peran: 'viewer', ModulDiizinkan: '' };
+    }
+    if(!c){
+      if(el){ el.style.color='var(--merah)';
+        el.textContent='Data kebun belum tersimpan di perangkat ini. Buka aplikasi sekali saat ada jaringan, lalu PIN dapat dipakai.'; }
       return;
     }
     SESI = sesiSimpan;
@@ -18601,6 +18691,447 @@ function jalankanUjiPMTiles(){
     });
 }
 
+
+/* ==================== BORONGAN ==================== */
+var BOR = { ringkas:null, kontrak:[], aktif:null };
+var JENIS_BORONGAN = [
+  { kode:'panen', nama:'Panen TBS', satuan:['janjang','ton','kg'] },
+  { kode:'brondolan', nama:'Kutip Brondolan', satuan:['kg'] },
+  { kode:'langsir', nama:'Langsir / Muat TBS', satuan:['ton','janjang'] },
+  { kode:'piringan', nama:'Garuk Piringan', satuan:['pokok','ha'] },
+  { kode:'tunas', nama:'Tunas / Pruning', satuan:['pokok'] },
+  { kode:'babat', nama:'Babat Gawangan', satuan:['ha'] },
+  { kode:'dongkel', nama:'Dongkel Anak Kayu', satuan:['ha','pokok'] },
+  { kode:'semprot', nama:'Semprot Gulma / Chemist', satuan:['ha'] },
+  { kode:'pupuk', nama:'Tabur Pupuk', satuan:['ton','ha','pokok'] },
+  { kode:'parit', nama:'Rawat Parit / Jalan', satuan:['meter','m3'] },
+  { kode:'teras', nama:'Teras / Tapak Kuda', satuan:['pokok','meter'] },
+  { kode:'tanam', nama:'Tanam Bibit', satuan:['pokok'] },
+  { kode:'lc', nama:'Land Clearing / Tumbang', satuan:['ha','pokok'] },
+  { kode:'lainnya', nama:'Lainnya', satuan:['ha','pokok','ton','kg','meter','borongan'] }
+];
+function jenisBor(k){
+  for(var i=0;i<JENIS_BORONGAN.length;i++) if(JENIS_BORONGAN[i].kode===k) return JENIS_BORONGAN[i];
+  return { kode:k, nama:k, satuan:['borongan'] };
+}
+
+function renderBorongan(){
+  var el=document.getElementById('isiBorongan');
+  if(el) el.innerHTML='<div class="kosong">Memuat data borongan…</div>';
+  callApi('ringkasBorongan', {}).then(function(r){
+    BOR.ringkas=r; BOR.kontrak=r.kontrak||[];
+    gambarBorongan();
+  }).catch(function(e){
+    if(el) el.innerHTML='<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+  });
+}
+
+function gambarBorongan(){
+  var r=BOR.ringkas; if(!r) return;
+  var t=r.total;
+  var el=document.getElementById('isiBorongan'); if(!el) return;
+
+  el.innerHTML =
+    '<div class="kpi-grid" style="margin-bottom:12px">'+
+      kpiKotak('Kontrak Berjalan', angka(t.kontrakBerjalan,0), '#2E7D46')+
+      kpiKotak('Nilai Pekerjaan', rpSingkat(t.nilaiKerja), '#1565C0')+
+      kpiKotak('Sudah Dibayar', rpSingkat(t.dibayar), '#2E7D46')+
+      kpiKotak('Sisa Bayar', rpSingkat(t.sisaBayar), t.sisaBayar>0?'#E8960C':'#2E7D46')+
+    '</div>'+
+
+    '<div class="aksi-baris" style="margin-bottom:12px;flex-wrap:wrap">'+
+      (bolehEdit()?'<button class="btn btn-utama btn-kecil" onclick="formBorKontrak()">＋ Kontrak Baru</button>':'')+
+      '<button class="btn btn-sekunder btn-kecil" onclick="lihatTenggatBorongan()">⏰ Tenggat</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="eksporBorongan()">⬇ Excel</button>'+
+    '</div>'+
+
+    (r.perhatian && r.perhatian.length
+      ? '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">⚠️ Perlu Perhatian</b>'+
+        '<div style="margin-top:6px">'+
+        r.perhatian.slice(0,5).map(function(x){
+          return '<div style="padding:6px 0;border-bottom:1px solid var(--garis);font-size:12.5px">'+
+            '<div style="display:flex;justify-content:space-between;gap:8px">'+
+            '<span><b>'+esc(x.Pemborong)+'</b> <span class="meta">'+esc(x.nama)+'</span></span>'+
+            (x.sisaBayar>0?'<b style="color:#E8960C;white-space:nowrap">'+rpSingkat(x.sisaBayar)+'</b>':'')+
+            '</div>'+
+            (x.belumVerifikasi>0?'<div class="meta" style="font-size:11px">'+
+              angka(x.belumVerifikasi,0)+' '+esc(x.satuan||'')+' belum diverifikasi</div>':'')+
+            '</div>';
+        }).join('')+'</div></div>'
+      : '')+
+
+    (r.perJenis && r.perJenis.length
+      ? '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Biaya per Jenis Pekerjaan</b>'+
+        '<div style="margin-top:8px">'+
+        r.perJenis.slice(0,6).map(function(x){
+          var pct = t.nilaiKerja>0 ? Math.round(x.nilaiKerja/t.nilaiKerja*100) : 0;
+          return '<div style="padding:5px 0">'+
+            '<div style="display:flex;justify-content:space-between;font-size:12.5px">'+
+              '<span>'+esc(x.nama)+' <span class="meta">('+x.kontrak+')</span></span>'+
+              '<b>'+rpSingkat(x.nilaiKerja)+'</b></div>'+
+            '<div style="height:4px;border-radius:2px;background:var(--garis);margin-top:3px">'+
+              '<div style="height:100%;width:'+pct+'%;background:var(--hijau-500);border-radius:2px"></div></div>'+
+            '</div>';
+        }).join('')+'</div></div>'
+      : '')+
+
+    '<h4 style="font-size:13px;margin:14px 0 6px">Kontrak ('+r.jumlahKontrak+')</h4>'+
+    (BOR.kontrak.length ? BOR.kontrak.map(kartuKontrakBor).join('')
+      : '<div class="kosong">Belum ada kontrak borongan.'+
+        (bolehEdit()?'<br>Tekan <b>＋ Kontrak Baru</b> untuk membuatnya.':'')+'</div>');
+}
+
+function rpSingkat(n){
+  n = Number(n)||0;
+  if(Math.abs(n) >= 1e9) return 'Rp '+(n/1e9).toFixed(1).replace('.',',')+' M';
+  if(Math.abs(n) >= 1e6) return 'Rp '+(n/1e6).toFixed(1).replace('.',',')+' jt';
+  if(Math.abs(n) >= 1e3) return 'Rp '+Math.round(n/1e3)+' rb';
+  return 'Rp '+angka(n,0);
+}
+
+function kartuKontrakBor(k){
+  var warna = k.Status==='Berjalan' ? 'var(--hijau-700)'
+    : (k.Status==='Selesai' ? '#1565C0' : 'var(--abu)');
+  var pct = Math.min(100, k.persenTarget||0);
+  return '<div class="item">'+
+    '<div class="kepala"><div><b>'+esc(k.NoKontrak)+'</b>'+
+      '<div class="meta">'+esc(jenisBor(k.Jenis).nama)+' · '+esc(k.Pemborong)+
+      (k.JumlahAnggota?' ('+k.JumlahAnggota+' orang)':'')+'</div>'+
+      '<div class="meta" style="font-size:11px">'+esc(k.Estate||'')+
+      (k.Divisi?' · '+esc(k.Divisi):'')+' · '+esc(fmtTgl(k.TanggalMulai))+
+      (k.TanggalSelesai?' s/d '+esc(fmtTgl(k.TanggalSelesai)):'')+'</div></div>'+
+      '<div class="kanan"><span class="chip" style="background:'+warna+';color:#fff">'+
+      esc(k.Status)+'</span></div></div>'+
+
+    '<div style="margin-top:7px">'+
+      '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--abu)">'+
+        '<span>Capaian '+angka(k.persenTarget,1)+'%</span>'+
+        '<span>'+angka(k.volumeTotal,0)+' / '+angka(k.TargetVolume,0)+' '+esc(k.Satuan)+'</span></div>'+
+      '<div style="height:6px;border-radius:3px;background:var(--garis);margin-top:4px">'+
+        '<div style="height:100%;width:'+pct+'%;background:var(--hijau-500);border-radius:3px"></div></div>'+
+    '</div>'+
+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:7px;font-size:12px;color:var(--abu)">'+
+      '<span>Tarif <b style="color:var(--tinta)">'+rp(k.TarifRp)+'</b>/'+esc(k.Satuan)+'</span>'+
+      '<span>Nilai kerja <b style="color:var(--tinta)">'+rpSingkat(k.nilaiKerja)+'</b></span>'+
+      (k.sisaBayar>0?'<span style="color:#E8960C">Sisa bayar <b>'+rpSingkat(k.sisaBayar)+'</b></span>':'')+
+      (k.volumeBelumVerifikasi>0?'<span style="color:var(--merah)">Belum verifikasi <b>'+
+        angka(k.volumeBelumVerifikasi,0)+'</b></span>':'')+
+    '</div>'+
+
+    '<div class="aksi-baris" style="flex-wrap:wrap">'+
+      '<button class="btn btn-utama btn-kecil" onclick="detailKontrakBor(\''+esc(k.ID)+'\')">🔍 Detail</button>'+
+      (bolehEdit()?
+        '<button class="btn btn-sekunder btn-kecil" onclick="formBorRealisasi(\''+esc(k.ID)+'\')">＋ Realisasi</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="formBorBayar(\''+esc(k.ID)+'\')">💵 Bayar</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="formBorKontrak(\''+esc(k.ID)+'\')">✏️ Edit</button>':'')+
+    '</div></div>';
+}
+
+
+/* ---------- form kontrak ---------- */
+function formBorKontrak(id){
+  var k = id ? BOR.kontrak.filter(function(x){ return x.ID===id; })[0] : null;
+  bukaLembar('<h3>'+(k?'✏️ Ubah Kontrak':'🤝 Kontrak Borongan Baru')+'</h3>'+
+    '<div class="grid2">'+
+      '<div><label>Nomor Kontrak *</label><input id="bkNo" value="'+esc(k?k.NoKontrak:'BRG/'+new Date().getFullYear()+'/')+'"></div>'+
+      '<div><label>Status</label><select id="bkStatus">'+
+        ['Berjalan','Selesai','Batal'].map(function(s){
+          return '<option'+((k&&k.Status===s)?' selected':'')+'>'+s+'</option>'; }).join('')+
+      '</select></div>'+
+    '</div>'+
+    '<label>Jenis Pekerjaan *</label>'+
+    '<select id="bkJenis" onchange="bkUbahJenis()">'+
+      JENIS_BORONGAN.map(function(j){
+        return '<option value="'+j.kode+'"'+((k&&k.Jenis===j.kode)?' selected':'')+'>'+esc(j.nama)+'</option>';
+      }).join('')+'</select>'+
+    '<div class="grid2">'+
+      '<div><label>Pemborong / Ketua *</label><input id="bkPemborong" value="'+esc(k?k.Pemborong:'')+'" placeholder="cth: Kel. Tani Maju"></div>'+
+      '<div><label>Jenis Pelaksana</label><select id="bkJenisP">'+
+        ['Kelompok','Perorangan','CV / Perusahaan'].map(function(s){
+          return '<option'+((k&&k.JenisPemborong===s)?' selected':'')+'>'+s+'</option>'; }).join('')+
+      '</select></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Jumlah Anggota</label><input type="number" id="bkAnggota" value="'+esc(k?k.JumlahAnggota:'')+'"></div>'+
+      '<div><label>Nomor WhatsApp</label><input id="bkWA" value="'+esc(k?k.NomorWA:'')+'" placeholder="08xx"></div>'+
+    '</div>'+
+    saringUnitBlok('bku', '', { wajib:false })+
+    '<div class="meta" style="margin-top:-2px;margin-bottom:8px">Blok bersifat acuan unit kerja. '+
+      'Blok sebenarnya diisi saat mencatat realisasi.</div>'+
+    '<div class="grid2">'+
+      '<div><label>Tanggal Mulai *</label><input type="date" id="bkMulai" value="'+esc(k?k.TanggalMulai:hariISO(new Date()))+'"></div>'+
+      '<div><label>Tanggal Selesai</label><input type="date" id="bkSelesai" value="'+esc(k?k.TanggalSelesai:'')+'"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Satuan Kerja *</label><select id="bkSatuan"></select></div>'+
+      '<div><label>Tarif per Satuan (Rp) *</label><input type="number" id="bkTarif" value="'+esc(k?k.TarifRp:'')+'" oninput="bkHitungNilai()"></div>'+
+    '</div>'+
+    '<label>Target Volume</label><input type="number" id="bkTarget" value="'+esc(k?k.TargetVolume:'')+'" oninput="bkHitungNilai()">'+
+    '<div id="bkNilai" class="meta" style="margin-top:4px"></div>'+
+    '<label>Catatan</label><textarea id="bkCatatan" rows="2">'+esc(k?k.Catatan:'')+'</textarea>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="simpanBorKontrak(\''+esc(id||'')+'\')">💾 Simpan Kontrak</button>'+
+    (k && SESI && SESI.peran==='admin'
+      ? '<button class="btn btn-bahaya btn-blok" style="margin-top:8px" onclick="hapusBorKontrak(\''+esc(id)+'\')">🗑 Hapus</button>':''));
+  bkUbahJenis(k?k.Satuan:'');
+}
+
+function bkUbahJenis(satuanTerpilih){
+  var j = jenisBor(nilaiEl('bkJenis'));
+  var el = document.getElementById('bkSatuan'); if(!el) return;
+  var s = satuanTerpilih || el.value;
+  el.innerHTML = j.satuan.map(function(x){
+    return '<option'+(x===s?' selected':'')+'>'+x+'</option>'; }).join('');
+  bkHitungNilai();
+}
+function bkHitungNilai(){
+  var t=Number(nilaiEl('bkTarif'))||0, v=Number(nilaiEl('bkTarget'))||0;
+  var el=document.getElementById('bkNilai');
+  if(el) el.innerHTML = (t&&v) ? 'Nilai kontrak: <b>'+rp(t*v)+'</b>' : '';
+}
+function simpanBorKontrak(id){
+  if(!nilaiEl('bkNo')) return toast('Nomor kontrak wajib diisi.', true);
+  if(!nilaiEl('bkPemborong')) return toast('Nama pemborong wajib diisi.', true);
+  if(!(Number(nilaiEl('bkTarif'))>0)) return toast('Tarif harus lebih dari nol.', true);
+  var unit = unitDariBlok(nilaiEl('bkuBlok'));
+  tampilLoader(true,'Menyimpan…');
+  callApi('saveBoronganKontrak', {
+    ID:id||'', NoKontrak:nilaiEl('bkNo'), Jenis:nilaiEl('bkJenis'),
+    Pemborong:nilaiEl('bkPemborong'), JenisPemborong:nilaiEl('bkJenisP'),
+    JumlahAnggota:nilaiEl('bkAnggota'), NomorWA:nilaiEl('bkWA'),
+    Perusahaan:nilaiEl('bkuPer')||unit.Perusahaan, Estate:nilaiEl('bkuEst')||unit.Estate,
+    Divisi:nilaiEl('bkuDiv')||unit.Divisi,
+    TanggalMulai:nilaiEl('bkMulai'), TanggalSelesai:nilaiEl('bkSelesai'),
+    Satuan:nilaiEl('bkSatuan'), TarifRp:nilaiEl('bkTarif'), TargetVolume:nilaiEl('bkTarget'),
+    Status:nilaiEl('bkStatus'), Catatan:nilaiEl('bkCatatan')
+  }).then(function(){ tampilLoader(false); tutupLembar(); toast('Kontrak tersimpan ✓'); renderBorongan(); })
+   .catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+function hapusBorKontrak(id){
+  if(!confirm('Hapus kontrak ini?')) return;
+  callApi('deleteBoronganKontrak',{id:id}).then(function(){
+    tutupLembar(); toast('Kontrak dihapus ✓'); renderBorongan();
+  }).catch(function(e){ toast(e.message, true); });
+}
+
+/* ---------- form realisasi ---------- */
+function formBorRealisasi(idKontrak){
+  var k = BOR.kontrak.filter(function(x){ return x.ID===idKontrak; })[0];
+  if(!k) return;
+  BOR.aktif = idKontrak;
+  bukaLembar('<h3>＋ Realisasi Kerja</h3>'+
+    '<div class="meta"><b>'+esc(k.NoKontrak)+'</b> · '+esc(jenisBor(k.Jenis).nama)+' · '+esc(k.Pemborong)+'</div>'+
+    '<div style="margin-top:8px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px;line-height:1.7">'+
+      'Tarif <b>'+rp(k.TarifRp)+'</b> per '+esc(k.Satuan)+' · '+
+      'Capaian <b>'+angka(k.persenTarget,1)+'%</b> dari '+angka(k.TargetVolume,0)+' '+esc(k.Satuan)+
+    '</div>'+
+    '<div class="grid2" style="margin-top:10px">'+
+      '<div><label>Tanggal *</label><input type="date" id="brTgl" value="'+hariISO(new Date())+'"></div>'+
+      '<div><label>Volume ('+esc(k.Satuan)+') *</label><input type="number" id="brVol" oninput="brHitung()"></div>'+
+    '</div>'+
+    '<div id="brNilai" class="meta" style="margin-top:4px"></div>'+
+    saringUnitBlok('brb', '', { wajib:false })+
+    '<div class="grid2">'+
+      '<div><label>Mutu Kerja (%)</label><input type="number" id="brMutu" placeholder="100" max="100"></div>'+
+      '<div><label>Pelaksana</label><input id="brPelaksana" value="'+esc(k.Pemborong)+'"></div>'+
+    '</div>'+
+    '<label>Catatan</label><textarea id="brCatatan" rows="2"></textarea>'+
+    '<div class="meta" style="margin-top:6px;line-height:1.6">Realisasi tersimpan dengan status '+
+      '<b>Menunggu</b>. Pembayaran hanya dapat dilakukan atas pekerjaan yang sudah diverifikasi.</div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:12px" onclick="simpanBorRealisasi(\''+esc(idKontrak)+'\','+Number(k.TarifRp)+')">💾 Simpan</button>');
+}
+function brHitung(){
+  var k = BOR.kontrak.filter(function(x){ return x.ID===BOR.aktif; })[0];
+  var v = Number(nilaiEl('brVol'))||0;
+  var el=document.getElementById('brNilai');
+  if(el && k) el.innerHTML = v ? 'Nilai pekerjaan: <b>'+rp(v*Number(k.TarifRp))+'</b>' : '';
+}
+function simpanBorRealisasi(idKontrak){
+  if(!(Number(nilaiEl('brVol'))>0)) return toast('Volume wajib diisi.', true);
+  tampilLoader(true,'Menyimpan…');
+  callApi('saveBoronganRealisasi', {
+    IDKontrak:idKontrak, IDBlok:nilaiEl('brbBlok'), Tanggal:nilaiEl('brTgl'),
+    Volume:nilaiEl('brVol'), MutuPersen:nilaiEl('brMutu'),
+    Pelaksana:nilaiEl('brPelaksana'), Catatan:nilaiEl('brCatatan')
+  }).then(function(){ tampilLoader(false); tutupLembar(); toast('Realisasi tersimpan ✓'); renderBorongan(); })
+   .catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ---------- form pembayaran ---------- */
+function formBorBayar(idKontrak){
+  var k = BOR.kontrak.filter(function(x){ return x.ID===idKontrak; })[0];
+  if(!k) return;
+  var sisa = k.sisaBayar||0;
+  bukaLembar('<h3>💵 Pembayaran Borongan</h3>'+
+    '<div class="meta"><b>'+esc(k.NoKontrak)+'</b> · '+esc(k.Pemborong)+'</div>'+
+    '<div style="margin-top:8px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px;line-height:1.7">'+
+      'Nilai kerja terverifikasi <b>'+rp(k.nilaiKerja)+'</b><br>'+
+      'Sudah dibayar <b>'+rp(k.totalDibayar)+'</b> · Sisa <b>'+rp(sisa)+'</b>'+
+      (k.volumeBelumVerifikasi>0
+        ? '<div style="margin-top:6px;color:var(--merah)">⚠️ '+angka(k.volumeBelumVerifikasi,0)+' '+
+          esc(k.Satuan)+' belum diverifikasi dan belum dapat dibayar.</div>' : '')+
+    '</div>'+
+    '<div class="grid2" style="margin-top:10px">'+
+      '<div><label>Tanggal *</label><input type="date" id="bbTgl" value="'+hariISO(new Date())+'"></div>'+
+      '<div><label>Periode</label><input id="bbPeriode" value="'+hariISO(new Date()).slice(0,7)+'" placeholder="yyyy-MM"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Volume Dibayar</label><input type="number" id="bbVol"></div>'+
+      '<div><label>Nilai Kotor (Rp) *</label><input type="number" id="bbKotor" value="'+(sisa>0?sisa:'')+'" oninput="bbHitung()"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Potongan (Rp)</label><input type="number" id="bbPotong" value="0" oninput="bbHitung()"></div>'+
+      '<div><label>Keterangan Potongan</label><input id="bbKetPotong" placeholder="cth: pinjaman alat"></div>'+
+    '</div>'+
+    '<div id="bbBersih" class="meta" style="margin-top:4px"></div>'+
+    '<div class="grid2">'+
+      '<div><label>Nomor Bukti</label><input id="bbBukti" placeholder="cth: BKK/001"></div>'+
+      '<div><label>Metode</label><select id="bbMetode">'+
+        ['Tunai','Transfer'].map(function(s){ return '<option>'+s+'</option>'; }).join('')+'</select></div>'+
+    '</div>'+
+    '<label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px">'+
+      '<input type="checkbox" id="bbKas" checked style="width:auto;margin:0"> Catat sekaligus ke Kas &amp; Bank</label>'+
+    '<div class="meta" style="margin-top:4px">Agar arus kas kebun langsung mencerminkan biaya borongan, '+
+      'tanpa perlu mengetik ulang di modul KTU.</div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="simpanBorBayar(\''+esc(idKontrak)+'\')">💾 Simpan Pembayaran</button>');
+  bbHitung();
+}
+function bbHitung(){
+  var k=Number(nilaiEl('bbKotor'))||0, p=Number(nilaiEl('bbPotong'))||0;
+  var el=document.getElementById('bbBersih');
+  if(el) el.innerHTML = k ? 'Diterima pemborong: <b>'+rp(k-p)+'</b>' : '';
+}
+function simpanBorBayar(idKontrak){
+  if(!(Number(nilaiEl('bbKotor'))>0)) return toast('Nilai pembayaran wajib diisi.', true);
+  tampilLoader(true,'Menyimpan…');
+  callApi('saveBoronganBayar', {
+    IDKontrak:idKontrak, Tanggal:nilaiEl('bbTgl'), Periode:nilaiEl('bbPeriode'),
+    VolumeDibayar:nilaiEl('bbVol'), NilaiKotorRp:nilaiEl('bbKotor'),
+    PotonganRp:nilaiEl('bbPotong'), KeteranganPotongan:nilaiEl('bbKetPotong'),
+    NoBukti:nilaiEl('bbBukti'), MetodeBayar:nilaiEl('bbMetode'),
+    catatKas: (document.getElementById('bbKas')||{}).checked
+  }).then(function(){ tampilLoader(false); tutupLembar(); toast('Pembayaran tersimpan ✓'); renderBorongan(); })
+   .catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+/* ---------- detail & verifikasi ---------- */
+function detailKontrakBor(id){
+  var k = BOR.kontrak.filter(function(x){ return x.ID===id; })[0];
+  if(!k) return;
+  BOR.aktif = id;
+  tampilLoader(true,'Memuat riwayat…');
+  Promise.all([
+    callApi('listBoronganRealisasi',{idKontrak:id}).catch(function(){ return []; }),
+    callApi('listBoronganBayar',{idKontrak:id}).catch(function(){ return []; })
+  ]).then(function(h){
+    tampilLoader(false);
+    var real=h[0]||[], bayar=h[1]||[];
+    function baris(l,v){ return v!==''&&v!=null?'<div style="display:flex;justify-content:space-between;'+
+      'padding:5px 0;border-bottom:1px solid var(--garis)"><span style="color:var(--abu);font-size:12.5px">'+
+      esc(l)+'</span><b style="font-size:13px">'+v+'</b></div>':''; }
+    var warnaSt = { 'Diverifikasi':'var(--hijau-700)', 'Ditolak':'var(--merah)', 'Menunggu':'#E8960C' };
+
+    bukaLembar('<h3>🤝 '+esc(k.NoKontrak)+'</h3>'+
+      '<div class="meta">'+esc(jenisBor(k.Jenis).nama)+' · '+esc(k.Pemborong)+'</div>'+
+
+      '<div class="kartu" style="margin:12px 0"><b style="font-size:14px">Ringkasan Kontrak</b><div style="margin-top:6px">'+
+        baris('Tarif', rp(k.TarifRp)+' / '+esc(k.Satuan))+
+        baris('Target', angka(k.TargetVolume,0)+' '+esc(k.Satuan))+
+        baris('Nilai kontrak', rp(k.nilaiKontrak))+
+        baris('Volume tercapai', angka(k.volumeTotal,0)+' '+esc(k.Satuan)+' ('+angka(k.persenTarget,1)+'%)')+
+        baris('Terverifikasi', angka(k.volumeDiverifikasi,0)+' '+esc(k.Satuan))+
+        baris('Belum verifikasi', k.volumeBelumVerifikasi?'<span style="color:var(--merah)">'+
+          angka(k.volumeBelumVerifikasi,0)+'</span>':'0')+
+        baris('Nilai pekerjaan', rp(k.nilaiKerja))+
+        baris('Sudah dibayar', rp(k.totalDibayar))+
+        baris('Potongan', k.totalPotongan?rp(k.totalPotongan):'')+
+        baris('Sisa bayar', '<span style="color:'+(k.sisaBayar>0?'#E8960C':'var(--hijau-700)')+'">'+rp(k.sisaBayar)+'</span>')+
+        baris('Hari kerja', k.jumlahHariKerja+' hari')+
+      '</div></div>'+
+
+      '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Realisasi ('+real.length+')</b>'+
+      '<div style="margin-top:6px;max-height:260px;overflow-y:auto">'+
+        (real.length ? real.map(function(r){
+          return '<div style="padding:7px 0;border-bottom:1px solid var(--garis);font-size:12.5px">'+
+            '<div style="display:flex;justify-content:space-between;gap:8px">'+
+              '<b>'+angka(r.Volume,0)+' '+esc(r.Satuan||k.Satuan)+'</b>'+
+              '<span class="chip" style="background:'+(warnaSt[r.Status]||'var(--abu)')+';color:#fff">'+
+              esc(r.Status)+'</span></div>'+
+            '<div class="meta" style="font-size:11px">'+esc(fmtTgl(r.Tanggal))+
+              (r.IDBlok?' · blok '+esc(r.IDBlok):'')+' · '+rp(r.NilaiRp)+
+              (r.Pemeriksa?' · diperiksa '+esc(r.Pemeriksa):'')+'</div>'+
+            (bolehEdit() && r.Status==='Menunggu'
+              ? '<div class="aksi-baris" style="margin-top:4px">'+
+                '<button class="btn btn-utama btn-kecil" onclick="verifBor(\''+esc(r.ID)+'\',\'Diverifikasi\')">✓ Verifikasi</button>'+
+                '<button class="btn btn-bahaya btn-kecil" onclick="verifBor(\''+esc(r.ID)+'\',\'Ditolak\')">✕ Tolak</button>'+
+                '</div>' : '')+
+            '</div>';
+        }).join('') : '<div class="meta">Belum ada realisasi.</div>')+
+      '</div></div>'+
+
+      '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Pembayaran ('+bayar.length+')</b>'+
+      '<div style="margin-top:6px;max-height:200px;overflow-y:auto">'+
+        (bayar.length ? bayar.map(function(b){
+          return '<div style="padding:6px 0;border-bottom:1px solid var(--garis);font-size:12.5px">'+
+            '<div style="display:flex;justify-content:space-between"><b>'+rp(b.NilaiBersihRp)+'</b>'+
+            '<span class="meta">'+esc(fmtTgl(b.Tanggal))+'</span></div>'+
+            '<div class="meta" style="font-size:11px">'+esc(b.Periode||'')+
+              (Number(b.PotonganRp)?' · potongan '+rp(b.PotonganRp)+
+                (b.KeteranganPotongan?' ('+esc(b.KeteranganPotongan)+')':''):'')+
+              (b.NoBukti?' · '+esc(b.NoBukti):'')+'</div></div>';
+        }).join('') : '<div class="meta">Belum ada pembayaran.</div>')+
+      '</div></div>'+
+
+      (bolehEdit()?'<div class="aksi-baris" style="flex-wrap:wrap">'+
+        '<button class="btn btn-utama btn-kecil" onclick="tutupLembar();formBorRealisasi(\''+esc(id)+'\')">＋ Realisasi</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="tutupLembar();formBorBayar(\''+esc(id)+'\')">💵 Bayar</button>'+
+      '</div>':''));
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+function verifBor(id, status){
+  var alasan = '';
+  if(status==='Ditolak'){
+    alasan = prompt('Alasan penolakan hasil kerja:');
+    if(!alasan) return;
+  }
+  callApi('verifikasiBorongan', { id:id, status:status, catatan:alasan })
+    .then(function(){ toast('Status diperbarui ✓'); detailKontrakBor(BOR.aktif); renderBorongan(); })
+    .catch(function(e){ toast(e.message, true); });
+}
+
+function lihatTenggatBorongan(){
+  callApi('tenggatBorongan', { hari:30 }).then(function(r){
+    bukaLembar('<h3>⏰ Kontrak Mendekati Tenggat</h3>'+
+      '<div class="meta">Kontrak berjalan yang selesai dalam 30 hari ke depan, atau sudah lewat.</div>'+
+      '<div style="margin-top:12px">'+
+        (r.length ? r.map(function(x){
+          var warna = x.lewat ? 'var(--merah)' : (x.sisaHari<=7 ? '#E8960C' : 'var(--hijau-700)');
+          return '<div class="item"><div class="kepala">'+
+            '<div><b>'+esc(x.NoKontrak)+'</b><div class="meta">'+esc(x.nama)+' · '+esc(x.Pemborong)+'</div>'+
+            '<div class="meta" style="font-size:11px">Capaian '+angka(x.persenTarget,1)+'%</div></div>'+
+            '<div class="kanan"><b style="color:'+warna+'">'+
+            (x.lewat ? 'Lewat '+Math.abs(x.sisaHari)+' hari' : x.sisaHari+' hari lagi')+'</b>'+
+            '<div class="meta" style="font-size:10.5px">'+esc(fmtTgl(x.TanggalSelesai))+'</div></div></div></div>';
+        }).join('') : '<div class="kosong">Tidak ada kontrak yang mendekati tenggat.</div>')+
+      '</div>');
+  }).catch(function(e){ toast(e.message, true); });
+}
+
+function eksporBorongan(){
+  if(!BOR.kontrak.length) return toast('Belum ada data untuk diekspor.', true);
+  unduhExcel(BOR.kontrak.map(function(k){
+    return { 'No Kontrak':k.NoKontrak, 'Jenis':jenisBor(k.Jenis).nama, 'Pemborong':k.Pemborong,
+      'Anggota':k.JumlahAnggota, 'Estate':k.Estate, 'Divisi':k.Divisi,
+      'Mulai':k.TanggalMulai, 'Selesai':k.TanggalSelesai, 'Satuan':k.Satuan,
+      'Tarif':k.TarifRp, 'Target':k.TargetVolume, 'Nilai Kontrak':k.nilaiKontrak,
+      'Volume Tercapai':k.volumeTotal, '% Capaian':k.persenTarget,
+      'Terverifikasi':k.volumeDiverifikasi, 'Belum Verifikasi':k.volumeBelumVerifikasi,
+      'Nilai Kerja':k.nilaiKerja, 'Dibayar':k.totalDibayar, 'Potongan':k.totalPotongan,
+      'Sisa Bayar':k.sisaBayar, 'Status':k.Status };
+  }), 'borongan_'+hariISO(new Date()), 'Borongan');
+}
+
 /* ==================== MULAI ==================== */
 window.addEventListener('load', function(){
   initThemeOnLoad();
@@ -18622,7 +19153,7 @@ window.addEventListener('load', function(){
      cabang ini, pengguna langsung dibawa ke layar login, dan PIN luring yang
      sudah disiapkan tidak pernah ditawarkan. Inilah yang membuat PIN terasa
      tidak berfungsi. */
-  if(!TOKEN && pinMasihBerlaku() && bacaCache()){
+  if(!TOKEN && !lewatiPinSesiIni() && pinMasihBerlaku() && bacaCache()){
     tampilLoader(false);
     if(tampilLayarPin('Sesi sebelumnya sudah berakhir.')) return;
   }
@@ -18642,7 +19173,7 @@ window.addEventListener('load', function(){
         /* Bila PIN luring sudah disiapkan dan datanya masih ada di perangkat,
            tawarkan membuka dengan PIN. Tanpa ini, pengguna di kebun tanpa
            sinyal menemui layar login yang tidak mungkin dilewati. */
-        if(pinMasihBerlaku() && bacaCache()){
+        if(!lewatiPinSesiIni() && pinMasihBerlaku() && bacaCache()){
           SESI=null;
           if(tampilLayarPin('Sesi Anda telah berakhir.')) return;
         }
@@ -18661,7 +19192,7 @@ window.addEventListener('load', function(){
           S = c; batasiDataAkses(); terapkanPengaturan(); terapkanPeran(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline();
           toast('Offline — masuk dengan data tersimpan. Akan sinkron saat online.', true);
         });
-      } else if(pinMasihBerlaku() && bacaCache()){
+      } else if(!lewatiPinSesiIni() && pinMasihBerlaku() && bacaCache()){
         tampilLoader(false);
         tampilLayarPin('Tidak ada jaringan.');
       } else {
@@ -18670,6 +19201,28 @@ window.addEventListener('load', function(){
     });
   } else {
     document.getElementById('layarLogin').style.display='flex';
+  }
+
+  /* Pemberitahuan versi baru dari service worker. Karena aplikasi kini
+     disajikan dari simpanan agar cepat terbuka, pembaruan perlu diberitahukan
+     supaya pengguna tidak terus memakai versi lama tanpa sadar. */
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.addEventListener('message', function(ev){
+      if(!ev.data || ev.data.tipe !== 'versiBaru') return;
+      if(document.getElementById('bannerVersiBaru')) return;
+      var bar = document.createElement('div');
+      bar.id = 'bannerVersiBaru';
+      bar.style.cssText = 'position:fixed;left:0;right:0;bottom:64px;z-index:9000;margin:0 12px;'+
+        'padding:10px 12px;border-radius:10px;background:var(--hijau-700);color:#fff;'+
+        'font-size:12.5px;display:flex;align-items:center;gap:10px;'+
+        'box-shadow:0 4px 14px rgba(0,0,0,.28)';
+      bar.innerHTML = '<span style="flex:1">Versi baru aplikasi tersedia.</span>'+
+        '<button onclick="location.reload()" style="border:none;border-radius:7px;padding:6px 12px;'+
+        'font-weight:700;font-size:12px;background:#fff;color:var(--hijau-700);cursor:pointer">Muat Ulang</button>'+
+        '<button onclick="this.parentNode.remove()" style="border:none;background:transparent;'+
+        'color:#fff;font-size:16px;cursor:pointer;padding:0 4px">×</button>';
+      document.body.appendChild(bar);
+    });
   }
 
   // deteksi perubahan koneksi perangkat

@@ -5,7 +5,7 @@
  *
  *  Naikkan VERSI setiap kali index.html diubah agar cache diperbarui.
  * ============================================================ */
-var VERSI = 'sawitgis-v3.8.1';
+var VERSI = 'sawitgis-v3.9.1';
 var INTI = [
   './',
   './index.html',
@@ -82,15 +82,45 @@ self.addEventListener('fetch', function (e) {
   if (POLA_JANGAN_CACHE.some(function (p) { return url.hostname.indexOf(p) >= 0; })) return;
   if (POLA_TILE.some(function (p) { return url.hostname.indexOf(p) >= 0; })) return;
 
-  // Navigasi/HTML: network-first, fallback ke cache (agar tetap tampil offline)
+  /* Navigasi/HTML: sajikan dari simpanan lebih dulu, perbarui di latar belakang.
+   *
+   * Sebelumnya memakai network-first: setiap muat ulang harus menunggu seluruh
+   * berkas aplikasi (sekitar 1 MB) selesai diunduh sebelum apa pun tampil. Di
+   * jaringan seluler kebun, itu berarti menunggu belasan detik pada layar
+   * kosong — meski salinan yang sama persis sudah ada di perangkat.
+   *
+   * Dengan cara ini aplikasi terbuka seketika, sementara versi barunya diunduh
+   * diam-diam. Bila ternyata ada pembaruan, pengguna diberi tahu dan dapat
+   * memuat ulang saat siap.
+   */
   if (req.mode === 'navigate' || (req.headers.get('accept') || '').indexOf('text/html') >= 0) {
     e.respondWith(
-      fetch(req).then(function (res) {
-        var salin = res.clone();
-        caches.open(VERSI).then(function (c) { c.put('./index.html', salin); });
-        return res;
-      }).catch(function () {
-        return caches.match('./index.html').then(function (r) { return r || caches.match('./'); });
+      caches.match('./index.html').then(function (tersimpan) {
+        var dariJaringan = fetch(req).then(function (res) {
+          if (res && res.ok) {
+            var salin = res.clone();
+            caches.open(VERSI).then(function (c) { c.put('./index.html', salin); });
+
+            /* Beri tahu halaman bila isinya benar-benar berbeda. Perbandingan
+               memakai ETag atau panjang isi — cukup untuk mendeteksi rilis
+               baru tanpa membandingkan seluruh berkas. */
+            if (tersimpan) {
+              var lamaTag = tersimpan.headers.get('etag') || tersimpan.headers.get('content-length');
+              var baruTag = res.headers.get('etag') || res.headers.get('content-length');
+              if (lamaTag && baruTag && lamaTag !== baruTag) {
+                self.clients.matchAll().then(function (cs) {
+                  cs.forEach(function (c) { c.postMessage({ tipe: 'versiBaru' }); });
+                });
+              }
+            }
+          }
+          return res;
+        }).catch(function () { return null; });
+
+        /* Ada salinan → tampilkan seketika. Belum ada → tunggu jaringan. */
+        return tersimpan || dariJaringan.then(function (r) {
+          return r || caches.match('./');
+        });
       })
     );
     return;
