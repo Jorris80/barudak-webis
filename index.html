@@ -2150,10 +2150,29 @@ function apiDemo(action, params){
 }
 
 /* ---------- Loader cadangan pustaka (perbaikan "L is not defined") ---------- */
-function muatSkrip(src){
+/**
+ * Muat skrip luar dengan BATAS WAKTU.
+ *
+ * Tanpa batas waktu, permintaan yang menggantung — sering terjadi saat sinyal
+ * timbul-tenggelam atau mode pesawat baru dimatikan — membuat janji ini tidak
+ * pernah selesai. Akibatnya seluruh proses pembukaan aplikasi ikut menggantung
+ * dan pengguna melihat layar memuat tanpa ujung.
+ */
+function muatSkrip(src, batasMs){
+  batasMs = batasMs || 8000;
   return new Promise(function(res, rej){
+    var selesai = false;
     var s = document.createElement('script');
-    s.src = src; s.onload = res; s.onerror = rej;
+    var jam = setTimeout(function(){
+      if(selesai) return;
+      selesai = true;
+      try{ s.parentNode && s.parentNode.removeChild(s); }catch(e){}
+      rej(new Error('Waktu habis memuat ' + src));
+    }, batasMs);
+
+    s.src = src;
+    s.onload = function(){ if(selesai) return; selesai = true; clearTimeout(jam); res(); };
+    s.onerror = function(){ if(selesai) return; selesai = true; clearTimeout(jam); rej(new Error('Gagal memuat ' + src)); };
     document.head.appendChild(s);
   });
 }
@@ -2177,7 +2196,13 @@ function pastikanPustaka(){
         .catch(function(){ return muatSkrip('https://unpkg.com/chart.js@4.4.3/dist/chart.umd.min.js'); })
     );
   }
-  return Promise.all(janji);
+  /* Kegagalan memuat pustaka TIDAK BOLEH menghentikan aplikasi. Peta dan
+     grafik memang perlu internet; sisanya — pencatatan panen, BKM, borongan —
+     tetap dapat dipakai tanpa keduanya. Karena itu tiap janji ditangkap
+     sendiri, dan keseluruhannya selalu selesai. */
+  return Promise.all(janji.map(function(j){
+    return j.catch(function(){ return null; });
+  }));
 }
 
 /* ---------- Loader pustaka impor SHP/KML (dimuat saat dibutuhkan) ---------- */
@@ -2266,6 +2291,7 @@ function muatData(ulang){
     /* Kegagalan saat menggambar TIDAK boleh dianggap gagal memuat data.
        Sebelumnya galat kecil di salah satu render membuat aliran jatuh ke
        blok catch, memunculkan pesan offline, lalu memantul ke layar login. */
+    hentikanPengawasBuka();
     S = d;
     if(d && d.jendelaDari) JENDELA = { hari: d.jendelaHari, dari: d.jendelaDari };
     try{ batasiDataAkses(); }catch(e1){ console.error('batasiDataAkses:', e1); }
@@ -6893,10 +6919,66 @@ function terapkanPeran(){
   if(mAdmin) mAdmin.style.display = bolehAdmin() ? '' : 'none';
 }
 
+/* ==================== PENGAWAS PEMBUKAAN ====================
+ * Jaring pengaman terakhir. Apa pun yang menggantung — pustaka luar, jaringan
+ * yang timbul-tenggelam, server yang lambat menjawab — pengguna TIDAK BOLEH
+ * terjebak di layar memuat. Setelah ambang waktu, aplikasi dibuka dengan apa
+ * yang ada: data tersimpan, layar PIN, atau layar masuk.
+ */
+var PENGAWAS_BUKA = null;
+var SUDAH_MASUK = false;
+
+function mulaiPengawasBuka(){
+  if(PENGAWAS_BUKA) clearTimeout(PENGAWAS_BUKA);
+  PENGAWAS_BUKA = setTimeout(function(){
+    if(SUDAH_MASUK) return;
+    tampilLoader(false);
+
+    var c = null;
+    try{ c = bacaCache(); }catch(e){}
+
+    /* Ada data tersimpan dan PIN siap → tawarkan membuka dengan PIN. */
+    if(c && !lewatiPinSesiIni() && pinMasihBerlaku()){
+      if(tampilLayarPin('Jaringan tidak menjawab.')) return;
+    }
+
+    /* Ada data tersimpan dan sesi masih ada → langsung buka luring. */
+    var sesiSimpan = null;
+    try{ sesiSimpan = JSON.parse(localStorage.getItem('sg_sesi')||'null'); }catch(e){}
+    if(c && sesiSimpan){
+      SESI = sesiSimpan; OFFLINE = true; SUDAH_MASUK = true;
+      document.getElementById('layarLogin').style.display='none';
+      S = c;
+      try{ batasiDataAkses(); terapkanPengaturan(); terapkanPeran(); isiOpsiBlok(); renderSemua(); }catch(e){}
+      try{ terapkanAksesModul(); terapkanTataLetak(); }catch(e){}
+      perbaruiStatusOffline();
+      toast('Jaringan lambat — dibuka dengan data tersimpan.', true);
+      return;
+    }
+
+    /* Tidak ada apa-apa → tampilkan layar masuk, jangan biarkan menggantung. */
+    document.getElementById('layarLogin').style.display='flex';
+    toast('Jaringan tidak menjawab. Silakan coba masuk kembali.', true);
+  }, 12000);
+}
+
+function hentikanPengawasBuka(){
+  SUDAH_MASUK = true;
+  if(PENGAWAS_BUKA){ clearTimeout(PENGAWAS_BUKA); PENGAWAS_BUKA = null; }
+}
+
 function mulaiApp(){
-  pastikanPustaka().catch(function(){}).then(function(){
-    muatData(false);
-  });
+  mulaiPengawasBuka();
+  /* Data dimuat LANGSUNG, tanpa menunggu pustaka peta dan grafik selesai
+     diunduh. Sebelumnya keduanya diunggu lebih dulu, sehingga saat sinyal
+     buruk pengguna menunggu lama sebelum apa pun tampil — padahal isi
+     aplikasinya sendiri sudah siap. Pustaka menyusul di latar belakang. */
+  muatData(false);
+  pastikanPustaka().then(function(){
+    /* Setelah pustaka siap, gambar ulang bagian yang memerlukannya. */
+    try{ if(typeof Chart !== 'undefined' && halAktif === 'dasbor') renderDasbor(); }catch(e){}
+    try{ if(typeof L !== 'undefined' && halAktif === 'peta') gambarPeta(); }catch(e){}
+  }).catch(function(){});
 }
 
 /* Buka kembali halaman terakhir yang dilihat pengguna. Dipanggil setelah data
@@ -12680,7 +12762,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.9.1';
+var VERSI_APP = '3.9.2';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -18429,19 +18511,23 @@ function bukaDenganPin(){
         el.textContent='Data kebun belum tersimpan di perangkat ini. Buka aplikasi sekali saat ada jaringan, lalu PIN dapat dipakai.'; }
       return;
     }
+    hentikanPengawasBuka();
     SESI = sesiSimpan;
     OFFLINE = true;
     LURING_PIN = true;
     document.getElementById('layarLogin').style.display='none';
     tampilLoader(true,'Membuka data tersimpan…');
-    pastikanPustaka().catch(function(){}).then(function(){
+    /* Saat luring, pustaka dari internet pasti gagal. Menunggunya hanya
+       menunda pembukaan tanpa guna. */
+    (function(){
       S = c;
       try{ batasiDataAkses(); terapkanPengaturan(); terapkanPeran(); isiOpsiBlok(); renderSemua(); }catch(e){}
       try{ terapkanAksesModul(); terapkanTataLetak(); kunciMenuLuring(); }catch(e){}
       perbaruiStatusOffline();
       tampilLoader(false);
       toast('Mode luring — input akan terkirim saat sinyal kembali.', true);
-    });
+    })();
+    pastikanPustaka().catch(function(){});
   }).catch(function(e){ toast(e.message, true); });
 }
 
@@ -19178,6 +19264,7 @@ window.addEventListener('load', function(){
           if(tampilLayarPin('Sesi Anda telah berakhir.')) return;
         }
         SESI=null;
+        hentikanPengawasBuka();
         document.getElementById('layarLogin').style.display='flex';
         var pesanLogin=document.getElementById('loginPesan');
         if(pesanLogin){ pesanLogin.className='galat'; pesanLogin.textContent='Sesi Anda telah berakhir. Silakan masuk kembali.'; }
