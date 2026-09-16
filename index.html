@@ -477,6 +477,7 @@
         <option value="panen">🎨 Warna: Status Panen</option>
         <option value="pemupukan">🎨 Warna: Status Pemupukan</option>
         <option value="perawatan">🎨 Warna: Jenis Perawatan</option>
+        <option value="replanting">🎨 Warna: Prioritas Replanting</option>
       </select>
       <select id="petaLapisan" onchange="gantiLapisan()">
         <option value="osm">Peta Jalan</option>
@@ -756,6 +757,7 @@
       <button onclick="bukaPerbaruiApl()"><span class="ic">🔄</span>Perbarui Aplikasi</button>
       <button onclick="bukaTentang()"><span class="ic">ℹ️</span>Tentang &amp; Ketentuan</button>
       <button class="adminOnly" onclick="formKunciAI()"><span class="ic">🤖</span>Kunci Asisten AI</button>
+      <button onclick="bukaHalaman('replanting')"><span class="ic">🌱</span>Replanting</button>
       <button onclick="bukaHalaman('borongan')"><span class="ic">🤝</span>Borongan</button>
       <button onclick="bukaHalaman('bibitan')"><span class="ic">🌱</span>Pembibitan</button>
       <button onclick="bukaHalaman('rekap')"><span class="ic">📈</span>Rekap Bulanan</button>
@@ -1204,6 +1206,12 @@
     <div id="panelAlur" style="display:none"></div>
   </section>
   <!-- ================= REKAP BULANAN & ASISTEN AI ================= -->
+  <section class="halaman" id="hal-replanting">
+    <h2 class="judul">🌱 Replanting Planning Center</h2>
+    <div class="meta">Kelayakan, skor, prioritas, dan rencana tahunan peremajaan tanaman.</div>
+    <div id="isiReplanting" style="margin-top:12px"></div>
+  </section>
+
   <section class="halaman" id="hal-borongan">
     <h2 class="judul">🤝 Kegiatan Borongan</h2>
     <div class="meta">Kontrak, realisasi kerja, verifikasi, dan pembayaran borongan panen maupun perawatan.</div>
@@ -1311,7 +1319,7 @@
         <button class="btn btn-utama" style="flex:1" id="btnMulaiLacak" onclick="mulaiBagikanLokasi()">▶️ Mulai Bagikan</button>
         <button class="btn btn-bahaya" id="btnStopLacak" style="display:none;flex:1" onclick="hentikanBagikanLokasi()">⏹ Berhenti</button>
       </div>
-      <div id="lcStatus" style="margin-top:10px;font-size:12.5px"></div>
+      <div id="statusLacakGPS" style="margin-top:10px;font-size:12.5px"></div>
     </div>
 
     <!-- Peta live -->
@@ -1592,6 +1600,21 @@ function antreAksi(action, params){
  * jika gagal jaringan/offline & boleh antre → antre + terapkan lokal optimistis. */
 function callApi(action, params){
   if(MODE_DEMO) return apiDemo(action, params);
+
+  /* Catatan yang dibuat saat luring memakai ID sementara berawalan OFF-.
+     Server tidak mengenal ID itu — ia membuat ID sendiri saat antrean
+     terkirim. Mengubah atau menghapus catatan semacam itu sebelum
+     tersinkron pasti ditolak server, dan perubahannya hilang.
+     Lebih baik dicegah sejak awal dengan penjelasan yang jelas. */
+  if(params && typeof params === 'object'){
+    var idCek = String(params.ID || params.id || '');
+    if(idCek.indexOf('OFF-') === 0){
+      return Promise.reject(new Error(
+        'Catatan ini belum terkirim ke server, jadi belum dapat diubah atau dihapus. ' +
+        'Sambungkan jaringan dan tunggu sinkronisasi selesai, lalu coba lagi.'));
+    }
+  }
+
   return new Promise(function(res, rej){
     function offlineFallback(){
       /* Tandai offline hanya bila perangkat memang melaporkan tidak ada
@@ -1743,8 +1766,31 @@ function terapkanLokal(action, p){
 }
 
 /* Sinkronkan antrean ke server saat koneksi kembali. */
+/* Transaksi yang ditolak server dikumpulkan di sini agar dapat ditunjukkan
+   kepada pengguna — bukan dibuang diam-diam. */
+var GAGAL_SINKRON = [];
+
+function tampilGagalSinkron(){
+  if(!GAGAL_SINKRON.length) return;
+  var daftar = GAGAL_SINKRON.slice();
+  bukaLembar('<h3>⚠️ Perubahan Ditolak Server</h3>'+
+    '<div class="meta" style="line-height:1.65">Perubahan berikut tidak dapat disimpan. '+
+    'Datanya <b>tidak hilang dari layar</b>, tetapi belum tercatat di server — '+
+    'silakan periksa lalu masukkan kembali secara manual.</div>'+
+    '<div style="margin-top:12px">'+
+    daftar.map(function(x){
+      return '<div class="item"><div class="kepala"><div><b>'+esc(x.action)+'</b></div></div>'+
+        '<div class="meta" style="margin-top:4px;color:var(--merah)">'+esc(x.alasan)+'</div>'+
+        '<div class="meta" style="font-size:11px;margin-top:4px;word-break:break-all">'+
+        esc(JSON.stringify(x.params).slice(0,180))+'</div></div>';
+    }).join('')+'</div>'+
+    '<button class="btn btn-sekunder btn-blok" style="margin-top:12px" '+
+    'onclick="GAGAL_SINKRON=[];tutupLembar();">Saya sudah mencatatnya</button>');
+}
+
 function sinkronAntre(diam){
   if(MODE_DEMO) return Promise.resolve();
+  GAGAL_SINKRON = [];
   var q = bacaAntre();
   if(!q.length){ if(!diam) toast('Tidak ada perubahan tertunda.'); return Promise.resolve(); }
   var totalAwal = q.length;
@@ -1757,17 +1803,39 @@ function sinkronAntre(diam){
     }
     var item = sisa[0];
     return transportServer(item.action, item.params).then(function(jsonStr){
-      var ok=false; try{ ok = JSON.parse(jsonStr).ok; }catch(e){}
+      /* Jawaban server WAJIB diperiksa. Sebelumnya nilai ok dibaca tetapi
+         tidak dipakai, sehingga transaksi yang DITOLAK server tetap dibuang
+         dari antrean dan aplikasi melaporkan "berhasil tersinkronisasi".
+         Data yang ditolak hilang tanpa jejak. */
+      var r = null;
+      try{ r = JSON.parse(jsonStr); }catch(e){}
+
+      if(r && r.ok){
+        sisa.shift();
+        tulisAntre(sisa);
+        perbaruiStatusOffline();
+        return langkah();
+      }
+
+      /* Ditolak server. Item dipindahkan ke daftar gagal agar tidak menghalangi
+         antrean berikutnya, tetapi TIDAK dibuang diam-diam. */
+      var pesan = (r && r.error) ? String(r.error) : 'Ditolak server tanpa keterangan.';
+      GAGAL_SINKRON.push({ action:item.action, params:item.params, alasan:pesan });
       sisa.shift();
-      tulisAntre(sisa); // simpan sisa antrean agar tak diproses ulang bila terputus
-      perbaruiStatusOffline();
+      tulisAntre(sisa);
       return langkah();
     }).catch(function(){ OFFLINE=true; throw new Error('Koneksi terputus lagi.'); });
   }
   return langkah().then(function(){
     OFFLINE=false; perbaruiStatusOffline();
     tampilLoader(false);
-    toast('⚡ Berhasil tersinkronisasi! ' + totalAwal + ' perubahan tersimpan ke server ✓');
+    var gagal = GAGAL_SINKRON.length;
+    if(gagal){
+      toast(( totalAwal - gagal ) + ' perubahan tersimpan, ' + gagal + ' DITOLAK server.', true);
+      tampilGagalSinkron();
+    } else {
+      toast('⚡ Berhasil tersinkronisasi! ' + totalAwal + ' perubahan tersimpan ke server ✓');
+    }
   }).catch(function(e){
     tampilLoader(false); perbaruiStatusOffline();
     if(!diam) toast('Sebagian aksi belum tersinkron: '+e.message, true);
@@ -1775,6 +1843,14 @@ function sinkronAntre(diam){
 }
 
 /* Perbarui banner status offline + jumlah antrean. */
+/* Tandai catatan yang belum terkirim, supaya pengguna tahu mengapa
+   catatan itu belum dapat diubah. */
+function tandaBelumTerkirim(x){
+  return (x && x._offline) || (x && String(x.ID||'').indexOf('OFF-')===0)
+    ? ' <span class="chip" style="background:#E8960C;color:#fff;font-size:10px">belum terkirim</span>'
+    : '';
+}
+
 function perbaruiStatusOffline(){
   var el = document.getElementById('statusOffline'); if(!el) return;
   var n = jumlahAntre();
@@ -2745,6 +2821,12 @@ function warnaPemupukan(idBlok){
 }
 
 function warnaBlokTema(b){
+  /* Tema prioritas replanting memakai hasil perhitungan yang sudah dimuat
+     di halaman Replanting, sehingga peta dan daftar selalu sejalan. */
+  if(TEMA_PETA === 'replanting'){
+    var r = (RPL.daftar||[]).filter(function(x){ return String(x.IDBlok)===String(b.ID); })[0];
+    return r ? (RPL_WARNA[r.Prioritas] || '#8A958C') : '#C9D6CD';
+  }
   switch(temaPeta){
     case 'tahun':     return warnaTahun(b.TahunTanam);
     case 'panen':     return warnaPanenBJR(b.ID);
@@ -2820,6 +2902,18 @@ function renderLegenda(){
     (mk ? '<div style="width:100%;border-top:1px solid var(--garis);margin:6px 0 2px"></div>'+mk : '');
 }
 function gantiTema(){
+  /* Tema replanting memerlukan hasil perhitungan. Bila halaman Replanting
+     belum pernah dibuka, datanya diambil dulu supaya peta tidak kosong. */
+  var t = (document.getElementById('petaTema')||{}).value;
+  if(t === 'replanting' && !(RPL.daftar||[]).length){
+    tampilLoader(true,'Menghitung prioritas replanting…');
+    callApi('listReplanting', {}).then(function(d){
+      RPL.daftar = d||[];
+      tampilLoader(false);
+      TEMA_PETA = t; gambarPeta();
+    }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+    return;
+  }
   temaPeta = document.getElementById('petaTema').value;
   renderLegenda();
   if(peta) gambarPeta();
@@ -3379,7 +3473,7 @@ function bukaHalaman(nama){
   if(el) el.classList.add('aktif');
   document.querySelectorAll('#navBawah button').forEach(function(b){
     b.classList.toggle('aktif', b.dataset.hal === nama ||
-      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu','workflow','rekap','bibitan','borongan'].indexOf(nama)>=0));
+      (b.dataset.hal==='lainnya' && ['lainnya','spb','pupuk','sensus','bkm','masalah','jadwal','alat','hujan','laporan','log','pengaturan','pengguna','lacak','kalender','sensusbuah','audit','monmasalah','traksi','gudang','budget','landclearing','ktu','workflow','rekap','bibitan','borongan','replanting'].indexOf(nama)>=0));
   });
   // FAB per halaman (hanya untuk yang boleh edit)
   var fabPeta = { blok:'＋', panen:'＋', spb:'＋', pupuk:'＋', sensus:'＋', bkm:'＋', masalah:'＋', jadwal:'＋', alat:'＋', hujan:'＋', sensusbuah:'＋', audit:'＋', traksi:'＋', gudang:'＋', budget:'＋', landclearing:'＋', ktu:'＋', workflow:'＋' };
@@ -3414,6 +3508,7 @@ function bukaHalaman(nama){
   try{ localStorage.setItem('sg_halaman', nama); }catch(e){}
 
   setTimeout(function(){ try{ pasangTombolGrafik(); }catch(e){} }, 350);
+  if(nama === 'replanting') renderReplanting();
   if(nama === 'borongan') renderBorongan();
   if(nama === 'bibitan') renderBibitan();
   if(nama === 'workflow') muatWorkflow(false);
@@ -6938,7 +7033,7 @@ function mulaiPengawasBuka(){
     try{ c = bacaCache(); }catch(e){}
 
     /* Ada data tersimpan dan PIN siap → tawarkan membuka dengan PIN. */
-    if(c && !lewatiPinSesiIni() && pinMasihBerlaku()){
+    if(c && pinMasihBerlaku() && !lewatiPinSesiIni()){
       if(tampilLayarPin('Jaringan tidak menjawab.')) return;
     }
 
@@ -7397,7 +7492,7 @@ function hentikanBagikanLokasi(){
   segarkanLive(false);
 }
 function statusLacak(teks, galat){
-  var el = document.getElementById('lcStatus'); if(!el) return;
+  var el = document.getElementById('statusLacakGPS'); if(!el) return;
   el.innerHTML = '<span style="color:'+(galat?'var(--merah)':'var(--hijau-700)')+';font-weight:600">'+esc(teks)+'</span>';
 }
 
@@ -12762,7 +12857,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '3.9.2';
+var VERSI_APP = '4.0.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -15562,7 +15657,7 @@ var DAFTAR_MODUL = [
   { grup:'Inti', item:[
     ['dasbor','📊 Dasbor'], ['peta','🗺️ Peta'], ['blok','🌴 Blok'], ['panen','🧺 Panen'] ]},
   { grup:'Operasional', item:[
-    ['masalah','⚠️ Masalah Lapangan'], ['jadwal','🗓️ Jadwal'], ['bibitan','🌱 Pembibitan'], ['borongan','🤝 Borongan'], ['alat','🚜 Alat Berat'],
+    ['masalah','⚠️ Masalah Lapangan'], ['jadwal','🗓️ Jadwal'], ['bibitan','🌱 Pembibitan'], ['borongan','🤝 Borongan'], ['replanting','🌱 Replanting'], ['alat','🚜 Alat Berat'],
     ['hujan','🌧️ Curah Hujan'], ['spb','🚛 SPB'], ['pupuk','🧪 Pemupukan'],
     ['sensus','🐛 Sensus Hama'], ['sensusbuah','🍇 Sensus Buah'], ['bkm','📋 BKM & Premi'] ]},
   { grup:'Aset & Biaya', item:[
@@ -18337,6 +18432,23 @@ function pinMasihBerlaku(){
   return umur <= PIN_MAKS_HARI && (p.salah||0) < PIN_MAKS_SALAH;
 }
 
+/**
+ * Apakah PIN layak ditawarkan SEKARANG?
+ *
+ * PIN adalah jalan masuk darurat saat tidak ada jaringan. Bila perangkat
+ * melaporkan ada jaringan, pengguna harus diarahkan masuk dengan kata sandi
+ * supaya sesinya utuh dan data tertunda dapat terkirim.
+ *
+ * Tanpa pemeriksaan ini, PIN terus muncul meski sinyal sudah kembali, dan
+ * aplikasi terjebak di mode luring tanpa pernah bisa daring lagi.
+ */
+function pinLayakDitawarkan(){
+  if(!pinMasihBerlaku()) return false;
+  if(lewatiPinSesiIni()) return false;
+  var perangkatOnline = (typeof navigator.onLine === 'boolean') ? navigator.onLine : true;
+  return !perangkatOnline;
+}
+
 /** Dipanggil setiap kali login daring berhasil — memperbarui masa berlaku. */
 function segarkanMasaPin(){
   var p = bacaPin();
@@ -18455,6 +18567,14 @@ function tampilLayarPin(alasan){
    terasa tidak berfungsi. Yang benar: kembalikan isi layar login apa adanya
    dan tandai agar PIN tidak ditawarkan lagi pada sesi ini. */
 var LOGIN_ASLI = null;
+
+/* Keluar dari mode luring-PIN menuju layar masuk yang sesungguhnya. */
+function keluarDariLuringPin(){
+  var b = document.getElementById('bannerLuringPin'); if(b) b.remove();
+  try{ sessionStorage.setItem('sg_lewatiPin','1'); }catch(e){}
+  LURING_PIN = false;
+  location.reload();
+}
 
 function kembaliKeLogin(){
   try{ sessionStorage.setItem('sg_lewatiPin','1'); }catch(e){}
@@ -19218,6 +19338,401 @@ function eksporBorongan(){
   }), 'borongan_'+hariISO(new Date()), 'Borongan');
 }
 
+
+/* ==================== REPLANTING PLANNING CENTER ==================== */
+var RPL = { ringkas:null, daftar:[], rencana:null, tab:'ringkas' };
+var RPL_WARNA = { P1:'#C0392B', P2:'#E8960C', P3:'#1565C0', P4:'#8A958C' };
+var RPL_KRITERIA = [
+  ['umur','Umur tanaman'], ['yield','Produktivitas'], ['trend','Tren produksi'],
+  ['stand','Populasi / SPH'], ['akses','Aksesibilitas'], ['slope','Topografi'],
+  ['tanah','Kondisi tanah'], ['infra','Infrastruktur']
+];
+
+function renderReplanting(){
+  var el=document.getElementById('isiReplanting');
+  if(el) el.innerHTML='<div class="kosong">Menghitung kelayakan replanting…</div>';
+  Promise.all([
+    callApi('ringkasReplanting', {}),
+    callApi('listReplanting', {})
+  ]).then(function(h){
+    RPL.ringkas=h[0]; RPL.daftar=h[1]||[];
+    gambarReplanting();
+  }).catch(function(e){
+    if(el) el.innerHTML='<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+  });
+}
+
+function gambarReplanting(){
+  var r=RPL.ringkas; if(!r) return;
+  var t=r.total;
+  var el=document.getElementById('isiReplanting'); if(!el) return;
+
+  el.innerHTML =
+    '<div class="kpi-grid" style="margin-bottom:12px">'+
+      kpiKotak('Total Areal', angka(t.totalLuas,0)+' ha', '#1565C0')+
+      kpiKotak('Kandidat', angka(t.kandidatLuas,0)+' ha', '#E8960C')+
+      kpiKotak('Prioritas 1', angka(t.luasP1,0)+' ha', RPL_WARNA.P1)+
+      kpiKotak('Prioritas 2', angka(t.luasP2,0)+' ha', RPL_WARNA.P2)+
+    '</div>'+
+
+    '<div class="aksi-baris" style="margin-bottom:12px;flex-wrap:wrap">'+
+      '<button class="btn btn-utama btn-kecil" onclick="formRencanaReplant()">📅 Rencana Tahunan</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="formBobotReplant()">⚖️ Bobot &amp; Ambang</button>'+
+      '<button class="btn btn-sekunder btn-kecil" onclick="eksporReplanting()">⬇ Excel</button>'+
+    '</div>'+
+
+    ((t.belumSurvei || t.perluTinjau)
+      ? '<div style="padding:10px 12px;border-radius:8px;background:#FFF4E5;border-left:3px solid #E8960C;'+
+        'font-size:12.5px;line-height:1.65;margin-bottom:12px">'+
+        '<b>⚠️ Perlu dilengkapi</b><br>'+
+        (t.belumSurvei ? angka(t.belumSurvei,0)+' blok belum memiliki penilaian lapangan '+
+          '(aksesibilitas, topografi, tanah, infrastruktur). Skornya dihitung dari kriteria '+
+          'yang tersedia saja.<br>' : '')+
+        (t.perluTinjau ? angka(t.perluTinjau,0)+' blok berstatus <b>TINJAU</b> dan memerlukan '+
+          'verifikasi lapangan sebelum diputuskan.' : '')+
+        '</div>' : '')+
+
+    '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Sebaran Luas per Umur</b>'+
+    '<div style="margin-top:8px">'+
+      Object.keys(r.perUmur).map(function(k){
+        var pct = t.totalLuas>0 ? Math.round(r.perUmur[k]/t.totalLuas*100) : 0;
+        var w = k==='>25' ? RPL_WARNA.P1 : (k==='21-25' ? RPL_WARNA.P2 : 'var(--hijau-500)');
+        return '<div style="padding:4px 0">'+
+          '<div style="display:flex;justify-content:space-between;font-size:12.5px">'+
+            '<span>'+esc(k)+' tahun</span><b>'+angka(r.perUmur[k],0)+' ha</b></div>'+
+          '<div style="height:5px;border-radius:3px;background:var(--garis);margin-top:3px">'+
+            '<div style="height:100%;width:'+pct+'%;background:'+w+';border-radius:3px"></div></div></div>';
+      }).join('')+
+    '</div></div>'+
+
+    '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Prioritas</b>'+
+    '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
+      ['P1','P2','P3','P4'].map(function(p){
+        return '<div style="flex:1;min-width:64px;text-align:center;padding:8px 4px;border-radius:8px;'+
+          'background:'+RPL_WARNA[p]+'15;border:1px solid '+RPL_WARNA[p]+'40">'+
+          '<div style="font-size:17px;font-weight:800;color:'+RPL_WARNA[p]+'">'+t[p]+'</div>'+
+          '<div style="font-size:10.5px;color:var(--abu)">'+p+'</div></div>';
+      }).join('')+
+    '</div></div>'+
+
+    '<h4 style="font-size:13px;margin:14px 0 6px">Peringkat Blok ('+RPL.daftar.length+')</h4>'+
+    '<div class="aksi-baris" style="margin-bottom:8px;flex-wrap:wrap">'+
+      ['','P1','P2','P3','P4'].map(function(p){
+        return '<button class="btn btn-sekunder btn-kecil" onclick="saringPrioritas(\''+p+'\')">'+
+          (p||'Semua')+'</button>'; }).join('')+
+    '</div>'+
+    '<div id="rplDaftar">'+daftarReplanting(RPL.daftar)+'</div>';
+}
+
+function saringPrioritas(p){
+  var d = p ? RPL.daftar.filter(function(x){ return x.Prioritas===p; }) : RPL.daftar;
+  var el=document.getElementById('rplDaftar');
+  if(el) el.innerHTML=daftarReplanting(d);
+}
+
+function daftarReplanting(d){
+  if(!d.length) return '<div class="kosong">Tidak ada blok pada saringan ini.</div>';
+  return d.slice(0,60).map(function(x){
+    var w = RPL_WARNA[x.Prioritas];
+    return '<div class="item">'+
+      '<div class="kepala"><div><b>'+esc(x.Nama)+'</b>'+
+        '<div class="meta">'+esc(x.Estate||'')+(x.Divisi?' · '+esc(x.Divisi):'')+
+        ' · '+angka(x.LuasHa,1)+' ha · tanam '+esc(x.TahunTanam)+'</div></div>'+
+        '<div class="kanan"><span class="chip" style="background:'+w+';color:#fff">'+esc(x.Prioritas)+'</span>'+
+        '<div style="font-size:16px;font-weight:800;color:'+w+';margin-top:2px">'+x.SkorAkhir+'</div></div></div>'+
+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:var(--abu)">'+
+        '<span>Umur <b style="color:var(--tinta)">'+x.Umur+' th</b></span>'+
+        '<span>Hasil <b style="color:var(--tinta)">'+angka(x.ProduktivitasAvg,1)+'</b> t/ha</span>'+
+        (x.TrendPersen!==null?'<span>Tren <b style="color:'+(x.TrendPersen<0?'var(--merah)':'var(--hijau-700)')+'">'+
+          (x.TrendPersen>0?'+':'')+angka(x.TrendPersen,1)+'%</b></span>':'')+
+        '<span>SPH <b style="color:var(--tinta)">'+angka(x.PersenSPH,0)+'%</b></span>'+
+      '</div>'+
+
+      (x.Constraint
+        ? '<div style="margin-top:5px;padding:5px 8px;border-radius:6px;background:#FBEAE7;'+
+          'font-size:11.5px;color:var(--merah)">⛔ '+esc(x.Constraint)+'</div>' : '')+
+      (!x.kriteriaLengkap
+        ? '<div class="meta" style="margin-top:4px;font-size:11px;color:#E8960C">'+
+          '⚠️ Penilaian lapangan belum lengkap</div>' : '')+
+
+      '<div class="aksi-baris">'+
+        '<button class="btn btn-utama btn-kecil" onclick="detailReplant(\''+esc(x.IDBlok)+'\')">🔍 Detail</button>'+
+        (bolehEdit()?'<button class="btn btn-sekunder btn-kecil" onclick="formSurveiReplant(\''+esc(x.IDBlok)+'\')">📋 Survei</button>':'')+
+      '</div></div>';
+  }).join('');
+}
+
+function detailReplant(id){
+  var x = RPL.daftar.filter(function(k){ return k.IDBlok===id; })[0]; if(!x) return;
+  var par = RPL.ringkas.param;
+  function baris(l,v){ return '<div style="display:flex;justify-content:space-between;padding:5px 0;'+
+    'border-bottom:1px solid var(--garis)"><span style="color:var(--abu);font-size:12.5px">'+esc(l)+
+    '</span><b style="font-size:13px">'+v+'</b></div>'; }
+
+  bukaLembar('<h3>🌴 '+esc(x.Nama)+'</h3>'+
+    '<div class="meta">'+esc(x.Estate||'')+(x.Divisi?' · '+esc(x.Divisi):'')+'</div>'+
+
+    '<div style="display:flex;gap:10px;margin:12px 0;align-items:center">'+
+      '<div style="width:70px;height:70px;border-radius:50%;display:flex;align-items:center;'+
+        'justify-content:center;background:'+RPL_WARNA[x.Prioritas]+'18;'+
+        'border:3px solid '+RPL_WARNA[x.Prioritas]+'">'+
+        '<div style="text-align:center"><div style="font-size:20px;font-weight:800;color:'+
+        RPL_WARNA[x.Prioritas]+'">'+x.SkorAkhir+'</div>'+
+        '<div style="font-size:9px;color:var(--abu)">skor</div></div></div>'+
+      '<div style="flex:1"><b style="font-size:15px;color:'+RPL_WARNA[x.Prioritas]+'">'+
+        esc(x.Prioritas)+' — '+(x.Prioritas==='P1'?'Kritis':x.Prioritas==='P2'?'Tinggi':
+        x.Prioritas==='P3'?'Sedang':'Rendah')+'</b>'+
+        '<div class="meta">Kelayakan: <b>'+esc(x.Eligible)+'</b></div>'+
+        (x.SkorLapangan?'<div class="meta">GIS '+x.SkorGIS+' · lapangan '+x.SkorLapangan+'</div>':
+          '<div class="meta">Dari analisis data, belum ada survei</div>')+
+      '</div></div>'+
+
+    '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Rincian Kriteria</b>'+
+    '<div style="margin-top:8px">'+
+      RPL_KRITERIA.map(function(kr){
+        var n = x.nilai[kr[0]] || 0;
+        return '<div style="padding:4px 0">'+
+          '<div style="display:flex;justify-content:space-between;font-size:12.5px">'+
+            '<span>'+esc(kr[1])+' <span class="meta">('+par.bobot[kr[0]]+'%)</span></span>'+
+            '<b>'+(n?n+'/5':'<span style="color:#E8960C">belum dinilai</span>')+'</b></div>'+
+          '<div style="height:4px;border-radius:2px;background:var(--garis);margin-top:3px">'+
+            '<div style="height:100%;width:'+(n/5*100)+'%;background:'+
+            (n>=4?RPL_WARNA.P1:n>=3?RPL_WARNA.P2:'var(--hijau-500)')+';border-radius:2px"></div></div></div>';
+      }).join('')+
+    '</div></div>'+
+
+    '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Data Blok</b><div style="margin-top:6px">'+
+      baris('Luas', angka(x.LuasHa,2)+' ha')+
+      baris('Tahun tanam', x.TahunTanam)+
+      baris('Umur', x.Umur+' tahun')+
+      baris('Produktivitas rata-rata', angka(x.ProduktivitasAvg,2)+' ton/ha')+
+      baris('Tahun data panen', x.TahunData+' tahun')+
+      (x.TrendPersen!==null?baris('Tren produksi', (x.TrendPersen>0?'+':'')+angka(x.TrendPersen,1)+'%'):'')+
+      baris('SPH aktual', angka(x.SPHAktual,0)+' ('+angka(x.PersenSPH,1)+'% dari standar)')+
+      (x.SeranganMaxPct?baris('Serangan hama tertinggi', angka(x.SeranganMaxPct,1)+'%'):'')+
+      (x.TahunReplant?baris('Rencana replanting', x.TahunReplant):'')+
+    '</div></div>'+
+
+    (x.CatatanLapangan
+      ? '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">Catatan Lapangan</b>'+
+        '<div class="meta" style="margin-top:4px;line-height:1.6">'+esc(x.CatatanLapangan)+'</div>'+
+        '<div class="meta" style="font-size:11px;margin-top:4px">'+esc(x.Surveyor||'')+
+        (x.TanggalSurvei?' · '+esc(fmtTgl(x.TanggalSurvei)):'')+'</div></div>' : '')+
+
+    (bolehEdit()?'<button class="btn btn-utama btn-blok" onclick="tutupLembar();formSurveiReplant(\''+
+      esc(id)+'\')">📋 Isi Survei Lapangan</button>':''));
+}
+
+function formSurveiReplant(id){
+  var x = RPL.daftar.filter(function(k){ return k.IDBlok===id; })[0]; if(!x) return;
+  function pilih(kode, label, ket){
+    var n = x.nilai[kode] || 0;
+    return '<label>'+esc(label)+'</label>'+
+      '<select id="sv'+kode+'">'+
+        '<option value=""'+(n?'':' selected')+'>— belum dinilai —</option>'+
+        [1,2,3,4,5].map(function(v){
+          return '<option value="'+v+'"'+(n===v?' selected':'')+'>'+v+' — '+ket[v-1]+'</option>';
+        }).join('')+
+      '</select>';
+  }
+  bukaLembar('<h3>📋 Survei Lapangan</h3>'+
+    '<div class="meta"><b>'+esc(x.Nama)+'</b> · '+angka(x.LuasHa,1)+' ha · umur '+x.Umur+' tahun</div>'+
+    '<div style="margin-top:8px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);'+
+      'font-size:12.5px;line-height:1.65">Empat kriteria berikut tidak dapat dihitung dari data '+
+      'aplikasi dan harus dinilai langsung di lapangan. Nilai <b>5</b> berarti paling mendesak '+
+      'untuk direplanting.</div>'+
+
+    pilih('akses','Aksesibilitas',
+      ['Sangat mudah dijangkau','Mudah','Sedang','Sulit','Sangat sulit'])+
+    pilih('slope','Topografi',
+      ['Datar (0–8%)','Landai (8–15%)','Bergelombang (15–25%)','Curam (>25%)','Sangat curam'])+
+    pilih('tanah','Kondisi Tanah',
+      ['Sangat sesuai','Sesuai','Sedang','Marginal','Terbatas'])+
+    pilih('infra','Infrastruktur',
+      ['Lengkap','Baik','Cukup','Kurang','Tidak ada'])+
+
+    '<label style="margin-top:12px">Skor Penilaian Lapangan (0–100)</label>'+
+    '<input type="number" id="svSkor" value="'+esc(x.SkorLapangan||'')+'" min="0" max="100" '+
+      'placeholder="kosongkan bila belum menilai">'+
+    '<div class="meta" style="margin-top:4px">Bila diisi, skor akhir adalah rata-rata skor analisis '+
+      '('+x.SkorGIS+') dan skor ini.</div>'+
+
+    '<label style="margin-top:10px">Constraint / Larangan</label>'+
+    '<input id="svConstraint" value="'+esc(x.Constraint||'')+'" '+
+      'placeholder="cth: sempadan sungai, HCV, kawasan lindung">'+
+    '<div class="meta" style="margin-top:4px">Bila diisi, blok otomatis digugurkan dari kandidat.</div>'+
+
+    '<label style="margin-top:10px">Rencana Tahun Replanting</label>'+
+    '<input type="number" id="svTahun" value="'+esc(x.TahunReplant||'')+'" placeholder="cth: 2028">'+
+    '<label>Catatan Lapangan</label><textarea id="svCatatan" rows="3">'+esc(x.CatatanLapangan||'')+'</textarea>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="simpanSurveiReplant(\''+esc(id)+'\')">💾 Simpan Survei</button>');
+}
+
+function simpanSurveiReplant(id){
+  tampilLoader(true,'Menyimpan…');
+  callApi('saveSurveiReplanting', {
+    IDBlok:id, SkorAkses:nilaiEl('svakses'), SkorSlope:nilaiEl('svslope'),
+    SkorTanah:nilaiEl('svtanah'), SkorInfra:nilaiEl('svinfra'),
+    SkorLapangan:nilaiEl('svSkor'), Constraint:nilaiEl('svConstraint'),
+    TahunReplant:nilaiEl('svTahun'), CatatanLapangan:nilaiEl('svCatatan')
+  }).then(function(){ tampilLoader(false); tutupLembar(); toast('Survei tersimpan ✓'); renderReplanting(); })
+   .catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+
+/* ---------- rencana tahunan / what-if ---------- */
+function formRencanaReplant(){
+  var thn = new Date().getFullYear()+1;
+  bukaLembar('<h3>📅 Rencana Replanting Tahunan</h3>'+
+    '<div class="meta" style="line-height:1.65">Tetapkan kemampuan replanting per tahun. '+
+      'Sistem menyusun sendiri blok mana yang masuk tahun mana, diurutkan menurut skor '+
+      'prioritasnya.</div>'+
+    '<div class="grid2" style="margin-top:10px">'+
+      '<div><label>Target Luas per Tahun (ha) *</label>'+
+        '<input type="number" id="rcKapasitas" value="500" oninput="rcHitungCepat()"></div>'+
+      '<div><label>Tahun Mulai</label><input type="number" id="rcMulai" value="'+thn+'"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>Jumlah Tahun</label><input type="number" id="rcJumlah" value="5" min="1" max="15"></div>'+
+      '<div><label>SPH Standar</label><input type="number" id="rcSPH" value="136"></div>'+
+    '</div>'+
+    '<label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;margin-top:8px">'+
+      '<input type="checkbox" id="rcKelompok" checked style="width:auto;margin:0"> '+
+      'Kelompokkan blok yang berdekatan</label>'+
+    '<div class="meta" style="margin-top:4px;line-height:1.6">Blok satu divisi cenderung dijadwalkan '+
+      'bersamaan. Mobilisasi alat berat dan pembangunan jalan jauh lebih hemat bila pekerjaannya '+
+      'berkumpul di satu area.</div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="susunRencanaReplant()">▶ Susun Rencana</button>'+
+    '<div id="rcHasil" style="margin-top:14px"></div>');
+}
+function rcHitungCepat(){}
+
+function susunRencanaReplant(){
+  var kap = Number(nilaiEl('rcKapasitas'))||0;
+  if(!(kap>0)) return toast('Target luas per tahun wajib diisi.', true);
+  var el=document.getElementById('rcHasil');
+  el.innerHTML='<div class="kosong">Menyusun…</div>';
+  callApi('rencanaReplanting', {
+    kapasitasHa:kap, tahunMulai:nilaiEl('rcMulai'), jumlahTahun:nilaiEl('rcJumlah'),
+    sphStandar:nilaiEl('rcSPH'),
+    kelompokkan:(document.getElementById('rcKelompok')||{}).checked
+  }).then(function(r){
+    RPL.rencana = r;
+    el.innerHTML =
+      '<div class="kpi-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:10px">'+
+        kpiKotak('Terjadwal', angka(r.totalLuasHa,0)+' ha', 'var(--hijau-700)')+
+        kpiKotak('Belum Terjadwal', angka(r.luasBelumTerjadwal,0)+' ha',
+          r.belumTerjadwal?'#E8960C':'var(--hijau-700)')+
+      '</div>'+
+      (r.belumTerjadwal
+        ? '<div style="padding:9px 11px;border-radius:8px;background:#FFF4E5;font-size:12.5px;'+
+          'line-height:1.6;margin-bottom:10px">⚠️ '+r.belumTerjadwal+' blok belum tertampung dalam '+
+          nilaiEl('rcJumlah')+' tahun. Naikkan target tahunan atau perpanjang jangka waktunya.</div>'
+        : '')+
+      r.tahun.map(function(t){
+        return '<div class="item">'+
+          '<div class="kepala"><div><b style="font-size:15px">'+t.tahun+'</b>'+
+            '<div class="meta">'+t.jumlahBlok+' blok · '+(t.unit.join(', ')||'-')+'</div></div>'+
+            '<div class="kanan"><b>'+angka(t.luasHa,0)+' ha</b>'+
+            '<div class="meta" style="font-size:10.5px">'+t.pemakaianPersen+'% kapasitas</div></div></div>'+
+          '<div style="height:5px;border-radius:3px;background:var(--garis);margin-top:5px">'+
+            '<div style="height:100%;width:'+Math.min(100,t.pemakaianPersen)+'%;'+
+            'background:var(--hijau-500);border-radius:3px"></div></div>'+
+          '<div class="meta" style="margin-top:6px;font-size:11.5px">'+
+            'Kebutuhan bibit <b>'+angka(t.kebutuhanBibit,0)+'</b> · '+
+            Object.keys(t.prioritas).map(function(p){ return p+': '+t.prioritas[p]; }).join(' · ')+'</div>'+
+          '<div class="meta" style="margin-top:4px;font-size:11px">'+
+            t.blok.map(function(b){ return esc(b.Nama)+' ('+angka(b.LuasHa,0)+'ha)'; }).join(' · ')+'</div>'+
+          '</div>';
+      }).join('')+
+      '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);'+
+        'font-size:12.5px;line-height:1.65">'+
+        '<b>Perkiraan dampak produksi</b><br>Areal yang direplanting tidak berproduksi selama masa '+
+        'belum menghasilkan. Perkiraan kehilangan <b>'+angka(r.perkiraanKehilanganTonPerTahun,0)+
+        ' ton</b> per tahun pada puncaknya, memakai asumsi 14 ton/ha.</div>'+
+      '<button class="btn btn-sekunder btn-blok" style="margin-top:10px" onclick="eksporRencanaReplant()">⬇ Ekspor Rencana</button>';
+  }).catch(function(e){ el.innerHTML='<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>'; });
+}
+
+function eksporRencanaReplant(){
+  if(!RPL.rencana) return;
+  var baris=[];
+  RPL.rencana.tahun.forEach(function(t){
+    t.blok.forEach(function(b){
+      baris.push({ 'Tahun':t.tahun, 'Blok':b.Nama, 'Estate':b.Estate, 'Divisi':b.Divisi,
+        'Luas (ha)':b.LuasHa, 'Umur':b.Umur, 'Skor':b.SkorAkhir, 'Prioritas':b.Prioritas });
+    });
+  });
+  if(!baris.length) return toast('Belum ada rencana untuk diekspor.', true);
+  unduhExcel(baris, 'rencana_replanting_'+hariISO(new Date()), 'Rencana');
+}
+
+/* ---------- bobot & ambang ---------- */
+function formBobotReplant(){
+  var par = RPL.ringkas.param;
+  bukaLembar('<h3>⚖️ Bobot &amp; Ambang Prioritas</h3>'+
+    '<div class="meta" style="line-height:1.65">Bobot menentukan seberapa besar pengaruh tiap '+
+      'kriteria terhadap skor akhir. Jumlahnya harus tepat <b>100%</b>.</div>'+
+    '<div style="margin-top:12px">'+
+      RPL_KRITERIA.map(function(kr){
+        return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0">'+
+          '<span style="flex:1;font-size:13px">'+esc(kr[1])+'</span>'+
+          '<input type="number" id="bb'+kr[0]+'" value="'+par.bobot[kr[0]]+'" min="0" max="100" '+
+          'oninput="hitungTotalBobot()" style="width:74px;margin:0;text-align:right">'+
+          '<span style="font-size:13px;color:var(--abu)">%</span></div>';
+      }).join('')+
+    '</div>'+
+    '<div id="totalBobot" style="text-align:right;font-size:13px;font-weight:700;margin-top:6px"></div>'+
+
+    '<h4 style="font-size:13px;margin:16px 0 6px">Ambang Prioritas</h4>'+
+    '<div class="grid2">'+
+      '<div><label>P1 Kritis ≥</label><input type="number" id="amP1" value="'+par.ambang.p1+'"></div>'+
+      '<div><label>P2 Tinggi ≥</label><input type="number" id="amP2" value="'+par.ambang.p2+'"></div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div><label>P3 Sedang ≥</label><input type="number" id="amP3" value="'+par.ambang.p3+'"></div>'+
+      '<div><label>Umur Minimum (th)</label><input type="number" id="amUmur" value="'+par.ambang.umurMin+'"></div>'+
+    '</div>'+
+    '<label>Batas Produktivitas Rendah (ton/ha)</label>'+
+    '<input type="number" id="amYield" value="'+par.ambang.yieldRendah+'" step="0.5">'+
+    '<div class="meta" style="margin-top:4px">Blok dengan hasil di bawah angka ini dinilai '+
+      'berproduktivitas rendah.</div>'+
+    '<button class="btn btn-utama btn-blok" style="margin-top:14px" onclick="simpanBobotReplant()">💾 Simpan</button>');
+  hitungTotalBobot();
+}
+
+function hitungTotalBobot(){
+  var t=0;
+  RPL_KRITERIA.forEach(function(kr){ t += Number(nilaiEl('bb'+kr[0]))||0; });
+  var el=document.getElementById('totalBobot'); if(!el) return;
+  el.innerHTML = 'Total: <span style="color:'+(Math.abs(t-100)<0.5?'var(--hijau-700)':'var(--merah)')+'">'+
+    t+'%</span>'+(Math.abs(t-100)<0.5?' ✓':' — harus 100%');
+}
+
+function simpanBobotReplant(){
+  var bobot={};
+  RPL_KRITERIA.forEach(function(kr){ bobot[kr[0]] = Number(nilaiEl('bb'+kr[0]))||0; });
+  callApi('simpanParamReplanting', { bobot:bobot, ambang:{
+    p1:nilaiEl('amP1'), p2:nilaiEl('amP2'), p3:nilaiEl('amP3'),
+    umurMin:nilaiEl('amUmur'), yieldRendah:nilaiEl('amYield')
+  }}).then(function(){ tutupLembar(); toast('Pengaturan tersimpan ✓'); renderReplanting(); })
+   .catch(function(e){ toast(e.message, true); });
+}
+
+function eksporReplanting(){
+  if(!RPL.daftar.length) return toast('Belum ada data.', true);
+  unduhExcel(RPL.daftar.map(function(x){
+    return { 'Blok':x.Nama, 'Estate':x.Estate, 'Divisi':x.Divisi, 'Luas (ha)':x.LuasHa,
+      'Tahun Tanam':x.TahunTanam, 'Umur':x.Umur,
+      'Produktivitas (t/ha)':x.ProduktivitasAvg, 'Tren (%)':x.TrendPersen,
+      'SPH':x.SPHAktual, '% SPH':x.PersenSPH,
+      'Skor GIS':x.SkorGIS, 'Skor Lapangan':x.SkorLapangan, 'Skor Akhir':x.SkorAkhir,
+      'Kelayakan':x.Eligible, 'Prioritas':x.Prioritas, 'Constraint':x.Constraint,
+      'Tahun Replant':x.TahunReplant, 'Surveyor':x.Surveyor };
+  }), 'replanting_'+hariISO(new Date()), 'Replanting');
+}
+
 /* ==================== MULAI ==================== */
 window.addEventListener('load', function(){
   initThemeOnLoad();
@@ -19239,7 +19754,7 @@ window.addEventListener('load', function(){
      cabang ini, pengguna langsung dibawa ke layar login, dan PIN luring yang
      sudah disiapkan tidak pernah ditawarkan. Inilah yang membuat PIN terasa
      tidak berfungsi. */
-  if(!TOKEN && !lewatiPinSesiIni() && pinMasihBerlaku() && bacaCache()){
+  if(!TOKEN && pinLayakDitawarkan() && bacaCache()){
     tampilLoader(false);
     if(tampilLayarPin('Sesi sebelumnya sudah berakhir.')) return;
   }
@@ -19259,7 +19774,7 @@ window.addEventListener('load', function(){
         /* Bila PIN luring sudah disiapkan dan datanya masih ada di perangkat,
            tawarkan membuka dengan PIN. Tanpa ini, pengguna di kebun tanpa
            sinyal menemui layar login yang tidak mungkin dilewati. */
-        if(!lewatiPinSesiIni() && pinMasihBerlaku() && bacaCache()){
+        if(pinLayakDitawarkan() && bacaCache()){
           SESI=null;
           if(tampilLayarPin('Sesi Anda telah berakhir.')) return;
         }
@@ -19279,7 +19794,7 @@ window.addEventListener('load', function(){
           S = c; batasiDataAkses(); terapkanPengaturan(); terapkanPeran(); isiOpsiBlok(); renderSemua(); perbaruiStatusOffline();
           toast('Offline — masuk dengan data tersimpan. Akan sinkron saat online.', true);
         });
-      } else if(!lewatiPinSesiIni() && pinMasihBerlaku() && bacaCache()){
+      } else if(pinLayakDitawarkan() && bacaCache()){
         tampilLoader(false);
         tampilLayarPin('Tidak ada jaringan.');
       } else {
@@ -19294,6 +19809,14 @@ window.addEventListener('load', function(){
      disajikan dari simpanan agar cepat terbuka, pembaruan perlu diberitahukan
      supaya pengguna tidak terus memakai versi lama tanpa sadar. */
   if('serviceWorker' in navigator){
+    /* Paksa pemeriksaan versi service worker tiap kali aplikasi dibuka.
+       Tanpa ini peramban hanya memeriksanya sesekali, sehingga perangkat
+       bisa terus memakai versi lama berhari-hari meski berkas baru sudah
+       diunggah — persis keluhan "sudah diperbarui tapi tidak ada perubahan". */
+    navigator.serviceWorker.ready.then(function(reg){
+      try{ reg.update(); }catch(e){}
+    }).catch(function(){});
+
     navigator.serviceWorker.addEventListener('message', function(ev){
       if(!ev.data || ev.data.tipe !== 'versiBaru') return;
       if(document.getElementById('bannerVersiBaru')) return;
@@ -19316,6 +19839,21 @@ window.addEventListener('load', function(){
   window.addEventListener('online', function(){
     OFFLINE = false;
     perbaruiStatusOffline();
+    /* Sesi hasil PIN tidak memiliki token server, sehingga tidak dapat
+       menyimpan apa pun ke server. Begitu sinyal kembali, ajak pengguna masuk
+       dengan kata sandi — tanpa ini aplikasi terus berada di mode luring. */
+    if(typeof LURING_PIN !== 'undefined' && LURING_PIN && !document.getElementById('bannerLuringPin')){
+      var bar = document.createElement('div');
+      bar.id = 'bannerLuringPin';
+      bar.style.cssText = 'position:fixed;left:0;right:0;bottom:64px;z-index:9000;margin:0 12px;'+
+        'padding:10px 12px;border-radius:10px;background:#E8960C;color:#fff;font-size:12.5px;'+
+        'display:flex;align-items:center;gap:10px;box-shadow:0 4px 14px rgba(0,0,0,.28)';
+      bar.innerHTML = '<span style="flex:1">Jaringan kembali. Masuk dengan kata sandi agar data '+
+        'tertunda terkirim.</span>'+
+        '<button onclick="keluarDariLuringPin()" style="border:none;border-radius:7px;padding:6px 12px;'+
+        'font-weight:700;font-size:12px;background:#fff;color:#8a5a00;cursor:pointer">Masuk</button>';
+      document.body.appendChild(bar);
+    }
     toast('🌐 Koneksi internet kembali online!');
     if(jumlahAntre() > 0){
       toast('🔄 Memulai sinkronisasi ' + jumlahAntre() + ' aksi tertunda...');
