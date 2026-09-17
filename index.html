@@ -517,6 +517,7 @@
         <option value="kontras">Batas: Kontras</option>
         <option value="tebal">Batas: Tebal + Halo</option>
       </select>
+      <button class="btn btn-sekunder btn-kecil no-cetak" onclick="bukaLayoutPeta()" title="Susun lembar peta siap cetak">🗺 Layout</button>
       <button id="btnDownloadPNG" class="btn btn-sekunder btn-kecil no-cetak" style="position:absolute;bottom:28px;right:10px;z-index:500;background:#ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.22);border:1px solid var(--garis);display:flex;align-items:center;gap:6px;font-weight:700;color:var(--hijau-900);padding:6px 12px;border-radius:8px;" onclick="unduhPetaPNG()" title="Tangkap area peta sebagai gambar PNG">📷 Unduh PNG</button>
 
       <!-- Tooltip Zoom & Skala Peta -->
@@ -12857,7 +12858,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '4.0.0';
+var VERSI_APP = '4.1.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -19731,6 +19732,402 @@ function eksporReplanting(){
       'Kelayakan':x.Eligible, 'Prioritas':x.Prioritas, 'Constraint':x.Constraint,
       'Tahun Replant':x.TahunReplant, 'Surveyor':x.Surveyor };
   }), 'replanting_'+hariISO(new Date()), 'Replanting');
+}
+
+
+/* ==================== TATA LETAK PETA POLA ArcGIS ====================
+ * Menyusun peta menjadi lembar siap cetak dengan unsur kartografi baku:
+ *
+ *   Neatline luar · Muka peta bergaris tepi · Blok judul · Legenda ·
+ *   Panah utara · Skala batang + skala angka · Peta indeks ·
+ *   Grid koordinat · Blok keterangan (proyeksi, datum, sumber, tanggal) ·
+ *   Kolom pengesahan · Nomor lembar
+ *
+ * Peta ditangkap sebagai gambar terlebih dahulu, lalu disusun di atas lembar
+ * HTML. Cara ini membuat hasil cetaknya stabil — ubin peta tidak sering gagal
+ * tercetak seperti bila kanvas Leaflet dicetak langsung.
+ */
+var LAYOUT_UKURAN = {
+  A4: { w:297, h:210 }, A3: { w:420, h:297 }, A2: { w:594, h:420 },
+  A1: { w:841, h:594 }, A0: { w:1189, h:841 }
+};
+
+function bukaLayoutPeta(){
+  if(typeof L === 'undefined' || !peta) return toast('Buka halaman Peta terlebih dahulu.', true);
+  var st = (S.settings||{});
+  var unit = [nilaiEl('petaPer'), nilaiEl('petaEst'), nilaiEl('petaDiv')]
+    .filter(function(x){ return x; }).join(' — ');
+
+  bukaLembar('<h3>🗺 Tata Letak Peta</h3>'+
+    '<div class="meta" style="line-height:1.65">Menyusun lembar peta berpola kartografi baku — '+
+      'lengkap dengan legenda, panah utara, skala, peta indeks, grid koordinat, dan blok pengesahan.</div>'+
+
+    '<div class="grid2" style="margin-top:12px">'+
+      '<div><label>Ukuran Kertas</label><select id="lyUkuran">'+
+        Object.keys(LAYOUT_UKURAN).map(function(k){
+          return '<option value="'+k+'"'+(k==='A3'?' selected':'')+'>'+k+' ('+
+            LAYOUT_UKURAN[k].w+'×'+LAYOUT_UKURAN[k].h+' mm)</option>'; }).join('')+
+      '</select></div>'+
+      '<div><label>Orientasi</label><select id="lyOrientasi">'+
+        '<option value="landscape" selected>Mendatar</option>'+
+        '<option value="portrait">Tegak</option></select></div>'+
+    '</div>'+
+
+    '<label>Judul Peta *</label>'+
+    '<input id="lyJudul" value="'+esc('PETA '+(TEMA_JUDUL[TEMA_PETA]||'BLOK KEBUN').toUpperCase())+'">'+
+    '<label>Subjudul</label>'+
+    '<input id="lySub" value="'+esc(unit || st.namaPerusahaan || '')+'">'+
+
+    '<div class="grid2">'+
+      '<div><label>Nomor Lembar</label><input id="lyNomor" value="01" placeholder="cth: 01 / 05"></div>'+
+      '<div><label>Sistem Koordinat</label><input id="lyCRS" value="WGS 1984 / Geografis"></div>'+
+    '</div>'+
+    '<label>Sumber Data</label>'+
+    '<input id="lySumber" value="Survei lapangan &amp; basis data SawitGIS Mandiri">'+
+
+    '<h4 style="font-size:13px;margin:14px 0 6px">Pengesahan</h4>'+
+    '<div class="grid2">'+
+      '<div><label>Digambar Oleh</label><input id="lyGambar" value="'+esc(SESI?SESI.nama:'')+'"></div>'+
+      '<div><label>Diperiksa Oleh</label><input id="lyPeriksa" placeholder="nama"></div>'+
+    '</div>'+
+    '<label>Disetujui Oleh</label><input id="lySetuju" placeholder="nama &amp; jabatan">'+
+
+    '<h4 style="font-size:13px;margin:14px 0 6px">Unsur yang Ditampilkan</h4>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:10px 16px">'+
+      [['lyLegenda','Legenda',1],['lyUtara','Panah utara',1],['lySkala','Skala',1],
+       ['lyIndeks','Peta indeks',1],['lyGrid','Grid koordinat',1],['lyLabel','Label blok',1]]
+      .map(function(x){
+        return '<label style="display:flex;align-items:center;gap:6px;text-transform:none;'+
+          'font-size:12.5px;margin:0"><input type="checkbox" id="'+x[0]+'"'+(x[2]?' checked':'')+
+          ' style="width:auto;margin:0"> '+x[1]+'</label>';
+      }).join('')+
+    '</div>'+
+
+    '<button class="btn btn-utama btn-blok" style="margin-top:16px" onclick="susunLayoutPeta()">🖨 Susun &amp; Cetak</button>'+
+    '<div class="meta" style="margin-top:6px;line-height:1.6">Pada jendela cetak, pilih ukuran kertas '+
+      'yang sama dan aktifkan <b>Background graphics</b> agar warna blok ikut tercetak.</div>');
+}
+
+/* Skala angka dari lebar muka peta di lapangan dibanding lebar cetaknya. */
+function hitungSkala(lebarMeterLapangan, lebarMm){
+  if(!(lebarMeterLapangan>0) || !(lebarMm>0)) return null;
+  var skala = (lebarMeterLapangan*1000) / lebarMm;
+  /* Dibulatkan ke angka bulat yang lazim dipakai pada peta. */
+  var bulat = [500,1000,2000,2500,5000,10000,15000,20000,25000,50000,100000,250000];
+  for(var i=0;i<bulat.length;i++) if(skala <= bulat[i]) return bulat[i];
+  return Math.ceil(skala/100000)*100000;
+}
+
+function panahUtaraSVG(){
+  return '<svg viewBox="0 0 60 80" style="width:100%;height:100%">'+
+    '<polygon points="30,6 42,52 30,44 18,52" fill="#1A211C"/>'+
+    '<polygon points="30,6 30,44 18,52" fill="#fff" stroke="#1A211C" stroke-width="1"/>'+
+    '<circle cx="30" cy="52" r="15" fill="none" stroke="#1A211C" stroke-width="1.2"/>'+
+    '<text x="30" y="76" text-anchor="middle" font-size="15" font-weight="700" '+
+      'font-family="Georgia,serif" fill="#1A211C">U</text></svg>';
+}
+
+/**
+ * Skala batang dengan lebar terbatas.
+ *
+ * Panjang tiap ruas dipilih agar angkanya bulat di lapangan (100 m, 500 m,
+ * 1 km, dst.) SEKALIGUS muat di dalam panel. Tanpa pembatasan lebar, batangnya
+ * meluber keluar bingkai pada skala kecil.
+ */
+function skalaBatangHTML(skala, lebarTersediaMm){
+  var maksTotal = Math.max(18, (lebarTersediaMm || 34));
+  var maksRuas = maksTotal / 4;
+
+  var pilihan = [25,50,100,200,250,500,1000,2000,2500,5000,10000];
+  var satuan = pilihan[0];
+  for(var i=0;i<pilihan.length;i++){
+    var mm = (pilihan[i]*1000)/skala;
+    if(mm <= maksRuas) satuan = pilihan[i]; else break;
+  }
+  var mmPerRuas = (satuan*1000)/skala;
+  if(mmPerRuas > maksRuas) mmPerRuas = maksRuas;
+
+  var label = function(v){
+    if(v >= 1000){ var km = v/1000; return (km % 1 ? km.toFixed(1).replace('.',',') : km)+' km'; }
+    return v+' m';
+  };
+
+  return '<div style="width:'+(mmPerRuas*4)+'mm">'+
+    '<div style="display:flex">'+
+      [0,1,2,3].map(function(i){
+        return '<div style="width:'+mmPerRuas+'mm;height:2.8mm;border:0.3mm solid #1A211C;'+
+          'background:'+(i%2?'#1A211C':'#fff')+';margin-left:'+(i?'-0.3mm':'0')+'"></div>';
+      }).join('')+
+    '</div>'+
+    '<div style="position:relative;height:3.2mm;font-size:5.5pt;font-family:Arial">'+
+      [0,2,4].map(function(i){
+        return '<div style="position:absolute;left:'+(mmPerRuas*i)+'mm;transform:translateX(-50%);'+
+          'white-space:nowrap">'+(i===0?'0':label(satuan*i))+'</div>';
+      }).join('')+
+    '</div></div>';
+}
+
+function legendaLayoutHTML(){
+  /* Legenda disusun dari tema warna yang sedang aktif, supaya selalu sejalan
+     dengan apa yang tampak di peta. */
+  var isi = [];
+  if(TEMA_PETA === 'replanting'){
+    [['P1','Prioritas 1 — Kritis'],['P2','Prioritas 2 — Tinggi'],
+     ['P3','Prioritas 3 — Sedang'],['P4','Prioritas 4 — Rendah']].forEach(function(x){
+      isi.push([RPL_WARNA[x[0]], x[1]]);
+    });
+  } else if(TEMA_PETA === 'kesehatan'){
+    [['Sangat Sehat','#1B7F3B'],['Sehat','#5FBF5F'],['Kurang Sehat','#E8960C'],
+     ['Terserang Hama','#C0392B']].forEach(function(x){ isi.push([x[1], x[0]]); });
+  } else {
+    /* Tema lain: ambil warna nyata dari blok yang tergambar. */
+    var seen = {};
+    (S.blocks||[]).slice(0,10).forEach(function(b){
+      var w = warnaBlokTema(b);
+      var k = keteranganTema ? keteranganTema(b) : (b.Nama||'');
+      if(seen[w]) return; seen[w]=1;
+      isi.push([w, k]);
+    });
+  }
+  if(!isi.length) isi.push(['#2E7D46','Blok kebun']);
+
+  return '<div style="font-size:7pt;font-family:Arial">'+
+    isi.map(function(x){
+      return '<div style="display:flex;align-items:center;gap:1.5mm;margin-bottom:1mm">'+
+        '<div style="width:5mm;height:3mm;background:'+x[0]+'88;border:0.3mm solid '+x[0]+'"></div>'+
+        '<span>'+esc(x[1])+'</span></div>';
+    }).join('')+
+    '<div style="display:flex;align-items:center;gap:1.5mm;margin-top:2mm;padding-top:1.5mm;'+
+      'border-top:0.2mm solid #999">'+
+      '<div style="width:5mm;height:0;border-top:0.5mm solid #1A211C"></div>'+
+      '<span>Batas blok</span></div>'+
+    '</div>';
+}
+
+function gridKoordinatHTML(bounds){
+  if(!bounds) return '';
+  var sw=bounds.getSouthWest(), ne=bounds.getNorthEast();
+  function fmt(v, arah){
+    var d = Math.abs(v);
+    return d.toFixed(4) + '° ' + arah;
+  }
+  var lat=[], lng=[];
+  for(var i=0;i<=4;i++){
+    lat.push(sw.lat + (ne.lat-sw.lat)*i/4);
+    lng.push(sw.lng + (ne.lng-sw.lng)*i/4);
+  }
+  var garis = '';
+  /* Garis grid digambar tipis di atas muka peta, dengan label di tepinya. */
+  for(var i=1;i<4;i++){
+    garis += '<div style="position:absolute;left:0;right:0;top:'+((4-i)/4*100)+'%;'+
+      'border-top:0.2mm dashed rgba(0,0,0,.35)"></div>';
+    garis += '<div style="position:absolute;top:0;bottom:0;left:'+(i/4*100)+'%;'+
+      'border-left:0.2mm dashed rgba(0,0,0,.35)"></div>';
+  }
+  var labelKiri='', labelBawah='';
+  for(var i=0;i<=4;i++){
+    labelKiri += '<div style="position:absolute;right:0.8mm;top:'+((4-i)/4*100)+'%;'+
+      'transform:translateY(-50%);font-size:5.5pt;font-family:Arial;white-space:nowrap">'+
+      fmt(lat[i], lat[i]>=0?'N':'S')+'</div>';
+    labelBawah += '<div style="position:absolute;top:0.6mm;left:'+(i/4*100)+'%;'+
+      'transform:translateX(-50%);font-size:5.5pt;font-family:Arial;white-space:nowrap">'+
+      fmt(lng[i], lng[i]>=0?'E':'W')+'</div>';
+  }
+  return { garis:garis, kiri:labelKiri, bawah:labelBawah };
+}
+
+
+var TEMA_JUDUL = {
+  kesehatan:'Kesehatan Tanaman', tahun:'Tahun Tanam', panen:'Status Panen',
+  pemupukan:'Status Pemupukan', perawatan:'Jenis Perawatan', replanting:'Prioritas Replanting'
+};
+
+/** Keterangan legenda untuk satu blok sesuai tema yang aktif. */
+function keteranganTema(b){
+  if(TEMA_PETA==='tahun') return 'Tanam '+(b.TahunTanam||'-');
+  if(TEMA_PETA==='kesehatan') return b.KesehatanTanaman||'-';
+  if(TEMA_PETA==='panen') return 'Blok '+(b.Nama||b.ID);
+  return b.Nama||b.ID;
+}
+
+/* ---------- penyusun lembar ---------- */
+function susunLayoutPeta(){
+  var uk = LAYOUT_UKURAN[nilaiEl('lyUkuran')] || LAYOUT_UKURAN.A3;
+  var tegak = nilaiEl('lyOrientasi')==='portrait';
+  var lebarMm = tegak ? uk.h : uk.w;
+  var tinggiMm = tegak ? uk.w : uk.h;
+
+  var opsi = {
+    legenda:(document.getElementById('lyLegenda')||{}).checked,
+    utara:(document.getElementById('lyUtara')||{}).checked,
+    skala:(document.getElementById('lySkala')||{}).checked,
+    indeks:(document.getElementById('lyIndeks')||{}).checked,
+    grid:(document.getElementById('lyGrid')||{}).checked
+  };
+  var teks = {
+    judul:nilaiEl('lyJudul'), sub:nilaiEl('lySub'), nomor:nilaiEl('lyNomor'),
+    crs:nilaiEl('lyCRS'), sumber:nilaiEl('lySumber'),
+    gambar:nilaiEl('lyGambar'), periksa:nilaiEl('lyPeriksa'), setuju:nilaiEl('lySetuju')
+  };
+
+  if(typeof html2canvas === 'undefined'){
+    return toast('Pustaka gambar belum siap. Tunggu sebentar lalu coba lagi.', true);
+  }
+  tampilLoader(true,'Menangkap peta…');
+
+  var b = null;
+  try{ b = peta.getBounds(); }catch(e){}
+  /* Skala dihitung dari lebar sebenarnya area yang tampak. */
+  var lebarMeter = 0;
+  try{
+    lebarMeter = peta.distance(b.getNorthWest(), b.getNorthEast());
+  }catch(e){}
+
+  html2canvas(document.getElementById('peta'), {
+    useCORS:true, allowTaint:true, scale:2,
+    ignoreElements:function(el){ return el.classList && el.classList.contains('no-cetak'); }
+  }).then(function(kanvas){
+    tampilLoader(false);
+    gambarLembarPeta(kanvas.toDataURL('image/png'), lebarMm, tinggiMm, tegak,
+      opsi, teks, b, lebarMeter);
+  }).catch(function(e){
+    tampilLoader(false);
+    toast('Gagal menangkap peta: '+(e?e.message:''), true);
+  });
+}
+
+function gambarLembarPeta(gambarPeta, lebarMm, tinggiMm, tegak, opsi, teks, bounds, lebarMeter){
+  var st = (S.settings||{});
+  var margin = 8;                                   // neatline dari tepi kertas
+  var lebarPanel = Math.max(42, Math.min(62, lebarMm*0.17));
+  var lebarMuka = lebarMm - margin*2 - lebarPanel - 2;
+  var skala = hitungSkala(lebarMeter, lebarMuka) || 10000;
+  var grid = opsi.grid ? gridKoordinatHTML(bounds) : null;
+  var tgl = fmtTgl(hariISO(new Date()));
+
+  function panel(judul, isi, pad){
+    return '<div style="border:0.35mm solid #1A211C;margin-bottom:1.6mm">'+
+      '<div style="background:#1A211C;color:#fff;font-size:6.5pt;font-weight:700;'+
+        'padding:0.8mm 1.5mm;letter-spacing:0.3px;font-family:Arial">'+esc(judul)+'</div>'+
+      '<div style="padding:'+(pad||1.6)+'mm">'+isi+'</div></div>';
+  }
+  function barisKet(l,v){
+    return '<div style="display:flex;font-size:6.5pt;font-family:Arial;margin-bottom:0.7mm">'+
+      '<span style="width:17mm;color:#444;flex-shrink:0">'+esc(l)+'</span>'+
+      '<span style="flex:1;font-weight:600">'+esc(v||'-')+'</span></div>';
+  }
+  function kolomTtd(l, nama){
+    return '<div style="flex:1;text-align:center;font-size:6pt;font-family:Arial">'+
+      '<div style="color:#444;margin-bottom:0.5mm">'+esc(l)+'</div>'+
+      '<div style="height:11mm"></div>'+
+      '<div style="border-top:0.3mm solid #1A211C;padding-top:0.6mm;font-weight:700">'+
+      esc(nama||'.................')+'</div></div>';
+  }
+
+  var html =
+  '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8">'+
+  '<title>'+esc(teks.judul)+'</title><style>'+
+  '@page{size:'+lebarMm+'mm '+tinggiMm+'mm;margin:0}'+
+  '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+  'body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#fff}'+
+  '.lembar{width:'+lebarMm+'mm;height:'+tinggiMm+'mm;position:relative;padding:'+margin+'mm}'+
+  /* Neatline luar — bingkai ganda, ciri khas lembar peta baku */
+  '.neatline{position:absolute;inset:'+margin+'mm;border:0.6mm solid #1A211C}'+
+  '.neatline::after{content:"";position:absolute;inset:1.2mm;border:0.25mm solid #1A211C}'+
+  '.isi{position:relative;height:100%;display:flex;gap:2mm;padding:2.6mm}'+
+  '@media print{ .lembar{page-break-after:avoid} }'+
+  '</style></head><body><div class="lembar"><div class="neatline"></div><div class="isi">'+
+
+    /* ---------- MUKA PETA ---------- */
+    '<div style="flex:1;display:flex;flex-direction:column;min-width:0">'+
+      '<div style="border:0.4mm solid #1A211C;padding:0.6mm 2mm;background:#f2f5f2;'+
+        'display:flex;justify-content:space-between;align-items:baseline">'+
+        '<b style="font-size:10pt;letter-spacing:0.4px">'+esc(teks.judul)+'</b>'+
+        (teks.sub?'<span style="font-size:7pt;color:#333">'+esc(teks.sub)+'</span>':'')+
+      '</div>'+
+      '<div style="flex:1;position:relative;border:0.4mm solid #1A211C;border-top:none;'+
+        'overflow:hidden;background:#fff">'+
+        (grid ? '<div style="position:absolute;left:11mm;right:0;top:0;bottom:5mm">' : '<div style="position:absolute;inset:0">')+
+          '<img src="'+gambarPeta+'" style="width:100%;height:100%;object-fit:cover;display:block">'+
+          (grid ? grid.garis : '')+
+          '<div style="position:absolute;inset:0;border:0.3mm solid #1A211C"></div>'+
+        '</div>'+
+        (grid
+          ? '<div style="position:absolute;left:0;top:0;bottom:5mm;width:11mm;'+
+            'border-right:0.3mm solid #1A211C;background:#fff">'+grid.kiri+'</div>'+
+            '<div style="position:absolute;left:11mm;right:0;bottom:0;height:5mm;'+
+            'border-top:0.3mm solid #1A211C;background:#fff">'+grid.bawah+'</div>'
+          : '')+
+      '</div>'+
+    '</div>'+
+
+    /* ---------- PANEL SAMPING ---------- */
+    '<div style="width:'+lebarPanel+'mm;flex-shrink:0;display:flex;flex-direction:column">'+
+
+      /* kop */
+      '<div style="border:0.35mm solid #1A211C;margin-bottom:1.6mm;padding:1.6mm;text-align:center">'+
+        (st.logoUrl?'<img src="'+esc(st.logoUrl)+'" style="max-height:9mm;max-width:80%;margin-bottom:1mm">':
+          '<div style="font-size:14pt">'+esc(st.emoji||'🌴')+'</div>')+
+        '<div style="font-size:7.5pt;font-weight:700;line-height:1.25">'+
+          esc(st.judulAplikasi || st.namaPerusahaan || 'SawitGIS Mandiri')+'</div>'+
+        (st.subjudul?'<div style="font-size:5.8pt;color:#444;margin-top:0.4mm">'+esc(st.subjudul)+'</div>':'')+
+      '</div>'+
+
+      (opsi.legenda ? panel('LEGENDA', legendaLayoutHTML()) : '')+
+
+      /* arah & skala berdampingan */
+      ((opsi.utara || opsi.skala)
+        ? panel('ARAH & SKALA',
+            '<div style="display:flex;gap:2mm;align-items:center">'+
+              (opsi.utara?'<div style="width:11mm;height:15mm;flex-shrink:0">'+panahUtaraSVG()+'</div>':'')+
+              (opsi.skala?'<div style="flex:1;min-width:0">'+
+                '<div style="font-size:8pt;font-weight:700;margin-bottom:1mm">1 : '+
+                  angka(skala,0)+'</div>'+
+                skalaBatangHTML(skala, lebarPanel - (opsi.utara?17:6))+'</div>':'')+
+            '</div>')
+        : '')+
+
+      (opsi.indeks
+        ? panel('PETA INDEKS',
+            '<div style="position:relative;height:18mm;border:0.25mm solid #999;background:#eef2ee">'+
+              '<div style="position:absolute;left:32%;top:28%;width:36%;height:44%;'+
+                'border:0.5mm solid #C0392B;background:rgba(192,57,43,.15)"></div>'+
+              '<div style="position:absolute;left:1mm;bottom:0.6mm;font-size:5pt;color:#555">'+
+                esc(teks.sub || 'Area pemetaan')+'</div>'+
+            '</div>')
+        : '')+
+
+      panel('KETERANGAN',
+        barisKet('Sistem koordinat', teks.crs)+
+        barisKet('Datum', 'WGS 1984')+
+        barisKet('Sumber data', teks.sumber)+
+        barisKet('Tanggal cetak', tgl)+
+        barisKet('Skala', '1 : '+angka(skala,0))+
+        barisKet('Ukuran', (tegak?'Tegak':'Mendatar')+' '+lebarMm+'×'+tinggiMm+' mm'))+
+
+      '<div style="flex:1"></div>'+
+
+      panel('PENGESAHAN',
+        '<div style="display:flex;gap:1.5mm">'+
+          kolomTtd('Digambar', teks.gambar)+
+          kolomTtd('Diperiksa', teks.periksa)+
+          kolomTtd('Disetujui', teks.setuju)+
+        '</div>')+
+
+      '<div style="border:0.35mm solid #1A211C;padding:1mm 1.6mm;display:flex;'+
+        'justify-content:space-between;font-size:6.5pt;font-family:Arial">'+
+        '<span style="color:#444">NOMOR LEMBAR</span>'+
+        '<b>'+esc(teks.nomor||'01')+'</b></div>'+
+
+    '</div></div></div>'+
+
+  '<script>window.onload=function(){setTimeout(function(){window.print();},700);};<\/script>'+
+  '</body></html>';
+
+  var w = window.open('', '_blank');
+  if(!w) return toast('Jendela cetak diblokir peramban. Izinkan pop-up untuk situs ini.', true);
+  w.document.write(html);
+  w.document.close();
 }
 
 /* ==================== MULAI ==================== */
