@@ -2824,7 +2824,7 @@ function warnaPemupukan(idBlok){
 function warnaBlokTema(b){
   /* Tema prioritas replanting memakai hasil perhitungan yang sudah dimuat
      di halaman Replanting, sehingga peta dan daftar selalu sejalan. */
-  if(TEMA_PETA === 'replanting'){
+  if(temaPeta === 'replanting'){
     var r = (RPL.daftar||[]).filter(function(x){ return String(x.IDBlok)===String(b.ID); })[0];
     return r ? (RPL_WARNA[r.Prioritas] || '#8A958C') : '#C9D6CD';
   }
@@ -2911,7 +2911,7 @@ function gantiTema(){
     callApi('listReplanting', {}).then(function(d){
       RPL.daftar = d||[];
       tampilLoader(false);
-      TEMA_PETA = t; gambarPeta();
+      temaPeta = t; gambarPeta();
     }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
     return;
   }
@@ -4707,8 +4707,66 @@ function gayaPoligonBlok(warna, mode){
   return { halo:null, utama:{ color:warna, weight:2, fillColor:warna, fillOpacity:.4 } };
 }
 
+/**
+ * Periksa kewajaran koordinat blok.
+ *
+ * Leaflet hanya mengerti lintang/bujur (WGS 84). Bila peta diimpor dari
+ * Shapefile bersistem UTM tanpa diproyeksikan ulang, nilainya berupa meter
+ * (mis. 750000, 9950000) — di luar rentang lintang/bujur yang sah, sehingga
+ * blok tidak muncul dan peta melompat ke posisi bawaan.
+ */
+function periksaKoordinatBlok(){
+  var aneh = [], contoh = null;
+  (S.blocks||[]).forEach(function(b){
+    var koor;
+    try{ koor = typeof b.Koordinat==='string' ? JSON.parse(b.Koordinat) : b.Koordinat; }catch(e){ return; }
+    if(!koor || !koor.length) return;
+    var titik = koor[0];
+    while(titik && titik[0] !== undefined && Array.isArray(titik[0])) titik = titik[0];
+    if(!titik || titik.length < 2) return;
+    var lat = Number(titik[0]), lng = Number(titik[1]);
+    if(Math.abs(lat) > 90 || Math.abs(lng) > 180){
+      aneh.push(b.Nama || b.ID);
+      if(!contoh) contoh = [lat, lng];
+    }
+  });
+  return { jumlah: aneh.length, blok: aneh.slice(0,5), contoh: contoh };
+}
+
 function gambarPeta(){
   if(!pastikanPeta()) return;
+
+  /* Peringatkan sekali bila koordinatnya di luar rentang lintang/bujur.
+     Tanpa ini pengguna hanya melihat peta kosong tanpa penjelasan. */
+  if(!window._koordDiperiksa){
+    window._koordDiperiksa = true;
+    var pk = periksaKoordinatBlok();
+    if(pk.jumlah){
+      setTimeout(function(){
+        bukaLembar('<h3>⚠️ Koordinat Blok Tidak Wajar</h3>'+
+          '<div class="meta" style="line-height:1.65">'+pk.jumlah+' blok memiliki koordinat di luar '+
+          'rentang lintang/bujur yang sah, sehingga tidak dapat digambar di peta.</div>'+
+          '<div class="kartu" style="margin-top:12px">'+
+            '<b style="font-size:14px">Contoh nilai</b>'+
+            '<div style="font-family:monospace;font-size:12.5px;margin-top:4px">'+
+            esc(String(pk.contoh[0])+', '+String(pk.contoh[1]))+'</div>'+
+            '<div class="meta" style="margin-top:6px">Blok: '+esc(pk.blok.join(', '))+
+            (pk.jumlah>5?' dan lainnya':'')+'</div>'+
+          '</div>'+
+          '<div style="margin-top:12px;padding:12px;border-radius:8px;background:#FFF4E5;'+
+            'border-left:3px solid #E8960C;font-size:12.5px;line-height:1.7">'+
+            '<b>Penyebab yang paling sering</b><br>'+
+            'Peta diimpor dari Shapefile bersistem <b>UTM</b> (satuan meter) tanpa diproyeksikan '+
+            'ulang. Aplikasi ini memakai lintang/bujur <b>WGS 84 (EPSG:4326)</b>.'+
+            '<div style="margin-top:8px"><b>Cara memperbaiki di QGIS</b><br>'+
+            '1. Buka layer blok<br>'+
+            '2. Klik kanan → <b>Export → Save Features As</b><br>'+
+            '3. Pada <b>CRS</b> pilih <b>EPSG:4326 — WGS 84</b><br>'+
+            '4. Simpan sebagai GeoJSON, lalu impor ulang ke aplikasi</div>'+
+          '</div>');
+      }, 900);
+    }
+  }
   GAYA_BATAS = bacaGayaBatas();
   var selGaya = document.getElementById('pilihGayaBatas');
   if(selGaya && selGaya.value !== GAYA_BATAS) selGaya.value = GAYA_BATAS;
@@ -12858,7 +12916,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '4.1.0';
+var VERSI_APP = '4.1.2';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -18888,12 +18946,48 @@ function jalankanUjiPMTiles(){
           tulis();
         })
         .catch(function(){
-          hasil.push(ujBaris('gagal','Berkas tidak terjangkau sama sekali',
-            'Bukan soal CORS. Kemungkinan: alamat salah, bucket belum dibuka untuk umum, '+
-            'atau perangkat sedang tanpa internet.<br><br>'+
-            'Coba buka alamat ini langsung di tab peramban baru — bila muncul pesan '+
-            'akses ditolak, berarti buckenya masih tertutup.'));
-          tulis();
+          /* Permintaan tidak sampai ke server sama sekali. Beberapa sebab yang
+             berbeda perlu dipisahkan agar pengguna tidak menebak-nebak. */
+          var daring = (typeof navigator.onLine === 'boolean') ? navigator.onLine : true;
+
+          if(!daring){
+            hasil.push(ujBaris('gagal','Perangkat sedang tanpa jaringan',
+              'Sambungkan internet lalu jalankan uji ini kembali.'));
+            tulis(); return;
+          }
+
+          /* Uji apakah internet secara umum jalan, dengan menghubungi alamat
+             lain. Bila yang ini berhasil, gangguannya khusus pada bucket. */
+          var r2dev = /\.r2\.dev/i.test(url);
+          fetch('https://unpkg.com/pmtiles@4.3.0/package.json', { mode:'no-cors', cache:'no-store' })
+            .then(function(){
+              hasil.push(ujBaris('gagal','Internet jalan, tetapi bucket tidak menjawab',
+                'Permintaan tidak sampai ke server berkas. Karena alamat lain dapat dihubungi, '+
+                'gangguannya ada pada penyimpanannya.<br><br>'+
+                (r2dev
+                  ? '<b>Penyebab paling sering pada alamat r2.dev</b><br>'+
+                    'Alamat <b>pub-….r2.dev</b> adalah alamat uji coba, dan Cloudflare '+
+                    '<b>membatasi lajunya</b>. Foto udara memicu ratusan permintaan per tampilan '+
+                    'peta, sehingga batas itu cepat tercapai — berkas berhenti dilayani meski '+
+                    'sebelumnya sempat terbuka.<br><br>'+
+                    '<b>Penyelesaiannya: pasang Custom Domain.</b><br>'+
+                    '1. Buka R2 → bucket → <b>Settings</b> → <b>Custom Domains</b><br>'+
+                    '2. Klik <b>Connect Domain</b>, isi mis. <span style="font-family:monospace">'+
+                    'peta.perusahaan.com</span><br>'+
+                    '3. Ganti alamat lapisan memakai domain itu<br><br>'+
+                    'Domain khusus tidak dibatasi laju dan memakai jaringan Cloudflare penuh.'
+                  : 'Periksa apakah bucket masih terbuka untuk umum, dan apakah berkasnya '+
+                    'masih ada di sana.')+
+                '<br><br>Coba juga buka alamat berkas langsung di tab peramban baru untuk '+
+                'memastikan.'));
+              tulis();
+            })
+            .catch(function(){
+              hasil.push(ujBaris('gagal','Internet tidak dapat dijangkau',
+                'Alamat lain pun tidak dapat dihubungi. Periksa sambungan perangkat, '+
+                'lalu jalankan uji ini kembali.'));
+              tulis();
+            });
         });
     });
 }
@@ -19774,7 +19868,7 @@ function bukaLayoutPeta(){
     '</div>'+
 
     '<label>Judul Peta *</label>'+
-    '<input id="lyJudul" value="'+esc('PETA '+(TEMA_JUDUL[TEMA_PETA]||'BLOK KEBUN').toUpperCase())+'">'+
+    '<input id="lyJudul" value="'+esc('PETA '+(TEMA_JUDUL[temaPeta]||'BLOK KEBUN').toUpperCase())+'">'+
     '<label>Subjudul</label>'+
     '<input id="lySub" value="'+esc(unit || st.namaPerusahaan || '')+'">'+
 
@@ -19871,12 +19965,12 @@ function legendaLayoutHTML(){
   /* Legenda disusun dari tema warna yang sedang aktif, supaya selalu sejalan
      dengan apa yang tampak di peta. */
   var isi = [];
-  if(TEMA_PETA === 'replanting'){
+  if(temaPeta === 'replanting'){
     [['P1','Prioritas 1 — Kritis'],['P2','Prioritas 2 — Tinggi'],
      ['P3','Prioritas 3 — Sedang'],['P4','Prioritas 4 — Rendah']].forEach(function(x){
       isi.push([RPL_WARNA[x[0]], x[1]]);
     });
-  } else if(TEMA_PETA === 'kesehatan'){
+  } else if(temaPeta === 'kesehatan'){
     [['Sangat Sehat','#1B7F3B'],['Sehat','#5FBF5F'],['Kurang Sehat','#E8960C'],
      ['Terserang Hama','#C0392B']].forEach(function(x){ isi.push([x[1], x[0]]); });
   } else {
@@ -19944,9 +20038,9 @@ var TEMA_JUDUL = {
 
 /** Keterangan legenda untuk satu blok sesuai tema yang aktif. */
 function keteranganTema(b){
-  if(TEMA_PETA==='tahun') return 'Tanam '+(b.TahunTanam||'-');
-  if(TEMA_PETA==='kesehatan') return b.KesehatanTanaman||'-';
-  if(TEMA_PETA==='panen') return 'Blok '+(b.Nama||b.ID);
+  if(temaPeta==='tahun') return 'Tanam '+(b.TahunTanam||'-');
+  if(temaPeta==='kesehatan') return b.KesehatanTanaman||'-';
+  if(temaPeta==='panen') return 'Blok '+(b.Nama||b.ID);
   return b.Nama||b.ID;
 }
 
