@@ -517,6 +517,7 @@
         <option value="kontras">Batas: Kontras</option>
         <option value="tebal">Batas: Tebal + Halo</option>
       </select>
+      <button class="btn btn-sekunder btn-kecil no-cetak" onclick="bukaPdfGeo()" title="Tempel lembar PDF pada posisi sebenarnya">📄 PDF</button>
       <button class="btn btn-sekunder btn-kecil no-cetak" onclick="bukaLayoutPeta()" title="Susun lembar peta siap cetak">🗺 Layout</button>
       <button id="btnDownloadPNG" class="btn btn-sekunder btn-kecil no-cetak" style="position:absolute;bottom:28px;right:10px;z-index:500;background:#ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.22);border:1px solid var(--garis);display:flex;align-items:center;gap:6px;font-weight:700;color:var(--hijau-900);padding:6px 12px;border-radius:8px;" onclick="unduhPetaPNG()" title="Tangkap area peta sebagai gambar PNG">📷 Unduh PNG</button>
 
@@ -4948,6 +4949,20 @@ function bangunLayerKustom(d){
       isiVektorURL(d, g);
       return g;
     }
+    if(d.Tipe==='pdfgeo'){
+      /* Lembar PDF yang sudah digambar, ditempel pada kotak koordinatnya. */
+      var prm = {};
+      try{ prm = typeof d.Param==='string' ? JSON.parse(d.Param||'{}') : (d.Param||{}); }catch(e){}
+      if(!prm.sw || !prm.ne){
+        toast('Lapisan "'+d.Nama+'" tidak memiliki batas koordinat.', true);
+        return null;
+      }
+      return L.imageOverlay(d.URL, [prm.sw, prm.ne], {
+        opacity: op, interactive:false, crossOrigin:true,
+        errorOverlayUrl: '',
+        alt: d.Nama
+      });
+    }
     if(d.Tipe==='pmtiles'){
       /* PMTiles adalah satu berkas berisi seluruh ubin peta. Pustakanya membaca
          berkas itu lewat permintaan Range HTTP, sehingga hanya bagian yang
@@ -6759,6 +6774,7 @@ function formLayer(id){
     imageOverlay:'Image Overlay (1 gambar + bounds)', geojson:'GeoJSON (dari URL)',
     kml:'KML (dari URL)', shp:'Shapefile .zip (dari URL)', mbtiles:'MBTiles raster (dari URL)',
     pmtiles:'PMTiles — foto udara / ortofoto (R2, S3, atau hosting biasa)',
+    pdfgeo:'PDF Tergeoreferensi (unggah lewat tombol 📄 di peta)',
     maptiler:'MapTiler — peta dasar berlisensi (pakai kunci API)'
   };
   bukaLembar('<h3>'+(d?'Edit Layer':'Tambah Layer Peta')+'</h3>'+
@@ -12916,7 +12932,7 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '4.1.2';
+var VERSI_APP = '4.2.0';
 var TANGGAL_BUILD = '2026-08-26';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
@@ -20222,6 +20238,284 @@ function gambarLembarPeta(gambarPeta, lebarMm, tinggiMm, tegak, opsi, teks, boun
   if(!w) return toast('Jendela cetak diblokir peramban. Izinkan pop-up untuk situs ini.', true);
   w.document.write(html);
   w.document.close();
+}
+
+
+/* ==================== LAPISAN PDF TERGEOREFERENSI ====================
+ * Menampilkan lembar PDF — peta blok, rencana kerja, peta kontur, hasil
+ * pengukuran — sebagai lapisan yang menempel pada posisi sebenarnya di peta.
+ *
+ * Tiga cara penentuan posisi, diurutkan dari yang paling tidak merepotkan:
+ *   1. Otomatis dari GeoPDF   — PDF terbitan QGIS/GDAL menyimpan koordinat
+ *                                di dalam berkasnya sendiri
+ *   2. Batas koordinat manual  — pengguna mengetik lintang/bujur keempat sisi
+ *   3. Tarik di atas peta      — geser kotak sampai pas dengan citra
+ *
+ * Halaman PDF digambar menjadi gambar lebih dulu, lalu ditempelkan sebagai
+ * imageOverlay. Cara ini jauh lebih ringan daripada menjaga PDF tetap hidup
+ * di dalam peta, dan tetap tajam saat diperbesar.
+ */
+var PDFJS_SIAP = null;
+var GEOPDF = { dataUrl:null, bounds:null, nama:'', halaman:1, totalHalaman:1, sumber:'' };
+
+function pastikanPdfJs(){
+  if(PDFJS_SIAP) return PDFJS_SIAP;
+  if(window.pdfjsLib){ PDFJS_SIAP = Promise.resolve(); return PDFJS_SIAP; }
+  PDFJS_SIAP = muatSkrip('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', 12000)
+    .then(function(){
+      if(!window.pdfjsLib) throw new Error('Pustaka PDF termuat tetapi tidak lengkap.');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    })
+    .catch(function(e){ PDFJS_SIAP = null; throw new Error('Gagal memuat pustaka PDF. Periksa sambungan internet.'); });
+  return PDFJS_SIAP;
+}
+
+/**
+ * Baca koordinat yang tertanam di dalam GeoPDF.
+ *
+ * PDF terbitan QGIS dan GDAL menyimpan titik sudut geografis pada larik
+ * /GPTS, berpasangan lintang-bujur. Berkasnya dipindai sebagai teks mentah —
+ * cara ini sederhana, dan yang dicari memang tersimpan apa adanya.
+ *
+ * Mengembalikan null bila PDF-nya biasa (tanpa georeferensi).
+ */
+function bacaGeoPDF(buffer){
+  try{
+    var byte = new Uint8Array(buffer);
+    /* Hanya sebagian awal dan akhir yang dipindai — cukup untuk menemukan
+       kamus viewport, tanpa memuat seluruh berkas besar ke memori teks. */
+    var potong = function(mulai, panjang){
+      var s = '';
+      var akhir = Math.min(byte.length, mulai + panjang);
+      for(var i=mulai;i<akhir;i++) s += String.fromCharCode(byte[i]);
+      return s;
+    };
+    var teks = potong(0, 700000);
+    if(byte.length > 700000) teks += potong(byte.length - 400000, 400000);
+
+    var m = /\/GPTS\s*\[([^\]]+)\]/.exec(teks);
+    if(!m) return null;
+    var angka = m[1].trim().split(/\s+/).map(Number).filter(function(x){ return !isNaN(x); });
+    if(angka.length < 8) return null;
+
+    /* Pasangan berurutan lintang, bujur. Diambil nilai terkecil dan terbesar
+       untuk memperoleh kotak pembatasnya. */
+    var lat=[], lng=[];
+    for(var i=0;i+1<angka.length;i+=2){ lat.push(angka[i]); lng.push(angka[i+1]); }
+    var minLat=Math.min.apply(null,lat), maksLat=Math.max.apply(null,lat);
+    var minLng=Math.min.apply(null,lng), maksLng=Math.max.apply(null,lng);
+
+    /* Periksa kewajarannya. GeoPDF bersistem proyeksi lain akan menghasilkan
+       angka di luar rentang lintang/bujur — lebih baik ditolak daripada
+       menempatkan lapisan di tempat yang keliru. */
+    if(Math.abs(minLat)>90 || Math.abs(maksLat)>90 ||
+       Math.abs(minLng)>180 || Math.abs(maksLng)>180) return null;
+    if(maksLat-minLat < 1e-7 || maksLng-minLng < 1e-7) return null;
+
+    return { sw:[minLat,minLng], ne:[maksLat,maksLng] };
+  }catch(e){ return null; }
+}
+
+/** Gambar satu halaman PDF menjadi gambar PNG. */
+function gambarHalamanPdf(buffer, halaman, lebarMaks){
+  return pastikanPdfJs().then(function(){
+    return pdfjsLib.getDocument({ data: buffer }).promise;
+  }).then(function(pdf){
+    GEOPDF.totalHalaman = pdf.numPages;
+    var n = Math.min(Math.max(1, halaman||1), pdf.numPages);
+    return pdf.getPage(n).then(function(page){
+      var v1 = page.getViewport({ scale: 1 });
+      /* Skala dibatasi agar gambar tidak melebihi batas ukuran sel maupun
+         kemampuan peramban ponsel. */
+      var skala = Math.min(3, (lebarMaks || 2000) / v1.width);
+      var vp = page.getViewport({ scale: skala });
+      var c = document.createElement('canvas');
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      return page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise
+        .then(function(){ return c.toDataURL('image/png'); });
+    });
+  });
+}
+
+/* ---------- alur unggah ---------- */
+function bukaPdfGeo(){
+  if(!bolehEdit()) return toast('Hanya editor atau admin.', true);
+  GEOPDF = { dataUrl:null, bounds:null, nama:'', halaman:1, totalHalaman:1, sumber:'' };
+  bukaLembar('<h3>📄 Lapisan PDF Tergeoreferensi</h3>'+
+    '<div class="meta" style="line-height:1.65">Tempelkan lembar PDF — peta blok, peta kontur, '+
+      'rencana kerja, atau hasil pengukuran — pada posisi sebenarnya di peta.</div>'+
+
+    '<label style="margin-top:12px">Berkas PDF *</label>'+
+    '<input type="file" id="gpFile" accept="application/pdf,.pdf" onchange="bacaBerkasPdf(this)">'+
+    '<div class="meta" style="margin-top:4px">PDF terbitan QGIS atau GDAL umumnya sudah memuat '+
+      'koordinat di dalamnya dan akan terbaca otomatis.</div>'+
+
+    '<div id="gpStatus" style="margin-top:12px"></div>'+
+    '<div id="gpLanjut" style="display:none">'+
+      '<label>Nama Lapisan *</label><input id="gpNama" placeholder="cth: Peta Kontur Estate LNE">'+
+      '<div class="grid2">'+
+        '<div><label>Halaman</label><input type="number" id="gpHalaman" value="1" min="1" '+
+          'onchange="gantiHalamanPdf()"></div>'+
+        '<div><label>Transparansi</label><select id="gpOpacity">'+
+          ['1','0.85','0.7','0.5','0.3'].map(function(v){
+            return '<option value="'+v+'"'+(v==='0.7'?' selected':'')+'>'+Math.round(v*100)+'%</option>';
+          }).join('')+'</select></div>'+
+      '</div>'+
+
+      '<h4 style="font-size:13px;margin:14px 0 6px">Posisi di Peta</h4>'+
+      '<div id="gpKoor"></div>'+
+      '<div class="grid2" style="margin-top:8px">'+
+        '<div><label>Lintang Utara</label><input id="gpN" type="number" step="0.000001"></div>'+
+        '<div><label>Lintang Selatan</label><input id="gpS" type="number" step="0.000001"></div>'+
+      '</div>'+
+      '<div class="grid2">'+
+        '<div><label>Bujur Barat</label><input id="gpW" type="number" step="0.000001"></div>'+
+        '<div><label>Bujur Timur</label><input id="gpE" type="number" step="0.000001"></div>'+
+      '</div>'+
+      '<div class="aksi-baris" style="flex-wrap:wrap;margin-top:6px">'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="isiDariTampilanPeta()">🎯 Ambil dari Tampilan Peta</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="isiDariBlok()">🧩 Ambil dari Batas Blok</button>'+
+      '</div>'+
+      '<div class="meta" style="margin-top:4px;line-height:1.6">Bila koordinatnya tidak diketahui, '+
+        'geser dan perbesar peta sampai menutupi area yang tepat, lalu tekan '+
+        '<b>Ambil dari Tampilan Peta</b> dan sesuaikan angkanya.</div>'+
+
+      '<div id="gpPratinjau" style="margin-top:12px"></div>'+
+      '<button class="btn btn-utama btn-blok" style="margin-top:12px" onclick="simpanPdfGeo()">💾 Tambahkan ke Peta</button>'+
+    '</div>');
+}
+
+function bacaBerkasPdf(input){
+  var f = input.files && input.files[0];
+  if(!f) return;
+  if(f.size > 40*1024*1024) return toast('Berkas melebihi 40 MB. Perkecil dahulu di QGIS.', true);
+
+  var st=document.getElementById('gpStatus');
+  st.innerHTML='<div class="kosong">Membaca berkas…</div>';
+  GEOPDF.nama = f.name.replace(/\.pdf$/i,'');
+
+  var r = new FileReader();
+  r.onload = function(ev){
+    var buf = ev.target.result;
+    var geo = bacaGeoPDF(buf);
+    GEOPDF.bounds = geo;
+    GEOPDF.sumber = geo ? 'GeoPDF' : '';
+
+    gambarHalamanPdf(buf, 1, 2000).then(function(dataUrl){
+      GEOPDF.dataUrl = dataUrl;
+      GEOPDF.buffer = buf;
+      st.innerHTML =
+        (geo
+          ? '<div style="padding:10px 12px;border-radius:8px;background:var(--hijau-50);'+
+            'border-left:3px solid var(--hijau-700);font-size:12.5px;line-height:1.6">'+
+            '✅ <b>Koordinat terbaca otomatis dari GeoPDF</b><br>'+
+            'Utara '+geo.ne[0].toFixed(6)+'° · Selatan '+geo.sw[0].toFixed(6)+'°<br>'+
+            'Barat '+geo.sw[1].toFixed(6)+'° · Timur '+geo.ne[1].toFixed(6)+'°</div>'
+          : '<div style="padding:10px 12px;border-radius:8px;background:#FFF4E5;'+
+            'border-left:3px solid #E8960C;font-size:12.5px;line-height:1.6">'+
+            '⚠️ <b>PDF ini tidak memuat koordinat</b><br>'+
+            'Isikan batas koordinatnya di bawah, atau ambil dari tampilan peta. '+
+            'Agar terbaca otomatis lain kali, ekspor dari QGIS lewat '+
+            '<b>Project → Import/Export → Export Map to PDF</b> dengan pilihan '+
+            '<b>Create Geospatial PDF</b> diaktifkan.</div>')+
+        '<div class="meta" style="margin-top:6px">'+esc(GEOPDF.nama)+' · '+
+        GEOPDF.totalHalaman+' halaman · '+Math.round(dataUrl.length/1024)+' KB setelah digambar</div>';
+
+      document.getElementById('gpLanjut').style.display='block';
+      document.getElementById('gpNama').value = GEOPDF.nama;
+      document.getElementById('gpHalaman').max = GEOPDF.totalHalaman;
+      if(geo){
+        setEl('gpN', geo.ne[0]); setEl('gpS', geo.sw[0]);
+        setEl('gpW', geo.sw[1]); setEl('gpE', geo.ne[1]);
+      }
+      pratinjauPdfGeo();
+    }).catch(function(e){
+      st.innerHTML='<div class="kosong" style="color:var(--merah)">'+esc(e.message)+'</div>';
+    });
+  };
+  r.onerror = function(){ st.innerHTML='<div class="kosong" style="color:var(--merah)">Gagal membaca berkas.</div>'; };
+  r.readAsArrayBuffer(f);
+}
+
+function setEl(id,v){ var e=document.getElementById(id); if(e) e.value = v; }
+
+function gantiHalamanPdf(){
+  if(!GEOPDF.buffer) return;
+  var n = Number(nilaiEl('gpHalaman'))||1;
+  tampilLoader(true,'Menggambar halaman…');
+  gambarHalamanPdf(GEOPDF.buffer, n, 2000).then(function(d){
+    GEOPDF.dataUrl = d; GEOPDF.halaman = n;
+    tampilLoader(false); pratinjauPdfGeo();
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
+}
+
+function pratinjauPdfGeo(){
+  var el=document.getElementById('gpPratinjau'); if(!el || !GEOPDF.dataUrl) return;
+  el.innerHTML = '<div class="meta" style="margin-bottom:4px">Pratinjau halaman '+GEOPDF.halaman+'</div>'+
+    '<img src="'+GEOPDF.dataUrl+'" style="width:100%;max-height:180px;object-fit:contain;'+
+    'border:1px solid var(--garis);border-radius:8px;background:#fff">';
+}
+
+function isiDariTampilanPeta(){
+  if(!peta) return toast('Buka halaman Peta terlebih dahulu.', true);
+  var b = peta.getBounds();
+  setEl('gpN', b.getNorth().toFixed(6)); setEl('gpS', b.getSouth().toFixed(6));
+  setEl('gpW', b.getWest().toFixed(6));  setEl('gpE', b.getEast().toFixed(6));
+  toast('Koordinat diambil dari tampilan peta ✓');
+}
+
+function isiDariBlok(){
+  var lat=[], lng=[];
+  (S.blocks||[]).forEach(function(b){
+    var koor; try{ koor = typeof b.Koordinat==='string'?JSON.parse(b.Koordinat):b.Koordinat; }catch(e){ return; }
+    (function rekam(a){
+      if(!a || !a.length) return;
+      if(typeof a[0] === 'number'){ if(Math.abs(a[0])<=90 && Math.abs(a[1])<=180){ lat.push(a[0]); lng.push(a[1]); } return; }
+      a.forEach(rekam);
+    })(koor);
+  });
+  if(!lat.length) return toast('Tidak ada koordinat blok yang sah.', true);
+  setEl('gpN', Math.max.apply(null,lat).toFixed(6));
+  setEl('gpS', Math.min.apply(null,lat).toFixed(6));
+  setEl('gpW', Math.min.apply(null,lng).toFixed(6));
+  setEl('gpE', Math.max.apply(null,lng).toFixed(6));
+  toast('Koordinat diambil dari batas seluruh blok ✓');
+}
+
+function simpanPdfGeo(){
+  if(!GEOPDF.dataUrl) return toast('Pilih berkas PDF terlebih dahulu.', true);
+  var nama = nilaiEl('gpNama');
+  if(!nama) return toast('Nama lapisan wajib diisi.', true);
+
+  var N=Number(nilaiEl('gpN')), Sx=Number(nilaiEl('gpS')),
+      W=Number(nilaiEl('gpW')), E=Number(nilaiEl('gpE'));
+  if([N,Sx,W,E].some(function(v){ return isNaN(v); }))
+    return toast('Keempat batas koordinat wajib diisi.', true);
+  if(Math.abs(N)>90 || Math.abs(Sx)>90 || Math.abs(W)>180 || Math.abs(E)>180)
+    return toast('Koordinat di luar rentang lintang/bujur yang sah.', true);
+  if(N <= Sx) return toast('Lintang utara harus lebih besar dari lintang selatan.', true);
+  if(E <= W)  return toast('Bujur timur harus lebih besar dari bujur barat.', true);
+
+  tampilLoader(true,'Mengunggah lembar PDF…');
+  /* Gambar hasil penggambaran disimpan ke Drive, bukan ke dalam sel — ukuran
+     satu halaman peta jauh melampaui batas 45 KB per sel. */
+  callApi('uploadMedia', {
+    data: GEOPDF.dataUrl.split(',')[1], mime:'image/png',
+    nama: 'pdfgeo_' + nama.replace(/[^A-Za-z0-9_-]/g,'_') + '_h' + GEOPDF.halaman + '.png'
+  }).then(function(r){
+    var url = r.view || r.url || '';
+    if(!url) throw new Error('Unggahan tidak mengembalikan alamat berkas.');
+    return callApi('saveLayer', {
+      Nama: nama, Tipe: 'pdfgeo', URL: url,
+      Param: JSON.stringify({ sw:[Sx,W], ne:[N,E], halaman:GEOPDF.halaman, sumber:GEOPDF.sumber }),
+      Opacity: nilaiEl('gpOpacity'), Aktif: true, Urutan: 5
+    });
+  }).then(function(){
+    tampilLoader(false); tutupLembar();
+    toast('Lapisan PDF ditambahkan ✓');
+    muatData(true);
+  }).catch(function(e){ tampilLoader(false); toast(e.message, true); });
 }
 
 /* ==================== MULAI ==================== */
