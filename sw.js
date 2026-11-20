@@ -5,7 +5,7 @@
  *
  *  Naikkan VERSI setiap kali index.html diubah agar cache diperbarui.
  * ============================================================ */
-var VERSI = 'sawitgis-v4.2.0';
+var VERSI = 'sawitgis-v5.0.0';
 var INTI = [
   './',
   './index.html',
@@ -29,6 +29,12 @@ var INTI = [
  *      Stadia Maps), lalu isi URL-nya di menu Pengaturan; atau
  *   2. Muat berkas MBTiles milik sendiri lewat menu "Muat File" — legal
  *      sepenuhnya karena datanya milik/berlisensi pelanggan.
+ *   3. Foto udara PMTiles milik perusahaan: Menu → Peta Offline. Disimpan di
+ *      Origin Private File System (bukan di cache service worker ini),
+ *      sehingga berkas bergiga-giga tidak ikut terhapus saat VERSI dinaikkan.
+ *
+ * Berkas .pmtiles di R2 sengaja TIDAK dicegat di sini: pustaka PMTiles memakai
+ * permintaan Range, dan Cache API tidak menyimpan respons 206 sebagian.
  */
 var POLA_CDN = [
   'unpkg.com',

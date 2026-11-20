@@ -118,6 +118,10 @@
   .chip.biru{background:var(--biru-100);color:var(--biru)}
   .chip.abu{background:#EDF0EE;color:var(--abu)}
 
+  /* Tombol nonaktif harus TERLIHAT nonaktif — sebelumnya tampak sama dengan tombol aktif. */
+
+  .btn:disabled,.btn[disabled]{opacity:.45;cursor:not-allowed;filter:grayscale(.4);box-shadow:none}
+
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-weight:700;font-size:14px;
     padding:11px 18px;border-radius:11px;transition:transform .1s,box-shadow .15s}
   .btn:active{transform:scale(.97)}
@@ -754,6 +758,7 @@
       <button onclick="bukaStrukturOrganisasi()"><span class="ic">🗂️</span>Struktur Organisasi</button>
       <button onclick="bukaProfil()"><span class="ic">🪪</span>Profil Saya</button>
       <button onclick="bukaAturPin()"><span class="ic">🔐</span>PIN Akses Luring</button>
+      <button onclick="bukaPetaOffline()"><span class="ic">📴</span>Peta Offline</button>
       <button onclick="bukaAturTataLetak()"><span class="ic">🎛️</span>Tata Letak Modul</button>
       <button onclick="formGantiSandi()"><span class="ic">🔑</span>Ganti Kata Sandi</button>
       <button onclick="bukaPerbaruiApl()"><span class="ic">🔄</span>Perbarui Aplikasi</button>
@@ -779,6 +784,8 @@
       <button class="adminOnly" onclick="bukaKelolaRingkasan()"><span class="ic">⚡</span>Ringkasan Bulanan</button>
       <button class="adminOnly" onclick="bukaArsipTahunan()"><span class="ic">🗄️</span>Arsip Tahunan</button>
       <button class="adminOnly" onclick="bukaStatistikData()"><span class="ic">📊</span>Ukuran Data</button>
+      <button class="adminOnly" onclick="bukaStatusSistem()"><span class="ic">🩺</span>Status Sistem</button>
+      <button class="adminOnly" onclick="bukaBasisData()"><span class="ic">🗄️</span>Basis Data</button>
       <button class="adminOnly" onclick="bukaPemeliharaanJejak()"><span class="ic">🧹</span>Pemeliharaan Data</button>
       <button class="adminOnly" onclick="bukaCadangan()"><span class="ic">💾</span>Cadangkan Data</button>
     </div>
@@ -2380,7 +2387,8 @@ function muatData(ulang){
     var gagal = [];
     [['terapkanPengaturan',terapkanPengaturan],['terapkanPeran',terapkanPeran],
      ['isiOpsiBlok',isiOpsiBlok],['renderSemua',renderSemua],
-     ['perbaruiStatusOffline',perbaruiStatusOffline]].forEach(function(f){
+     ['perbaruiStatusOffline',perbaruiStatusOffline],
+     ['tampilkanVersiApp',tampilkanVersiApp]].forEach(function(f){
       try{ f[1](); }catch(err){ gagal.push(f[0]+': '+err.message); console.error(f[0], err); }
     });
     tampilLoader(false);
@@ -4875,8 +4883,14 @@ function pastikanPMTiles(){
  *   vector — memerlukan gaya tersendiri, belum ditangani di sini
  */
 function pasangPMTiles(d, wadah, op){
+  var infoSumber = null;
   pastikanPMTiles().then(function(){
-    var p = new pmtiles.PMTiles(d.URL);
+    /* Salinan di perangkat (Menu → Peta Offline) dipakai lebih dulu bila ada;
+       tanpa salinan dan tanpa sinyal, beri tahu dengan jelas. */
+    return pmoffSumberUntuk(d);
+  }).then(function(sb){
+    infoSumber = sb;
+    var p = new pmtiles.PMTiles(sb.sumber);
 
     return p.getHeader().then(function(hdr){
       /* tileType 1 = MVT (vektor), selebihnya raster (PNG/JPEG/WEBP) */
@@ -4887,7 +4901,7 @@ function pasangPMTiles(d, wadah, op){
 
       var lapisan = pmtiles.leafletRasterLayer(p, {
         opacity: op,
-        attribution: esc(d.Nama),
+        attribution: esc(d.Nama) + (infoSumber && infoSumber.offline ? ' · 📴 offline' : ''),
         maxNativeZoom: hdr.maxZoom,
         maxZoom: Number(d.MaxZoom) || 22,
         minZoom: Number(d.MinZoom) || 0
@@ -4904,6 +4918,12 @@ function pasangPMTiles(d, wadah, op){
     });
   }).catch(function(e){
     var pesan = String(e.message||e);
+    var tanpaSinyal = (typeof OFFLINE !== 'undefined' && OFFLINE) || navigator.onLine === false;
+    if(tanpaSinyal || d._lokal || (infoSumber && infoSumber.offline)){
+      /* Tanpa sinyal, atau berkasnya dari perangkat: uji koneksi tidak relevan. */
+      toast('Lapisan "'+d.Nama+'": '+pesan, true);
+      return;
+    }
     /* Kegagalan paling sering bukan pada berkasnya, melainkan pengaturan CORS
        di penyimpanan objek. Pesan diarahkan ke sana supaya tidak menebak. */
     if(/fetch|network|CORS|Failed/i.test(pesan)){
@@ -5012,7 +5032,10 @@ function isAktif(v){ return v===true || v==='true' || v==='TRUE' || v==='Ya' || 
 /* Tanda pengenal isi sebuah lapisan. Bila tandanya sama, lapisannya tidak
    perlu dibangun ulang. */
 function sidikLayer(d){
-  return [d.Tipe, d.URL, d.Param, d.Opacity, d.MinZoom, d.MaxZoom, d.Nama].join('|');
+  /* Keadaan salinan offline ikut dihitung, sehingga lapisan dibangun ulang
+     otomatis saat salinan disimpan/dihapus atau sinyal hilang/kembali. */
+  return [d.Tipe, d.URL, d.Param, d.Opacity, d.MinZoom, d.MaxZoom, d.Nama,
+          d.Tipe === 'pmtiles' ? pmoffSidik(d) : ''].join('|');
 }
 
 var sidikLapisan = {};
@@ -5032,7 +5055,8 @@ function renderLayerKustom(){
   if(!peta || !kontrolLayer) return;
 
   var daftar = (S.layers||[]).slice()
-    .sort(function(a,b){ return (Number(a.Urutan)||0)-(Number(b.Urutan)||0); });
+    .sort(function(a,b){ return (Number(a.Urutan)||0)-(Number(b.Urutan)||0); })
+    .concat(pmoffLapisanLokal());          // berkas PMTiles yang diimpor dari perangkat
 
   var adaSekarang = {};
   daftar.forEach(function(d){ adaSekarang[d.ID] = 1; });
@@ -5066,7 +5090,8 @@ function renderLayerKustom(){
     if(!lyr) return;
     lapisanKustom[d.ID] = lyr;
     sidikLapisan[d.ID] = sidik;
-    kontrolLayer.addOverlay(lyr, '🗺 '+esc(d.Nama));
+    kontrolLayer.addOverlay(lyr, (d._lokal ? '📴 ' : '🗺 ')+esc(d.Nama)+
+      (d.Tipe==='pmtiles' && !d._lokal && pmoffCari(d.ID) ? ' <span title="Tersimpan di perangkat">📴</span>' : ''));
     if(sedangMenyala) lyr.addTo(peta);
   });
 }
@@ -12202,16 +12227,37 @@ function kartuIzinNotifikasi(aktif){
     '<div style="flex:1"><b style="font-size:12.5px">Notifikasi Layar</b>'+
     '<div style="font-size:11px;color:var(--abu);margin-top:3px;line-height:1.5">'+esc(d.pesan)+'</div></div>'+
     (d.sebab==='belum'
-      ? '<button class="btn btn-utama btn-kecil" onclick="mintaIzinNotifikasi().then(function(){bukaPanelNotifikasi();})">Izinkan</button>'
+      ? '<button class="btn btn-utama btn-kecil" onclick="mintaIzinNotifikasi().then(function(){ if(panelNotifikasiTerbuka()) gambarPanelNotifikasi(); })">Izinkan</button>'
       : '')+
     '</div>';
 }
 
+/* Daftar workflow diambil SEKALI per 5 menit untuk dihitung di lonceng.
+ *
+ * Dulu: bila daftar kosong, panel meminta ke server lalu MEMANGGIL DIRINYA
+ * SENDIRI setelah jawaban tiba. Tanpa dokumen workflow, jawaban selalu kosong,
+ * sehingga terjadi perulangan tanpa akhir: panel terus terbuka kembali setiap
+ * beberapa detik walau sudah ditutup. Kini jawaban hanya MEMPERBARUI isi panel,
+ * dan itu pun hanya bila panelnya masih terbuka. */
+var NOTIF_WF_DIAMBIL = 0;
+
+function panelNotifikasiTerbuka(){
+  var tirai = document.getElementById('tirai');
+  return !!(tirai && tirai.classList.contains('tampil') && document.getElementById('panelNotifKebun'));
+}
+
 function bukaPanelNotifikasi(){
-  // pastikan daftar workflow terbaru ikut terhitung di notifikasi
-  if(!(WF.docs||[]).length){
-    callApi('listWorkflows', {}).then(function(r){ WF.docs=r||[]; bukaPanelNotifikasi(); }).catch(function(){});
+  gambarPanelNotifikasi();
+  if(Date.now() - NOTIF_WF_DIAMBIL > 5 * 60 * 1000){
+    NOTIF_WF_DIAMBIL = Date.now();
+    callApi('listWorkflows', {}).then(function(r){
+      WF.docs = Array.isArray(r) ? r : [];
+      if(panelNotifikasiTerbuka()) gambarPanelNotifikasi();   // perbarui isi, jangan buka ulang
+    }).catch(function(){ NOTIF_WF_DIAMBIL = 0; });
   }
+}
+
+function gambarPanelNotifikasi(){
   var list = periksaDanKirimNotifikasiJadwal();
   var isNotifGranted = typeof Notification !== 'undefined' && Notification.permission === 'granted';
 
@@ -12237,7 +12283,7 @@ function bukaPanelNotifikasi(){
 
   bukaLembar(
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'+
-      '<h3 style="margin:0">🔔 Peringatan & Notifikasi Kebun</h3>'+
+      '<h3 style="margin:0" id="panelNotifKebun">🔔 Peringatan & Notifikasi Kebun</h3>'+
       '<span class="chip '+(list.length?'merah':'hijau')+'">'+list.length+' Alert</span>'+
     '</div>'+
     kartuIzinNotifikasi(isNotifGranted)+
@@ -12932,8 +12978,8 @@ function eksporKtuCSV(jenis){
 
 /* Penanda versi build — memudahkan memastikan pembaruan sudah termuat
  * di HP (mis. setelah unggah ulang ke GitHub Pages). Naikkan setiap rilis. */
-var VERSI_APP = '4.2.0';
-var TANGGAL_BUILD = '2026-08-26';
+var VERSI_APP = '5.0.0';
+var TANGGAL_BUILD = '2026-11-18';
 function tampilkanVersiApp(){
   var v = document.getElementById('versiApp');
   if(v) v.textContent = VERSI_APP + ' (' + TANGGAL_BUILD + ')';
@@ -12946,8 +12992,1360 @@ function tampilkanVersiApp(){
       teks += ' · ⚠️ backend v' + vb + ' — pasang ulang Code.gs & Index.html dari rilis yang sama';
       m.style.color = 'var(--merah)';
     }
+    var db = labelModeDb(S && S.db);
+    teks += ' · basis data ' + db.teks;
     m.textContent = teks;
   }
+}
+
+/* =====================================================================
+ *  EKSTRAK AREA PMTILES — menyusun berkas PMTiles v3 baru berisi hanya
+ *  ubin yang menutupi satu kotak area pada rentang zoom tertentu.
+ *
+ *  Dipakai fitur "Simpan area kebun" pada Peta Offline: ortofoto drone
+ *  yang besarnya puluhan GB tidak mungkin disalin utuh ke HP, tetapi
+ *  area satu estate pada zoom 13–19 biasanya hanya puluhan sampai ratusan MB.
+ *
+ *  Ditulis ES5 + Promise agar seragam dengan Index.html. Tidak bergantung
+ *  pada DOM — diuji di Node terhadap pembaca PMTiles resmi.
+ *
+ *  Tata letak berkas keluaran:
+ *    [0 … 16383]    header 127 bita + direktori akar (diisi paling akhir)
+ *    [16384 …]      data ubin, urut menurut tileId (clustered)
+ *    [… ]           metadata JSON
+ *    [… ]           direktori daun (bila ubin terlalu banyak untuk akar)
+ * ===================================================================== */
+
+var PMX_CADANGAN = 16384;          // ruang header + akar, sesuai spesifikasi v3
+
+function pmxVarint(arr, n) {
+  /* LEB128 tanpa tanda. Memakai aritmetika, bukan operator bit, karena
+     tileId pada zoom tinggi melebihi 32 bit. */
+  while (n >= 128) { arr.push((n % 128) + 128); n = Math.floor(n / 128); }
+  arr.push(n);
+}
+
+/** Serialisasi direktori (tanpa kompresi) sesuai spesifikasi PMTiles v3. */
+function pmxDirektori(entri) {
+  var a = [];
+  pmxVarint(a, entri.length);
+  var akhir = 0, i;
+  for (i = 0; i < entri.length; i++) { pmxVarint(a, entri[i].tileId - akhir); akhir = entri[i].tileId; }
+  for (i = 0; i < entri.length; i++) pmxVarint(a, entri[i].runLength);
+  for (i = 0; i < entri.length; i++) pmxVarint(a, entri[i].length);
+  for (i = 0; i < entri.length; i++) {
+    if (i > 0 && entri[i].offset === entri[i - 1].offset + entri[i - 1].length) pmxVarint(a, 0);
+    else pmxVarint(a, entri[i].offset + 1);
+  }
+  return new Uint8Array(a);
+}
+
+/* Direktori & metadata dikompres gzip. Spesifikasi mengizinkan tanpa
+   kompresi, tetapi banyak alat (pmtiles Python, go-pmtiles, QGIS) hanya
+   membaca direktori ber-gzip — berkas offline sebaiknya tetap terbuka di
+   alat lain. Bila peramban belum punya CompressionStream, jatuh ke tanpa
+   kompresi (tetap terbaca oleh aplikasi ini). */
+function pmxDukungGzip() { return typeof CompressionStream !== 'undefined' && typeof Response !== 'undefined'; }
+
+function pmxGzip(u8) {
+  var aliran = new Blob([u8]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Response(aliran).arrayBuffer().then(function (b) { return new Uint8Array(b); });
+}
+
+function pmxKemas(u8, gzip) { return gzip ? pmxGzip(u8) : Promise.resolve(u8); }
+
+/** Susun akar (+ daun bila perlu) agar header + akar muat dalam 16 KB. */
+function pmxSusunDirektori(entri, gzip) {
+  var batasAkar = PMX_CADANGAN - 127;
+  return pmxKemas(pmxDirektori(entri), gzip).then(function (akar) {
+    if (akar.length <= batasAkar) return { akar: akar, daun: new Uint8Array(0) };
+    function coba(ukuranDaun) {
+      var potongan = [];
+      for (var i = 0; i < entri.length; i += ukuranDaun) potongan.push(entri.slice(i, i + ukuranDaun));
+      return Promise.all(potongan.map(function (x) { return pmxKemas(pmxDirektori(x), gzip); })).then(function (daunKemas) {
+        var penunjuk = [], posisi = 0;
+        daunKemas.forEach(function (d, j) {
+          penunjuk.push({ tileId: potongan[j][0].tileId, offset: posisi, length: d.length, runLength: 0 });
+          posisi += d.length;
+        });
+        return pmxKemas(pmxDirektori(penunjuk), gzip).then(function (akar2) {
+          if (akar2.length > batasAkar) return coba(ukuranDaun * 2);
+          var daun = new Uint8Array(posisi), p = 0;
+          daunKemas.forEach(function (x) { daun.set(x, p); p += x.length; });
+          return { akar: akar2, daun: daun };
+        });
+      });
+    }
+    return coba(4096);
+  });
+}
+
+function pmxHeader(h) {
+  var b = new ArrayBuffer(127), v = new DataView(b), u = new Uint8Array(b);
+  'PMTiles'.split('').forEach(function (c, i) { u[i] = c.charCodeAt(0); });
+  u[7] = 3;
+  function u64(pos, n) { v.setUint32(pos, n % 4294967296, true); v.setUint32(pos + 4, Math.floor(n / 4294967296), true); }
+  u64(8, h.rootOffset); u64(16, h.rootLength);
+  u64(24, h.metaOffset); u64(32, h.metaLength);
+  u64(40, h.leafOffset); u64(48, h.leafLength);
+  u64(56, h.dataOffset); u64(64, h.dataLength);
+  u64(72, h.jumlah); u64(80, h.jumlah); u64(88, h.jumlah);
+  u[96] = 1;                    // clustered
+  u[97] = h.internal;           // internal compression: 2 = gzip, 1 = none
+  u[98] = 1;                    // tile compression: none (pustaka sudah mengurai)
+  u[99] = h.tileType;
+  u[100] = h.minZoom; u[101] = h.maxZoom;
+  v.setInt32(102, Math.round(h.minLon * 1e7), true);
+  v.setInt32(106, Math.round(h.minLat * 1e7), true);
+  v.setInt32(110, Math.round(h.maxLon * 1e7), true);
+  v.setInt32(114, Math.round(h.maxLat * 1e7), true);
+  u[118] = h.centerZoom;
+  v.setInt32(119, Math.round(h.centerLon * 1e7), true);
+  v.setInt32(123, Math.round(h.centerLat * 1e7), true);
+  return u;
+}
+
+function pmxLon2x(lon, z) { return Math.floor((lon + 180) / 360 * Math.pow(2, z)); }
+function pmxLat2y(lat, z) {
+  var r = lat * Math.PI / 180;
+  return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z));
+}
+
+/**
+ * Daftar ubin dalam kotak [barat, selatan, timur, utara] pada zoom zMin..zMax,
+ * terurut menurut tileId. zxyKeId = pmtiles.zxyToTileId.
+ */
+function pmxDaftarUbin(kotak, zMin, zMax, zxyKeId) {
+  var out = [];
+  for (var z = zMin; z <= zMax; z++) {
+    var n = Math.pow(2, z);
+    var x0 = Math.max(0, pmxLon2x(kotak[0], z)), x1 = Math.min(n - 1, pmxLon2x(kotak[2], z));
+    var y0 = Math.max(0, pmxLat2y(kotak[3], z)), y1 = Math.min(n - 1, pmxLat2y(kotak[1], z));
+    for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) out.push({ z: z, x: x, y: y, id: zxyKeId(z, x, y) });
+  }
+  out.sort(function (a, b) { return a.id - b.id; });
+  return out;
+}
+
+/** Potong kotak & zoom dengan cakupan berkas sumber. */
+function pmxPotong(hdr, kotak, zMin, zMax) {
+  var k = kotak.slice();
+  if (hdr.minLon != null && hdr.maxLon > hdr.minLon) {
+    k = [Math.max(k[0], hdr.minLon), Math.max(k[1], hdr.minLat), Math.min(k[2], hdr.maxLon), Math.min(k[3], hdr.maxLat)];
+  }
+  return { kotak: k, kosong: k[0] >= k[2] || k[1] >= k[3],
+           zMin: Math.max(zMin, hdr.minZoom), zMax: Math.min(zMax, hdr.maxZoom) };
+}
+
+/** Perkiraan jumlah & ukuran — dari sampel ubin, sebelum mengunduh apa pun. */
+function pmxPerkiraan(p, kotak, zMin, zMax, zxyKeId) {
+  return p.getHeader().then(function (hdr) {
+    var c = pmxPotong(hdr, kotak, zMin, zMax);
+    if (c.kosong || c.zMin > c.zMax) return { ubin: 0, perkiraanBita: 0, zMin: c.zMin, zMax: c.zMax };
+    return pmxPerkiraanDalam(p, c.kotak, c.zMin, c.zMax, zxyKeId);
+  });
+}
+
+function pmxPerkiraanDalam(p, kotak, zMin, zMax, zxyKeId) {
+  var daftar = pmxDaftarUbin(kotak, zMin, zMax, zxyKeId);
+  if (!daftar.length) return Promise.resolve({ ubin: 0, perkiraanBita: 0 });
+  var sampel = [], langkah = Math.max(1, Math.floor(daftar.length / 12));
+  for (var i = Math.floor(langkah / 2); i < daftar.length && sampel.length < 12; i += langkah) sampel.push(daftar[i]);
+  return Promise.all(sampel.map(function (t) {
+    return p.getZxy(t.z, t.x, t.y).then(function (r) { return r && r.data ? r.data.byteLength : null; })
+      .catch(function () { return null; });
+  })).then(function (uk) {
+    var ada = uk.filter(function (x) { return x !== null; });
+    var rata = ada.length ? ada.reduce(function (a, b) { return a + b; }, 0) / ada.length : 0;
+    var isi = ada.length / sampel.length;   // sebagian ubin di tepi area bisa kosong
+    return { ubin: daftar.length, perkiraanBita: PMX_CADANGAN + Math.round(rata * daftar.length * isi * 1.02),
+             sampel: sampel.length, zMin: zMin, zMax: zMax };
+  });
+}
+
+/**
+ * Ekstrak. penulis = { tulis(Uint8Array|ArrayBuffer), tulisDi(posisi, Uint8Array), selesai() }
+ * opsi = { kotak, zMin, zMax, zxyKeId, paralel, batasUbin, cekBatal(), saatKemajuan({selesai,total,bita}) }
+ */
+function pmxEkstrak(p, opsi, penulis) {
+  var paralel = opsi.paralel || 6;
+  var batasUbin = opsi.batasUbin || 80000;
+  var hdrSumber, metaSumber;
+  return Promise.all([p.getHeader(), p.getMetadata().catch(function () { return {}; })])
+    .then(function (r) {
+      hdrSumber = r[0]; metaSumber = r[1] || {};
+      /* potong kotak dengan batas berkas sumber agar tidak meminta ubin yang pasti tidak ada */
+      var c = pmxPotong(hdrSumber, opsi.kotak, opsi.zMin, opsi.zMax);
+      if (c.kosong) throw new Error('Area yang dipilih berada di luar cakupan foto udara ini.');
+      var k = c.kotak, zMin = c.zMin, zMax = c.zMax;
+      if (zMin > zMax) throw new Error('Rentang zoom di luar cakupan berkas (z' + hdrSumber.minZoom + '–' + hdrSumber.maxZoom + ').');
+      var daftar = pmxDaftarUbin(k, zMin, zMax, opsi.zxyKeId);
+      if (daftar.length > batasUbin) {
+        throw new Error('Area terlalu besar: ' + daftar.length.toLocaleString('id-ID') + ' ubin (batas ' +
+          batasUbin.toLocaleString('id-ID') + '). Turunkan zoom maksimum atau perkecil area.');
+      }
+      var entri = [], posData = 0, selesai = 0;
+      var cadangan = new Uint8Array(PMX_CADANGAN);
+
+      return Promise.resolve(penulis.tulis(cadangan)).then(function () {
+        function ambil(t, coba) {
+          return p.getZxy(t.z, t.x, t.y).catch(function (e) {
+            if ((coba || 0) >= 3) throw new Error('Gagal mengambil ubin z' + t.z + '/' + t.x + '/' + t.y + ': ' + (e.message || e));
+            return new Promise(function (ok) { setTimeout(ok, 500 * ((coba || 0) + 1)); })
+              .then(function () { return ambil(t, (coba || 0) + 1); });
+          });
+        }
+        /* Diambil per gelombang, ditulis berurutan — data ubin harus urut
+           tileId agar berkas berstatus "clustered" dan mudah dibaca. */
+        function gelombang(i) {
+          if (opsi.cekBatal && opsi.cekBatal()) return Promise.reject(new Error('DIBATALKAN'));
+          if (i >= daftar.length) return Promise.resolve();
+          var bagian = daftar.slice(i, i + paralel * 4);
+          return Promise.all(bagian.map(function (t) { return ambil(t, 0); })).then(function (hasil) {
+            var rantai = Promise.resolve();
+            hasil.forEach(function (r, j) {
+              selesai++;
+              if (!r || !r.data || !r.data.byteLength) return;
+              var u8 = new Uint8Array(r.data);
+              entri.push({ tileId: bagian[j].id, offset: posData, length: u8.length, runLength: 1 });
+              posData += u8.length;
+              rantai = rantai.then(function () { return penulis.tulis(u8); });
+            });
+            return rantai.then(function () {
+              if (opsi.saatKemajuan) opsi.saatKemajuan({ selesai: selesai, total: daftar.length, bita: posData });
+              return gelombang(i + bagian.length);
+            });
+          });
+        }
+        return gelombang(0);
+      }).then(function () {
+        if (!entri.length) throw new Error('Tidak ada satu pun ubin di area & zoom ini. Periksa area yang dipilih.');
+        var meta = {};
+        Object.keys(metaSumber).forEach(function (x) { meta[x] = metaSumber[x]; });
+        meta.sawitgis_ekstrak = { dari: opsi.sumber || '', kotak: k, zoom: [zMin, zMax],
+                                  dibuat: new Date().toISOString(), ubin: entri.length };
+        var gzip = opsi.tanpaGzip ? false : pmxDukungGzip();
+        var metaBita, dir;
+        return pmxKemas(new TextEncoder().encode(JSON.stringify(meta)), gzip).then(function (mb) {
+          metaBita = mb;
+          return pmxSusunDirektori(entri, gzip);
+        }).then(function (d) {
+        dir = d;
+        var posMeta = PMX_CADANGAN + posData;
+        var posDaun = posMeta + metaBita.length;
+        var hdr = pmxHeader({
+          rootOffset: 127, rootLength: dir.akar.length,
+          metaOffset: posMeta, metaLength: metaBita.length,
+          leafOffset: posDaun, leafLength: dir.daun.length,
+          dataOffset: PMX_CADANGAN, dataLength: posData,
+          jumlah: entri.length, tileType: hdrSumber.tileType, internal: gzip ? 2 : 1,
+          minZoom: zMin, maxZoom: zMax,
+          minLon: k[0], minLat: k[1], maxLon: k[2], maxLat: k[3],
+          centerZoom: zMin, centerLon: (k[0] + k[2]) / 2, centerLat: (k[1] + k[3]) / 2
+        });
+        var kepala = new Uint8Array(PMX_CADANGAN);
+        kepala.set(hdr, 0); kepala.set(dir.akar, 127);
+        return Promise.resolve(penulis.tulis(metaBita))
+          .then(function () { return dir.daun.length ? penulis.tulis(dir.daun) : null; })
+          .then(function () { return penulis.tulisDi(0, kepala); })
+          .then(function () { return penulis.selesai(); })
+          .then(function () {
+            return { ubin: entri.length, bita: PMX_CADANGAN + posData + metaBita.length + dir.daun.length,
+                     zMin: zMin, zMax: zMax, kotak: k, daun: dir.daun.length > 0, tileType: hdrSumber.tileType,
+                     gzip: gzip };
+          });
+        });
+      });
+    });
+}
+
+/* =====================================================================
+ *  PETA OFFLINE (PMTiles di perangkat) · STATUS SISTEM · BASIS DATA
+ *  v5.0.0
+ * ===================================================================*/
+
+/* ---------------------------------------------------------------------
+ *  1. PENYIMPANAN BERKAS DI PERANGKAT
+ *  Utama: Origin Private File System (OPFS) — berkas bergiga-giga aman,
+ *  tidak dimuat ke memori. Cadangan: IndexedDB (peramban lama).
+ *  Daftar salinan dicatat di localStorage 'sg_pmoff_v1'.
+ * ------------------------------------------------------------------- */
+var PMOFF_KUNCI = 'sg_pmoff_v1';
+var PMOFF_DIR = 'peta-offline';
+var PMOFF_IDB = 'sg_petaoffline';
+var PMOFF_BATAL = false;
+var PMOFF_SEDANG = false;
+
+function pmoffDaftar(){ try{ return JSON.parse(localStorage.getItem(PMOFF_KUNCI)||'[]'); }catch(e){ return []; } }
+function pmoffSimpanDaftar(a){ try{ localStorage.setItem(PMOFF_KUNCI, JSON.stringify(a)); }catch(e){} }
+function pmoffCari(idLayer){
+  return pmoffDaftar().filter(function(x){ return !x.lokal && String(x.layerId)===String(idLayer); })[0] || null;
+}
+function pmoffDukungOpfs(){
+  return !!(navigator.storage && navigator.storage.getDirectory &&
+            window.FileSystemFileHandle && FileSystemFileHandle.prototype.createWritable);
+}
+function pmoffDirOpfs(){
+  return navigator.storage.getDirectory().then(function(root){
+    return root.getDirectoryHandle(PMOFF_DIR, { create:true });
+  });
+}
+function pmoffIdb(){
+  return new Promise(function(res, rej){
+    var r = indexedDB.open(PMOFF_IDB, 1);
+    r.onupgradeneeded = function(){ r.result.createObjectStore('berkas'); };
+    r.onsuccess = function(){ res(r.result); };
+    r.onerror = function(){ rej(r.error || new Error('IndexedDB tidak tersedia.')); };
+  });
+}
+function pmoffIdbOp(mode, fn){
+  return pmoffIdb().then(function(db){
+    return new Promise(function(res, rej){
+      var tx = db.transaction('berkas', mode), st = tx.objectStore('berkas');
+      var hasil; var rq = fn(st);
+      if(rq) rq.onsuccess = function(){ hasil = rq.result; };
+      tx.oncomplete = function(){ res(hasil); };
+      tx.onerror = tx.onabort = function(){ rej(tx.error || new Error('Gagal menyimpan ke IndexedDB.')); };
+    });
+  });
+}
+
+/** Penulis berurutan dengan satu kemampuan menimpa posisi 0 (header PMTiles). */
+function pmoffBukaPenulis(nama){
+  if(pmoffDukungOpfs()){
+    return pmoffDirOpfs().then(function(dir){
+      return dir.getFileHandle(nama, { create:true }).then(function(fh){
+        return fh.createWritable({ keepExistingData:false });
+      }).then(function(w){
+        var pos = 0;
+        return {
+          jenis:'opfs',
+          tulis:function(d){ var n = d.byteLength!=null ? d.byteLength : d.size;
+            var p = w.write({ type:'write', position:pos, data:d }); pos += n; return p; },
+          tulisDi:function(posisi, d){ return w.write({ type:'write', position:posisi, data:d }); },
+          selesai:function(){ return w.close(); },
+          batal:function(){
+            return Promise.resolve(w.abort ? w.abort() : w.close()).catch(function(){})
+              .then(function(){ return dir.removeEntry(nama).catch(function(){}); });
+          }
+        };
+      });
+    });
+  }
+  /* IndexedDB: kepingan dikumpulkan sebagai Blob (peramban menyimpannya di
+     disk, bukan di memori), lalu disatukan saat selesai. */
+  var bagian = [], penampung = [], ukPenampung = 0;
+  function tuang(){ if(penampung.length){ bagian.push(new Blob(penampung)); penampung = []; ukPenampung = 0; } }
+  return Promise.resolve({
+    jenis:'idb',
+    tulis:function(d){
+      var u = d instanceof Blob ? d : new Uint8Array(d.buffer ? d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength) : d);
+      penampung.push(u); ukPenampung += (u.size!=null ? u.size : u.byteLength);
+      if(ukPenampung > 4*1048576) tuang();
+      return Promise.resolve();
+    },
+    tulisDi:function(posisi, d){
+      tuang();
+      if(posisi !== 0 || !bagian.length) return Promise.reject(new Error('Penulisan posisi tidak didukung.'));
+      /* bagian pertama selalu blok cadangan 16 KB yang ditulis paling awal */
+      var pertama = bagian[0];
+      bagian[0] = new Blob([d, pertama.slice(d.byteLength)]);
+      return Promise.resolve();
+    },
+    selesai:function(){ tuang(); var blob = new Blob(bagian);
+      return pmoffIdbOp('readwrite', function(st){ return st.put(blob, nama); }); },
+    batal:function(){ bagian = []; penampung = []; return Promise.resolve(); }
+  });
+}
+
+function pmoffBacaBerkas(meta){
+  if(meta.simpan === 'opfs'){
+    return pmoffDirOpfs().then(function(dir){ return dir.getFileHandle(meta.berkas); })
+      .then(function(fh){ return fh.getFile(); });
+  }
+  return pmoffIdbOp('readonly', function(st){ return st.get(meta.berkas); }).then(function(blob){
+    if(!blob) throw new Error('Salinan offline tidak ditemukan di perangkat.');
+    return new File([blob], meta.berkas);
+  });
+}
+
+function pmoffHapusBerkas(meta){
+  var p = meta.simpan === 'opfs'
+    ? pmoffDirOpfs().then(function(dir){ return dir.removeEntry(meta.berkas); })
+    : pmoffIdbOp('readwrite', function(st){ return st.delete(meta.berkas); });
+  return p.catch(function(){}).then(function(){
+    pmoffSimpanDaftar(pmoffDaftar().filter(function(x){ return x.id !== meta.id; }));
+  });
+}
+
+function pmoffNamaBerkas(dasar){
+  /* Nama unik per penyimpanan: pustaka PMTiles menembolok direktori menurut
+     nama berkas, sehingga salinan baru dengan nama lama akan membaca isi lama. */
+  return 'pm-' + String(dasar).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,40) + '-' + Date.now().toString(36) + '.pmtiles';
+}
+
+function pmoffUkuranTeks(b){
+  if(b == null || isNaN(b)) return '—';
+  if(b < 1048576) return Math.max(1, Math.round(b/1024)) + ' KB';
+  if(b < 1073741824) return (b/1048576).toFixed(b < 10485760 ? 1 : 0).replace('.', ',') + ' MB';
+  return (b/1073741824).toFixed(2).replace('.', ',') + ' GB';
+}
+
+function pmoffRuang(){
+  if(!navigator.storage || !navigator.storage.estimate) return Promise.resolve(null);
+  return Promise.all([
+    navigator.storage.estimate(),
+    navigator.storage.persisted ? navigator.storage.persisted() : Promise.resolve(null)
+  ]).then(function(r){ return { pakai:r[0].usage||0, kuota:r[0].quota||0, persisten:r[1] }; })
+    .catch(function(){ return null; });
+}
+
+/* ---------------------------------------------------------------------
+ *  2. SUMBER PMTILES: salinan offline lebih dulu, lalu jaringan
+ * ------------------------------------------------------------------- */
+function pmoffPakaiSalinan(meta){
+  if(!meta) return false;
+  if(meta.mode === 'penuh' || meta.selalu) return true;
+  /* Salinan "area" hanya menutupi kebun pada zoom tertentu. Saat ada sinyal,
+     berkas lengkap di server dipakai agar area di luar kebun tetap tampil —
+     kecuali pengguna memilih selalu memakai salinan (hemat kuota). */
+  return (typeof OFFLINE !== 'undefined' && OFFLINE) || navigator.onLine === false;
+}
+
+function pmoffSidik(d){
+  var m = pmoffCari(d.ID);
+  return m ? (m.berkas + ':' + (pmoffPakaiSalinan(m) ? 1 : 0)) : '-';
+}
+
+/** Kembalikan Promise berisi sumber untuk new pmtiles.PMTiles(...). */
+function pmoffSumberUntuk(d){
+  var m = d._lokal ? d._lokal : pmoffCari(d.ID);
+  if(m && (d._lokal || pmoffPakaiSalinan(m))){
+    return pmoffBacaBerkas(m).then(function(f){
+      return { sumber: new pmtiles.FileSource(f), offline: true, meta: m };
+    }).catch(function(e){
+      if(d._lokal) throw e;
+      if(!d.URL) throw e;
+      return { sumber: d.URL, offline: false };
+    });
+  }
+  if(!d.URL) return Promise.reject(new Error('Lapisan ini tidak memiliki alamat berkas.'));
+  if((typeof OFFLINE !== 'undefined' && OFFLINE) || navigator.onLine === false){
+    return Promise.reject(new Error('Belum ada salinan offline untuk lapisan ini. ' +
+      'Saat ada sinyal, buka Menu → Peta Offline untuk menyimpannya di perangkat.'));
+  }
+  return Promise.resolve({ sumber: d.URL, offline: false });
+}
+
+/* Lapisan lokal (berkas yang diimpor dari perangkat) dipasang ke kontrol
+   lapisan seperti lapisan server, dengan awalan ikon berbeda. */
+function pmoffLapisanLokal(){
+  return pmoffDaftar().filter(function(x){ return x.lokal; }).map(function(m){
+    return { ID:'lokal:'+m.id, Nama:m.nama, Tipe:'pmtiles', URL:'', Opacity:1,
+             MinZoom:'', MaxZoom:22, Aktif:false, _lokal:m };
+  });
+}
+
+/* Pustaka pmtiles tidak menangkap kegagalan jaringan untuk ubin yang sedang
+   diunduh saat sinyal putus, sehingga konsol penuh "Uncaught (in promise)".
+   Tidak merusak apa pun — ubin itu memang tidak bisa diambil — jadi diredam,
+   khusus galat jaringan yang berasal dari pustaka pmtiles saja. */
+window.addEventListener('unhandledrejection', function(ev){
+  var r = ev.reason, tumpukan = String((r && r.stack) || '');
+  if(/pmtiles/i.test(tumpukan) && /Failed to fetch|NetworkError|Load failed|network/i.test(String(r && r.message))){
+    ev.preventDefault();
+  }
+});
+
+/* Ganti sumber lapisan otomatis saat sinyal hilang/kembali. */
+(function(){
+  function ulang(){
+    if(!pmoffDaftar().length) return;
+    try{ if(typeof renderLayerKustom === 'function') renderLayerKustom(); }catch(e){}
+  }
+  window.addEventListener('online', function(){ setTimeout(ulang, 400); });
+  window.addEventListener('offline', function(){ setTimeout(ulang, 400); });
+})();
+
+/* ---------------------------------------------------------------------
+ *  3. MENYIMPAN: berkas penuh, area kebun, atau impor dari perangkat
+ * ------------------------------------------------------------------- */
+function pmoffMintaPersisten(){
+  try{
+    if(navigator.storage && navigator.storage.persist) return navigator.storage.persist().catch(function(){ return false; });
+  }catch(e){}
+  return Promise.resolve(false);
+}
+
+function pmoffCekRuang(perluBita){
+  return pmoffRuang().then(function(r){
+    if(!r || !r.kuota || !perluBita) return;
+    var sisa = r.kuota - r.pakai;
+    if(perluBita * 1.1 > sisa){
+      throw new Error('Ruang penyimpanan perangkat tidak cukup: perlu ±' + pmoffUkuranTeks(perluBita) +
+        ', tersisa ±' + pmoffUkuranTeks(sisa) + '. Pilih area lebih kecil atau zoom maksimum lebih rendah.');
+    }
+  });
+}
+
+/** Unduh berkas .pmtiles utuh dengan aliran (tidak dimuat ke memori). */
+function pmoffUnduhPenuh(d, saatKemajuan){
+  var nama = pmoffNamaBerkas(d.ID), penulis = null, total = 0, didapat = 0;
+  return fetch(d.URL, { cache:'no-store' }).then(function(res){
+    if(!res.ok) throw new Error('Server menolak (HTTP ' + res.status + ').');
+    total = Number(res.headers.get('content-length')) || 0;
+    if(!res.body || !res.body.getReader) throw new Error('Peramban ini tidak mendukung unduhan beraliran.');
+    return pmoffCekRuang(total).then(function(){ return pmoffBukaPenulis(nama); }).then(function(w){
+      penulis = w;
+      var pembaca = res.body.getReader(), awal = true;
+      function langkah(){
+        if(PMOFF_BATAL) { try{ pembaca.cancel(); }catch(e){} return Promise.reject(new Error('DIBATALKAN')); }
+        return pembaca.read().then(function(r){
+          if(r.done) return;
+          if(awal){
+            awal = false;
+            var u = r.value, sidik = String.fromCharCode.apply(null, u.subarray(0,7));
+            if(sidik !== 'PMTiles') throw new Error('Berkas ini bukan PMTiles.');
+            if(u[7] !== 3) throw new Error('PMTiles versi ' + u[7] + ' — aplikasi memerlukan versi 3.');
+          }
+          didapat += r.value.byteLength;
+          if(saatKemajuan) saatKemajuan(didapat, total);
+          return Promise.resolve(penulis.tulis(r.value)).then(langkah);
+        });
+      }
+      return langkah();
+    });
+  }).then(function(){ return penulis.selesai(); }).then(function(){
+    return { berkas: nama, simpan: penulis.jenis, bita: didapat };
+  }).catch(function(e){
+    if(penulis) penulis.batal();
+    throw e;
+  });
+}
+
+/** Kotak area kebun dari batas blok (lat/lng), diberi bantalan 10%. */
+function pmoffKotakKebun(){
+  var w = 999, s = 999, e = -999, n = -999, ada = 0;
+  (S.blocks || []).forEach(function(b){
+    parseKoord(b.Koordinat).forEach(function(ring){
+      ring.forEach(function(p){
+        if(!p || Math.abs(p[0]) > 90 || Math.abs(p[1]) > 180) return;   // abaikan koordinat UTM
+        s = Math.min(s, p[0]); n = Math.max(n, p[0]); w = Math.min(w, p[1]); e = Math.max(e, p[1]); ada++;
+      });
+    });
+  });
+  if(!ada) return null;
+  var bx = Math.max((e - w) * 0.1, 0.002), by = Math.max((n - s) * 0.1, 0.002);
+  return [w - bx, s - by, e + bx, n + by];
+}
+
+function pmoffKotakLayar(){
+  if(!peta) return null;
+  var b = peta.getBounds();
+  return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+}
+
+/* Penulis untuk ekstraksi area memakai pmoffBukaPenulis apa adanya. */
+function pmoffUnduhArea(d, kotak, zMin, zMax, saatKemajuan){
+  var nama = pmoffNamaBerkas(d.ID), penulis = null;
+  var p = new pmtiles.PMTiles(d.URL);
+  return pmoffBukaPenulis(nama).then(function(w){
+    penulis = w;
+    return pmxEkstrak(p, {
+      kotak: kotak, zMin: zMin, zMax: zMax, zxyKeId: pmtiles.zxyToTileId, sumber: d.URL,
+      cekBatal: function(){ return PMOFF_BATAL; },
+      saatKemajuan: function(k){ if(saatKemajuan) saatKemajuan(k); }
+    }, w);
+  }).then(function(h){
+    return { berkas: nama, simpan: penulis.jenis, bita: h.bita, ubin: h.ubin, zMin: h.zMin, zMax: h.zMax, kotak: h.kotak };
+  }).catch(function(e){
+    if(penulis) penulis.batal();
+    throw e;
+  });
+}
+
+function pmoffCatat(d, hasil, mode){
+  var lama = pmoffCari(d.ID);
+  var daftar = pmoffDaftar().filter(function(x){ return !lama || x.id !== lama.id; });
+  daftar.push({
+    id: 'off-' + Date.now().toString(36), layerId: String(d.ID), nama: d.Nama, url: d.URL,
+    berkas: hasil.berkas, simpan: hasil.simpan, bita: hasil.bita, mode: mode,
+    ubin: hasil.ubin || null, zMin: hasil.zMin == null ? null : hasil.zMin,
+    zMax: hasil.zMax == null ? null : hasil.zMax, kotak: hasil.kotak || null,
+    selalu: mode === 'penuh', dibuat: new Date().toISOString()
+  });
+  pmoffSimpanDaftar(daftar);
+  if(lama) pmoffHapusBerkas(lama);
+}
+
+/* ---------------------------------------------------------------------
+ *  4. ANTARMUKA PETA OFFLINE
+ * ------------------------------------------------------------------- */
+function bukaPetaOffline(){
+  bukaLembar('<h3>📴 Peta Offline</h3>'+
+    '<div class="meta" style="line-height:1.6">Simpan foto udara PMTiles di perangkat ini agar peta tetap '+
+      'tampil di kebun tanpa sinyal. Salinan hanya ada di perangkat ini — tiap HP menyimpan sendiri.</div>'+
+    '<div id="pmoffRuang" style="margin:12px 0"></div>'+
+    '<div id="pmoffProgres"></div>'+
+    '<div id="pmoffIsi"><div class="kosong">Memuat…</div></div>'+
+    '<div class="kartu" style="margin-top:12px"><b style="font-size:14px">📂 Impor berkas dari perangkat</b>'+
+      '<div class="meta" style="margin:4px 0 8px;line-height:1.6">Punya berkas .pmtiles di HP (disalin lewat kabel, '+
+        'Google Drive, atau WhatsApp)? Pilih di sini — tidak perlu internet.</div>'+
+      '<input type="file" id="pmoffBerkas" accept=".pmtiles,application/octet-stream">'+
+      '<button class="btn btn-sekunder btn-kecil" style="margin-top:8px" onclick="pmoffImpor()">Impor ke peta</button>'+
+    '</div>'+
+    '<div class="meta" style="margin-top:12px;line-height:1.6">Data foto udara milik perusahaan sendiri boleh '+
+      'disimpan offline. Peta dasar OpenStreetMap/Esri sengaja <b>tidak</b> disimpan karena lisensinya melarang.</div>');
+  pastikanPMTiles().catch(function(){});      // ikut menyimpan pustakanya ke tembolok PWA
+  pmoffMuatUlang();
+}
+
+function pmoffMuatUlang(){
+  pmoffRuang().then(function(r){
+    var el = document.getElementById('pmoffRuang'); if(!el) return;
+    if(!r || !r.kuota){ el.innerHTML = '<div class="meta">Peramban tidak melaporkan kapasitas penyimpanan.</div>'; return; }
+    var pct = Math.min(100, Math.round(r.pakai / r.kuota * 1000) / 10);
+    var warna = pct > 85 ? 'var(--merah)' : (pct > 60 ? '#E8960C' : 'var(--hijau-700)');
+    el.innerHTML =
+      '<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px">'+
+        '<span>Penyimpanan aplikasi di perangkat</span><b>' + pmoffUkuranTeks(r.pakai) + ' / ' + pmoffUkuranTeks(r.kuota) + '</b></div>'+
+      '<div style="height:8px;border-radius:4px;background:var(--garis);overflow:hidden">'+
+        '<div style="height:100%;width:' + pct + '%;background:' + warna + '"></div></div>'+
+      '<div class="meta" style="margin-top:6px">' + (r.persisten
+        ? '🔒 Penyimpanan permanen aktif — peramban tidak akan menghapus peta saat ruang sempit.'
+        : '⚠️ Penyimpanan belum permanen: peramban dapat menghapusnya saat ruang HP sempit. '+
+          '<a href="#" onclick="pmoffMintaPersisten().then(pmoffMuatUlang);return false">Minta izin permanen</a>') +
+        (pmoffDukungOpfs() ? '' : '<br>Peramban ini memakai penyimpanan cadangan (IndexedDB); berkas sangat besar sebaiknya disimpan sebagai area.') +
+      '</div>';
+  });
+
+  var el = document.getElementById('pmoffIsi'); if(!el) return;
+  var layer = (S.layers || []).filter(function(d){ return d.Tipe === 'pmtiles'; });
+  var lokal = pmoffDaftar().filter(function(x){ return x.lokal; });
+  if(!layer.length && !lokal.length){
+    el.innerHTML = '<div class="kosong">Belum ada lapisan PMTiles. Admin dapat menambahkannya di ' +
+      'menu Peta → Lapisan, atau impor berkas dari perangkat di bawah.</div>';
+    return;
+  }
+  var html = '';
+  layer.forEach(function(d){
+    var m = pmoffCari(d.ID);
+    html += '<div class="kartu" style="margin-bottom:10px">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">'+
+        '<div><b>🗺 ' + esc(d.Nama) + '</b><div class="meta" style="word-break:break-all">' +
+          esc(String(d.URL||'').replace(/^https?:\/\//,'').slice(0,60)) + '</div></div>'+
+        (m ? '<span class="chip" style="background:var(--hijau-50);color:var(--hijau-700);white-space:nowrap">✓ Tersimpan</span>'
+           : '<span class="chip" style="white-space:nowrap">Belum</span>') +
+      '</div>';
+    if(m){
+      html += '<div style="font-size:12.5px;margin-top:8px;line-height:1.7">'+
+        (m.mode === 'penuh' ? 'Seluruh berkas' : 'Area kebun · zoom ' + m.zMin + '–' + m.zMax + ' · ' + angka(m.ubin, 0) + ' ubin') +
+        ' · <b>' + pmoffUkuranTeks(m.bita) + '</b><br><span class="meta">Disimpan ' +
+        new Date(m.dibuat).toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' }) + '</span></div>';
+      if(m.mode !== 'penuh'){
+        html += '<label style="display:flex;gap:8px;align-items:center;text-transform:none;letter-spacing:normal;font-size:12.5px;margin-top:6px;cursor:pointer">'+
+          '<input type="checkbox" style="width:16px;height:16px" ' + (m.selalu ? 'checked' : '') +
+          ' onchange="pmoffAturSelalu(\'' + esc(m.id) + '\', this.checked)"> Pakai salinan walau ada sinyal (hemat kuota)</label>';
+      }
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="pmoffFormArea(\'' + esc(d.ID) + '\')">🔄 Perbarui</button>'+
+        '<button class="btn btn-sekunder btn-kecil" style="color:var(--merah)" onclick="pmoffHapus(\'' + esc(m.id) + '\')">🗑 Hapus salinan</button></div>';
+    } else {
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'+
+        '<button class="btn btn-utama btn-kecil" onclick="pmoffFormArea(\'' + esc(d.ID) + '\')">📍 Simpan area kebun</button>'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="pmoffMulaiPenuh(\'' + esc(d.ID) + '\')">⬇ Simpan seluruh berkas</button></div>';
+    }
+    html += '</div>';
+  });
+  lokal.forEach(function(m){
+    html += '<div class="kartu" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:8px">'+
+      '<div><b>📂 ' + esc(m.nama) + '</b><div class="meta">Impor dari perangkat · ' + pmoffUkuranTeks(m.bita) +
+      (m.zMin != null ? ' · zoom ' + m.zMin + '–' + m.zMax : '') + '</div></div>'+
+      '<button class="btn btn-sekunder btn-kecil" style="color:var(--merah)" onclick="pmoffHapus(\'' + esc(m.id) + '\')">🗑</button></div></div>';
+  });
+  el.innerHTML = html;
+}
+
+function pmoffAturSelalu(id, nilai){
+  var a = pmoffDaftar(); a.forEach(function(x){ if(x.id === id) x.selalu = !!nilai; });
+  pmoffSimpanDaftar(a);
+  try{ renderLayerKustom(); }catch(e){}
+}
+
+/* Konfirmasi di dalam halaman, tepat di bawah tombol yang diklik.
+   Dialog bawaan peramban (confirm) dapat diblokir — antara lain di dalam
+   iframe Apps Script — dan saat itu langsung bernilai "batal" tanpa tampil,
+   sehingga tombol terasa mati. Fitur basis data & peta offline tidak memakainya. */
+function konfirmasiDiTempat(idWadah, o){
+  var el = document.getElementById(idWadah);
+  if(!el){ if(o.onYa) o.onYa(); return; }
+  var id = 'kdt' + Date.now().toString(36);
+  var bahaya = !!o.bahaya;
+  el.innerHTML = '<div style="padding:12px 14px;border-radius:10px;margin:10px 0;background:' + (bahaya ? '#FBEAE7' : '#FFF4E5') +
+      ';border-left:3px solid ' + (bahaya ? 'var(--merah)' : '#E8960C') + '">'+
+    '<div style="font-size:13px;line-height:1.55">' + o.pesan + '</div>'+
+    '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+      '<button class="btn ' + (bahaya ? 'btn-bahaya' : 'btn-utama') + ' btn-kecil" id="' + id + 'Ya">' + esc(o.teksYa || 'Ya, lanjutkan') + '</button>'+
+      '<button class="btn btn-sekunder btn-kecil" id="' + id + 'Tidak">Batal</button></div></div>';
+  try{ el.scrollIntoView({ block:'center', behavior:'smooth' }); }catch(e){}
+  document.getElementById(id + 'Ya').onclick = function(){ el.innerHTML = ''; if(o.onYa) o.onYa(); };
+  document.getElementById(id + 'Tidak').onclick = function(){ el.innerHTML = ''; if(o.onTidak) o.onTidak(); };
+}
+
+/* Bagian lama aplikasi masih memakai confirm() bawaan. Bila peramban
+   memblokirnya, confirm() kembali "batal" seketika — lebih cepat dari jari
+   manusia. Saat itu terdeteksi, beri tahu pengguna alih-alih diam saja. */
+(function(){
+  if(!window.confirm || window.__confirmDiawasi) return;
+  window.__confirmDiawasi = true;
+  var asli = window.confirm;
+  window.confirm = function(pesan){
+    var t0 = Date.now(), hasil = asli.call(window, pesan);
+    if(!hasil && Date.now() - t0 < 40){
+      try{ toast('Peramban memblokir dialog konfirmasi. Buka aplikasi lewat PWA atau tab peramban biasa, lalu ulangi.', true); }catch(e){}
+    }
+    return hasil;
+  };
+})();
+
+function pmoffHapus(id){
+  var m = pmoffDaftar().filter(function(x){ return x.id === id; })[0];
+  if(!m) return;
+  konfirmasiDiTempat('pmoffProgres', {
+    pesan: 'Hapus salinan offline <b>' + esc(m.nama) + '</b> (' + pmoffUkuranTeks(m.bita) + ') dari perangkat ini?',
+    teksYa: '🗑 Ya, hapus', bahaya: true,
+    onYa: function(){
+      pmoffHapusBerkas(m).then(function(){ toast('Salinan offline dihapus.'); pmoffMuatUlang(); try{ renderLayerKustom(); }catch(e){} });
+    }
+  });
+}
+
+function pmoffTampilProgres(teks, persen){
+  var el = document.getElementById('pmoffProgres'); if(!el) return;
+  if(teks === null){ el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="kartu" style="border-left:3px solid var(--hijau-500);margin-bottom:12px">'+
+    '<div style="font-size:13px;margin-bottom:6px">' + teks + '</div>'+
+    '<div style="height:8px;border-radius:4px;background:var(--garis);overflow:hidden">'+
+      '<div style="height:100%;width:' + Math.max(2, Math.min(100, persen||0)) + '%;background:var(--hijau-500);transition:width .3s"></div></div>'+
+    '<button class="btn btn-sekunder btn-kecil" style="margin-top:8px" onclick="PMOFF_BATAL=true">Batal</button></div>';
+}
+
+function pmoffSiapUnduh(){
+  if(PMOFF_SEDANG){ toast('Masih ada penyimpanan yang berjalan.', true); return false; }
+  if((typeof OFFLINE !== 'undefined' && OFFLINE) || navigator.onLine === false){
+    toast('Perlu sinyal internet untuk menyimpan peta.', true); return false;
+  }
+  return true;
+}
+
+function pmoffMulaiPenuh(id){
+  if(!pmoffSiapUnduh()) return;
+  var d = (S.layers || []).filter(function(x){ return String(x.ID) === String(id); })[0];
+  if(!d) return;
+  /* Coba tanya ukurannya dulu. HEAD diizinkan oleh aturan CORS yang dianjurkan. */
+  fetch(d.URL, { method:'HEAD', cache:'no-store' }).then(function(r){ return Number(r.headers.get('content-length')) || 0; })
+    .catch(function(){ return 0; }).then(function(uk){
+      konfirmasiDiTempat('pmoffProgres', {
+        pesan: 'Simpan seluruh berkas <b>' + esc(d.Nama) + '</b>' + (uk ? ' (' + pmoffUkuranTeks(uk) + ')' : '') + ' ke perangkat ini?' +
+          (uk > 2147483648 ? '<br>Berkas ini besar — <b>Simpan area kebun</b> biasanya jauh lebih kecil.' : '') +
+          '<br><span class="meta">Gunakan Wi-Fi bila memungkinkan.</span>',
+        teksYa: '⬇ Ya, simpan',
+        onYa: function(){ pmoffJalankanPenuh(d); }
+      });
+    });
+}
+
+function pmoffJalankanPenuh(d){
+      if(!pmoffSiapUnduh()) return;
+      PMOFF_BATAL = false; PMOFF_SEDANG = true;
+      pmoffMintaPersisten();
+      pmoffTampilProgres('Mengunduh…', 0);
+      var t0 = Date.now();
+      pmoffUnduhPenuh(d, function(dapat, total){
+        var kec = dapat / Math.max(1, (Date.now() - t0) / 1000);
+        pmoffTampilProgres('Mengunduh ' + pmoffUkuranTeks(dapat) + (total ? ' dari ' + pmoffUkuranTeks(total) : '') +
+          ' · ' + pmoffUkuranTeks(kec) + '/dtk', total ? dapat / total * 100 : 50);
+      }).then(function(h){
+        pmoffCatat(d, h, 'penuh');
+        toast('Peta "' + d.Nama + '" tersimpan offline ✓ (' + pmoffUkuranTeks(h.bita) + ')');
+      }).catch(function(e){
+        toast(e.message === 'DIBATALKAN' ? 'Penyimpanan dibatalkan.' : 'Gagal menyimpan: ' + e.message, e.message !== 'DIBATALKAN');
+      }).then(function(){
+        PMOFF_SEDANG = false; pmoffTampilProgres(null); pmoffMuatUlang();
+        try{ renderLayerKustom(); }catch(e){}
+      });
+}
+
+function pmoffFormArea(id){
+  if(!pmoffSiapUnduh()) return;
+  var d = (S.layers || []).filter(function(x){ return String(x.ID) === String(id); })[0];
+  if(!d) return;
+  var el = document.getElementById('pmoffProgres'); if(!el) return;
+  el.innerHTML = '<div class="kartu" style="margin-bottom:12px"><div class="kosong">Membaca informasi berkas…</div></div>';
+  pastikanPMTiles().then(function(){
+    var p = new pmtiles.PMTiles(d.URL);
+    return p.getHeader().then(function(h){
+      var kebun = pmoffKotakKebun();
+      var zA = Math.max(h.minZoom, 13), zB = Math.min(h.maxZoom, 19);
+      if(zA > zB) zA = h.minZoom;
+      var opsiZ = function(pilih){
+        var o = ''; for(var z = h.minZoom; z <= h.maxZoom; z++) o += '<option value="' + z + '"' + (z === pilih ? ' selected' : '') + '>' + z + '</option>';
+        return o;
+      };
+      el.innerHTML = '<div class="kartu" style="margin-bottom:12px"><b style="font-size:14px">📍 Simpan area — ' + esc(d.Nama) + '</b>'+
+        '<label>Area</label><select id="pmoffArea" onchange="pmoffHitungPerkiraan(\'' + esc(d.ID) + '\')">'+
+          (kebun ? '<option value="kebun">Seluruh batas blok kebun</option>' : '')+
+          '<option value="layar">Tampilan peta saat ini</option></select>'+
+        '<div class="grid2"><div><label>Zoom terendah</label><select id="pmoffZA" onchange="pmoffHitungPerkiraan(\'' + esc(d.ID) + '\')">' + opsiZ(zA) + '</select></div>'+
+        '<div><label>Zoom tertinggi</label><select id="pmoffZB" onchange="pmoffHitungPerkiraan(\'' + esc(d.ID) + '\')">' + opsiZ(zB) + '</select></div></div>'+
+        '<div class="meta" style="margin-top:6px;line-height:1.6">Berkas tersedia zoom ' + h.minZoom + '–' + h.maxZoom +
+          '. Zoom 18 ≈ 0,6 m/piksel, zoom 19 ≈ 0,3 m/piksel. Tiap kenaikan satu zoom melipatempatkan ukuran.</div>'+
+        '<div id="pmoffKira" style="margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--hijau-50);font-size:12.5px">Menghitung perkiraan…</div>'+
+        '<div style="display:flex;gap:8px;margin-top:10px">'+
+          '<button class="btn btn-utama btn-kecil" id="pmoffMulai" disabled onclick="pmoffMulaiArea(\'' + esc(d.ID) + '\')">⬇ Simpan</button>'+
+          '<button class="btn btn-sekunder btn-kecil" onclick="pmoffTampilProgres(null)">Tutup</button></div></div>';
+      if(!kebun && !peta) el.querySelector('#pmoffKira').textContent = 'Buka halaman Peta sekali agar tampilan peta dapat dipakai sebagai area.';
+      pmoffHitungPerkiraan(d.ID);
+    });
+  }).catch(function(e){
+    el.innerHTML = '<div class="kartu" style="color:var(--merah);margin-bottom:12px">Tidak dapat membaca berkas: ' + esc(e.message) +
+      ' <button class="btn btn-sekunder btn-kecil" onclick="bukaUjiPMTiles(\'' + esc(d.URL) + '\')">🔍 Uji koneksi</button></div>';
+  });
+}
+
+function pmoffAmbilKotak(){
+  var a = (document.getElementById('pmoffArea')||{}).value;
+  return a === 'kebun' ? pmoffKotakKebun() : pmoffKotakLayar();
+}
+
+var PMOFF_KIRA = null;
+function pmoffHitungPerkiraan(id){
+  var d = (S.layers || []).filter(function(x){ return String(x.ID) === String(id); })[0];
+  var el = document.getElementById('pmoffKira'), tb = document.getElementById('pmoffMulai');
+  if(!d || !el) return;
+  var kotak = pmoffAmbilKotak();
+  var zA = Number(document.getElementById('pmoffZA').value), zB = Number(document.getElementById('pmoffZB').value);
+  if(!kotak){ el.textContent = 'Area belum tersedia.'; if(tb) tb.disabled = true; return; }
+  if(zA > zB){ el.textContent = 'Zoom terendah tidak boleh melebihi zoom tertinggi.'; if(tb) tb.disabled = true; return; }
+  el.textContent = 'Menghitung perkiraan…'; if(tb) tb.disabled = true;
+  var p = new pmtiles.PMTiles(d.URL);
+  var nomor = PMOFF_KIRA = Date.now();
+  pmxPerkiraan(p, kotak, zA, zB, pmtiles.zxyToTileId).then(function(k){
+    if(nomor !== PMOFF_KIRA) return;
+    if(!k.ubin){ el.textContent = 'Area ini berada di luar cakupan foto udara.'; return; }
+    var terlalu = k.ubin > 80000;
+    el.innerHTML = '≈ <b>' + angka(k.ubin, 0) + ' ubin</b> · perkiraan <b>' + pmoffUkuranTeks(k.perkiraanBita) + '</b>'+
+      (terlalu ? '<br><span style="color:var(--merah)">Terlalu besar (batas 80.000 ubin) — turunkan zoom tertinggi.</span>' : '')+
+      (k.perkiraanBita > 1073741824 ? '<br>Besar — gunakan Wi-Fi.' : '');
+    if(tb) tb.disabled = terlalu;
+  }).catch(function(e){ if(nomor === PMOFF_KIRA) el.textContent = 'Gagal memperkirakan: ' + e.message; });
+}
+
+function pmoffMulaiArea(id){
+  var d = (S.layers || []).filter(function(x){ return String(x.ID) === String(id); })[0];
+  var kotak = pmoffAmbilKotak();
+  var zA = Number(document.getElementById('pmoffZA').value), zB = Number(document.getElementById('pmoffZB').value);
+  if(!d || !kotak || !pmoffSiapUnduh()) return;
+  PMOFF_BATAL = false; PMOFF_SEDANG = true;
+  pmoffMintaPersisten();
+  pmoffTampilProgres('Menyiapkan…', 0);
+  var t0 = Date.now();
+  pmoffUnduhArea(d, kotak, zA, zB, function(k){
+    var dtk = (Date.now() - t0) / 1000, sisa = k.selesai ? dtk / k.selesai * (k.total - k.selesai) : 0;
+    pmoffTampilProgres('Menyimpan ubin ' + angka(k.selesai, 0) + ' / ' + angka(k.total, 0) + ' · ' + pmoffUkuranTeks(k.bita) +
+      (sisa > 3 ? ' · sisa ±' + (sisa > 90 ? Math.round(sisa / 60) + ' menit' : Math.round(sisa) + ' dtk') : ''), k.selesai / k.total * 100);
+  }).then(function(h){
+    pmoffCatat(d, h, 'area');
+    toast('Area kebun tersimpan offline ✓ ' + angka(h.ubin, 0) + ' ubin · ' + pmoffUkuranTeks(h.bita));
+  }).catch(function(e){
+    toast(e.message === 'DIBATALKAN' ? 'Penyimpanan dibatalkan.' : 'Gagal menyimpan: ' + e.message, e.message !== 'DIBATALKAN');
+  }).then(function(){
+    PMOFF_SEDANG = false; pmoffTampilProgres(null); pmoffMuatUlang();
+    try{ renderLayerKustom(); }catch(e){}
+  });
+}
+
+function pmoffImpor(){
+  var inp = document.getElementById('pmoffBerkas');
+  var f = inp && inp.files && inp.files[0];
+  if(!f) return toast('Pilih berkas .pmtiles lebih dulu.', true);
+  if(PMOFF_SEDANG) return toast('Masih ada penyimpanan yang berjalan.', true);
+  f.slice(0, 127).arrayBuffer().then(function(b){
+    var u = new Uint8Array(b);
+    if(String.fromCharCode.apply(null, u.subarray(0, 7)) !== 'PMTiles') throw new Error('Berkas ini bukan PMTiles.');
+    if(u[7] !== 3) throw new Error('PMTiles versi ' + u[7] + ' — aplikasi memerlukan versi 3.');
+    var hdr = { minZoom: u[100], maxZoom: u[101], tipe: u[99] };
+    if(hdr.tipe === 1) throw new Error('Berkas vektor (MVT) belum didukung — gunakan PMTiles raster (foto udara).');
+    return pmoffCekRuang(f.size).then(function(){
+      PMOFF_SEDANG = true; PMOFF_BATAL = false;
+      pmoffMintaPersisten();
+      pmoffTampilProgres('Menyalin berkas ke penyimpanan aplikasi…', 5);
+      var nama = pmoffNamaBerkas('lokal-' + f.name.replace(/\.pmtiles$/i, ''));
+      return pmoffBukaPenulis(nama).then(function(w){
+        /* disalin per keping 8 MB agar berkas besar tidak dimuat ke memori */
+        var pos = 0, KEP = 8 * 1048576;
+        function langkah(){
+          if(PMOFF_BATAL) return w.batal().then(function(){ throw new Error('DIBATALKAN'); });
+          if(pos >= f.size) return w.selesai();
+          var bag = f.slice(pos, pos + KEP);
+          return bag.arrayBuffer().then(function(buf){
+            pos += buf.byteLength;
+            pmoffTampilProgres('Menyalin ' + pmoffUkuranTeks(pos) + ' / ' + pmoffUkuranTeks(f.size), pos / f.size * 100);
+            return w.tulis(new Uint8Array(buf));
+          }).then(langkah);
+        }
+        return langkah().then(function(){
+          var a = pmoffDaftar();
+          a.push({ id:'lok-' + Date.now().toString(36), lokal:true, nama:f.name.replace(/\.pmtiles$/i, ''),
+                   berkas:nama, simpan:w.jenis, bita:f.size, mode:'penuh', zMin:hdr.minZoom, zMax:hdr.maxZoom,
+                   selalu:true, dibuat:new Date().toISOString() });
+          pmoffSimpanDaftar(a);
+          toast('Berkas diimpor ✓ — nyalakan "📴 ' + f.name + '" di daftar lapisan peta.');
+        });
+      });
+    });
+  }).catch(function(e){
+    toast(e.message === 'DIBATALKAN' ? 'Impor dibatalkan.' : 'Gagal mengimpor: ' + e.message, e.message !== 'DIBATALKAN');
+  }).then(function(){
+    PMOFF_SEDANG = false; pmoffTampilProgres(null); pmoffMuatUlang();
+    try{ renderLayerKustom(); }catch(e){}
+  });
+}
+
+/* ---------------------------------------------------------------------
+ *  5. STATUS SISTEM (kesehatan server & perangkat)
+ * ------------------------------------------------------------------- */
+function labelModeDb(db){
+  db = db || {};
+  if(db.mode === 'supabase') return { teks:'Supabase', ikon:'🐘', warna:'#1565C0', ket:db.host || '' };
+  return { teks:'Google Sheets', ikon:'📗', warna:'var(--hijau-700)', ket:'' };
+}
+
+function infoPerangkat(){
+  var info = {
+    online: navigator.onLine !== false && !(typeof OFFLINE !== 'undefined' && OFFLINE),
+    mode: ADA_GAS ? 'Apps Script' : (MODE_API ? 'PWA' : 'Demo'),
+    antre: (typeof jumlahAntre === 'function') ? jumlahAntre() : 0,
+    peta: pmoffDaftar()
+  };
+  var tunggu = [pmoffRuang()];
+  tunggu.push(window.caches && caches.keys ? caches.keys().catch(function(){ return []; }) : Promise.resolve([]));
+  return Promise.all(tunggu).then(function(r){
+    info.ruang = r[0];
+    info.cache = (r[1] || []).filter(function(k){ return /^sawitgis-/.test(k); });
+    info.sw = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+    return info;
+  });
+}
+
+function bukaStatusSistem(){
+  if(!SESI || SESI.peran !== 'admin') return toast('Hanya admin.', true);
+  bukaLembar('<h3>🩺 Status Sistem</h3>'+
+    '<div class="meta">Kesehatan server, basis data, kuota, dan perangkat ini — dalam satu tempat.</div>'+
+    '<div id="isiStatusSistem"><div class="kosong">Memeriksa…</div></div>');
+  muatStatusSistem();
+}
+
+function muatStatusSistem(){
+  var el = document.getElementById('isiStatusSistem'); if(!el) return;
+  el.innerHTML = '<div class="kosong">Memeriksa…</div>';
+  if(MODE_DEMO){
+    infoPerangkat().then(function(perangkat){
+      el.innerHTML = '<div style="padding:12px;border-radius:10px;background:#FFF4E5;font-size:12.5px;margin-top:10px">'+
+        'Mode demo tidak memiliki server. Status server tersedia setelah aplikasi dipasang di Apps Script.</div>' +
+        htmlPerangkat(perangkat);
+    });
+    return;
+  }
+  var t0 = Date.now();
+  Promise.all([callApi('statusSistem', {}), infoPerangkat()]).then(function(r){
+    var s = r[0], perangkat = r[1];
+    if(s && s.offline) throw new Error('Perangkat sedang offline.');
+    var rtt = Date.now() - t0;
+    el.innerHTML = htmlStatusSistem(s, perangkat, rtt);
+  }).catch(function(e){
+    infoPerangkat().then(function(perangkat){
+      el.innerHTML = '<div style="padding:12px;border-radius:10px;background:#FBEAE7;color:var(--merah);font-size:13px;margin-top:10px">'+
+        '⛔ ' + (/Supabase\.gs/.test(e.message) ? '' : 'Status server tidak dapat dimuat: ') + esc(e.message) + '</div>' + htmlPerangkat(perangkat);
+    });
+  });
+}
+
+function sBaris(label, nilai, tingkat){
+  var titik = tingkat === 'ok' ? '#2E7D46' : (tingkat === 'kuning' ? '#E8960C' : (tingkat === 'merah' ? '#C0392B' : 'transparent'));
+  return '<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--garis);font-size:12.5px">'+
+    '<span style="display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;background:' + titik + ';flex:0 0 8px"></span>' + label + '</span>'+
+    '<b style="text-align:right">' + nilai + '</b></div>';
+}
+
+function sKartu(judul, isi){
+  return '<div class="kartu" style="margin-top:12px"><b style="font-size:14px">' + judul + '</b><div style="margin-top:6px">' + isi + '</div></div>';
+}
+
+function htmlStatusSistem(s, perangkat, rtt){
+  var skor = { baik:['✅ Sehat','var(--hijau-700)','var(--hijau-50)'], perhatian:['⚠️ Perlu perhatian','#B26A00','#FFF4E5'],
+               kritis:['⛔ Kritis','var(--merah)','#FBEAE7'] }[s.skor] || ['?','var(--abu)','var(--garis)'];
+  var md = labelModeDb(s.db);
+  var h = '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:12px;padding:14px;border-radius:12px;background:' + skor[2] + '">'+
+    '<div><div style="font-size:18px;font-weight:800;color:' + skor[1] + '">' + skor[0] + '</div>'+
+    '<div class="meta">Diperiksa ' + esc(s.server.waktu || '') + ' · server ' + s.durasiMs + ' ms · pulang-pergi ' + rtt + ' ms</div></div>'+
+    '<button class="btn btn-sekunder btn-kecil" onclick="muatStatusSistem()">↻ Periksa ulang</button></div>';
+
+  if(s.peringatan.length){
+    h += '<div style="margin-top:10px">' + s.peringatan.map(function(p){
+      var merah = p.tingkat === 'merah';
+      return '<div style="padding:9px 12px;border-radius:8px;margin-bottom:6px;font-size:12.5px;line-height:1.55;'+
+        'background:' + (merah ? '#FBEAE7' : '#FFF4E5') + ';border-left:3px solid ' + (merah ? 'var(--merah)' : '#E8960C') + '">'+
+        (merah ? '⛔ ' : '⚠️ ') + esc(p.teks) + '</div>';
+    }).join('') + '</div>';
+  }
+
+  h += sKartu('📦 Aplikasi & Basis Data',
+    sBaris('Versi aplikasi / server', esc(VERSI_APP) + ' / ' + esc(s.versiBackend), VERSI_APP === s.versiBackend ? 'ok' : 'kuning') +
+    sBaris('Basis data yang dipakai', '<span style="color:' + md.warna + '">' + md.ikon + ' ' + md.teks + '</span>' + (md.ket ? '<br><span class="meta">' + esc(md.ket) + '</span>' : ''), 'ok') +
+    sBaris('Supabase terpasang', s.db.terpasang ? 'Ya' : 'Belum', s.db.terpasang ? 'ok' : '') +
+    (s.riwayatMode && s.riwayatMode[0] ? sBaris('Terakhir ganti basis data', esc(s.riwayatMode[0].waktu) + ' oleh ' + esc(s.riwayatMode[0].oleh), '') : '') +
+    '<button class="btn btn-sekunder btn-kecil" style="margin-top:10px" onclick="bukaBasisData()">🗄️ Kelola basis data</button>');
+
+  if(s.supabase){
+    var b = s.supabase;
+    if(b.tersambung){
+      h += sKartu('🐘 Supabase' + (b.aktif ? ' — aktif' : ' — terpasang, belum dipakai'),
+        sBaris('Klien (tenant)', esc((b.tenant || {}).nama || '') + ' <span class="meta">(' + esc((b.tenant || {}).kode || '') + ' · paket ' + esc((b.tenant || {}).paket || '') + ')</span>', (b.tenant || {}).aktif ? 'ok' : 'merah') +
+        sBaris('Waktu tanggap', b.latensiMs + ' ms', b.latensiMs > 2500 ? 'kuning' : 'ok') +
+        sBaris('Ruang terpakai', b.ukuranDbMb + ' MB dari ' + angka(b.batasMb, 0) + ' MB (' + b.persenRuang + '%)', b.persenRuang > 85 ? 'merah' : (b.persenRuang > 60 ? 'kuning' : 'ok')) +
+        '<div style="height:6px;border-radius:3px;background:var(--garis);margin:4px 0 6px"><div style="height:100%;width:' + Math.min(100, b.persenRuang) + '%;border-radius:3px;background:' + (b.persenRuang > 85 ? 'var(--merah)' : (b.persenRuang > 60 ? '#E8960C' : 'var(--hijau-500)')) + '"></div></div>' +
+        sBaris('Total baris data klien ini', angka(b.totalBaris || 0, 0), '') +
+        sBaris('Koneksi basis data', b.koneksiAktif + ' / ' + b.koneksiMaks, (b.koneksiAktif / b.koneksiMaks) > 0.8 ? 'kuning' : 'ok') +
+        sBaris('Rasio cache', b.cacheHitPersen == null ? '—' : b.cacheHitPersen + '%', b.cacheHitPersen != null && b.cacheHitPersen < 90 ? 'kuning' : 'ok') +
+        sBaris('PostgreSQL · versi skema', esc(b.versiPg) + ' · ' + esc(b.versiSkema || '?'), b.versiSkema === s.versiSkemaAplikasi ? 'ok' : 'kuning') +
+        sBaris('Tabel lengkap', b.tabelHilang.length ? b.tabelHilang.length + ' belum ada' : 'Ya', b.tabelHilang.length ? 'merah' : 'ok') +
+        sBaris('Server aktif sejak', esc(b.aktifSejak || '—'), '') +
+        (b.terbesar && b.terbesar.length ? '<div class="meta" style="margin-top:8px">Tabel terbesar: ' +
+          b.terbesar.map(function(x){ return esc(x.sheet) + ' ' + angka(x.baris, 0); }).join(' · ') + '</div>' : ''));
+    } else {
+      h += sKartu('🐘 Supabase', sBaris('Sambungan', 'Gagal', 'merah') + '<div style="font-size:12.5px;margin-top:8px;color:var(--merah)">' + esc(b.galat || '') + '</div>');
+    }
+  }
+
+  if(s.sheets && !s.sheets.galat){
+    var sh = s.sheets;
+    h += sKartu('📗 Google Sheets' + (s.db.mode === 'sheets' ? ' — aktif' : ''),
+      sBaris('Kapasitas sel terpakai', sh.persen + '% dari 10 juta', sh.persen > 70 ? 'merah' : (sh.persen > 40 ? 'kuning' : 'ok')) +
+      (sh.terbesar[0] ? sBaris('Sheet terbesar', esc(sh.terbesar[0].sheet) + ' · ' + angka(sh.terbesar[0].baris, 0) + ' baris', sh.terbesar[0].baris > 40000 ? 'kuning' : 'ok') : '') +
+      '<div class="meta" style="margin-top:6px">' + esc(sh.saran) + '</div>');
+  }
+
+  var k = s.kuota || {};
+  h += sKartu('⚙️ Server Apps Script & Kuota',
+    sBaris('Zona waktu', esc(s.server.zona || '—'), '') +
+    sBaris('Kunci skrip', s.server.kunciBebas ? 'Bebas (' + s.server.kunciMs + ' ms)' : 'Sedang dipakai', s.server.kunciBebas ? 'ok' : 'kuning') +
+    sBaris('Cache server', s.server.cacheOk ? 'Normal' : 'Bermasalah', s.server.cacheOk ? 'ok' : 'kuning') +
+    sBaris('Sesi login tersimpan', angka(s.server.sesiTersimpan || 0, 0) + ' <span class="meta">(' + angka(s.server.propertiJumlah || 0, 0) + ' properti)</span>', (s.server.propertiJumlah || 0) > 400 ? 'kuning' : 'ok') +
+    (k.driveBatasMb ? sBaris('Google Drive (foto & cadangan)', angka(k.driveTerpakaiMb, 0) + ' / ' + angka(k.driveBatasMb, 0) + ' MB (' + k.drivePersen + '%)', k.drivePersen > 90 ? 'merah' : (k.drivePersen > 75 ? 'kuning' : 'ok')) : '') +
+    (k.emailSisa != null ? sBaris('Sisa kuota email hari ini', angka(k.emailSisa, 0), k.emailSisa < 10 ? 'kuning' : 'ok') : '') +
+    (s.db.terpasang ? sBaris('Panggilan ke Supabase hari ini', '±' + angka(k.panggilanSupabaseHariIni || 0, 0) + ' / ' + angka(k.batasUrlFetch, 0), (k.panggilanSupabaseHariIni || 0) > 15000 ? 'kuning' : 'ok') : '') +
+    sBaris('Pemicu otomatis', s.pemicu.length ? s.pemicu.map(function(t){ return esc(t.fungsi); }).join(', ') : 'Tidak ada', '') +
+    (k.peringatanKonversi && k.peringatanKonversi.length ? '<div style="margin-top:8px;font-size:12px;line-height:1.5"><b>Nilai yang tidak sesuai tipe kolom (hari ini):</b><br>' +
+      k.peringatanKonversi.slice(0, 5).map(esc).join('<br>') + '</div>' : ''));
+
+  h += htmlPerangkat(perangkat);
+  return h;
+}
+
+function htmlPerangkat(p){
+  var r = p.ruang;
+  var totalPeta = (p.peta || []).reduce(function(a, x){ return a + (x.bita || 0); }, 0);
+  return sKartu('📱 Perangkat Ini',
+    sBaris('Koneksi', p.online ? 'Online' : 'Offline', p.online ? 'ok' : 'kuning') +
+    sBaris('Mode aplikasi', esc(p.mode) + (p.sw ? ' · service worker aktif' : ''), '') +
+    (p.cache && p.cache.length ? sBaris('Versi tersimpan (cache PWA)', esc(p.cache.join(', ').replace(/sawitgis-v/g, 'v')), p.cache[0] === 'sawitgis-v' + VERSI_APP ? 'ok' : 'kuning') : '') +
+    sBaris('Antrean belum terkirim', angka(p.antre, 0) + ' catatan', p.antre ? 'kuning' : 'ok') +
+    (r ? sBaris('Penyimpanan aplikasi', pmoffUkuranTeks(r.pakai) + ' / ' + pmoffUkuranTeks(r.kuota), r.kuota && r.pakai / r.kuota > 0.85 ? 'merah' : 'ok') +
+         sBaris('Penyimpanan permanen', r.persisten ? 'Ya' : 'Belum', r.persisten ? 'ok' : 'kuning') : '') +
+    sBaris('Peta offline', (p.peta || []).length ? (p.peta.length + ' berkas · ' + pmoffUkuranTeks(totalPeta)) : 'Belum ada', '') +
+    '<button class="btn btn-sekunder btn-kecil" style="margin-top:10px" onclick="bukaPetaOffline()">📴 Kelola peta offline</button>');
+}
+
+/* ---------------------------------------------------------------------
+ *  6. BASIS DATA: koneksi Supabase, migrasi, verifikasi, ganti mode
+ * ------------------------------------------------------------------- */
+var BD_KONFIG = null;
+
+function bukaBasisData(){
+  if(!SESI || SESI.peran !== 'admin') return toast('Hanya admin.', true);
+  if(MODE_DEMO) return toast('Pengaturan basis data tidak tersedia pada mode demo.', true);
+  bukaLembar('<h3>🗄️ Basis Data</h3><div id="isiBasisData"><div class="kosong">Memuat…</div></div>');
+  callApi('konfigDb', {}).then(function(k){ BD_KONFIG = k; tampilBasisData(); })
+    .catch(function(e){ var el = document.getElementById('isiBasisData'); if(el) el.innerHTML = '<div class="kosong" style="color:var(--merah)">' + esc(e.message) + '</div>'; });
+}
+
+function tampilBasisData(){
+  var k = BD_KONFIG || {}, el = document.getElementById('isiBasisData'); if(!el) return;
+  var aktifSb = k.mode === 'supabase' && k.lengkap;
+  var md = labelModeDb({ mode: aktifSb ? 'supabase' : 'sheets', host: k.url });
+  var mg = k.migrasi;
+  el.innerHTML =
+    '<div style="margin-top:10px;padding:14px;border-radius:12px;background:var(--hijau-50)">'+
+      '<div class="meta">Basis data yang sedang dipakai</div>'+
+      '<div style="font-size:20px;font-weight:800;color:' + md.warna + ';margin-top:2px">' + md.ikon + ' ' + md.teks + '</div>'+
+      (aktifSb ? '<div class="meta" style="word-break:break-all">' + esc(k.url) + '</div>' : '<div class="meta">Data tersimpan di spreadsheet Google milik perusahaan.</div>') +
+    '</div>'+
+
+    '<div class="kartu" style="margin-top:12px"><b style="font-size:14px">1 · Koneksi Supabase</b>'+
+      '<div class="meta" style="margin:4px 0 2px;line-height:1.6">URL proyek & anon key dari Supabase → Project Settings → API. '+
+        'Kunci tenant diberikan penyedia aplikasi (satu kunci per perusahaan).</div>'+
+      '<label>URL Proyek</label><input id="bdUrl" value="' + esc(k.url || '') + '" placeholder="https://xxxxxxxx.supabase.co">'+
+      '<label>Anon key / publishable key</label><input id="bdAnon" oninput="bdCekJenisKunci(this)" placeholder="' + (k.anon ? 'tersimpan: ' + esc(k.anon) + ' — kosongkan bila tidak diganti' : 'eyJhbGciOi… atau sb_publishable_…') + '">'+
+      '<label>Kunci tenant</label><input id="bdKunci" placeholder="' + (k.kunci ? 'tersimpan: ' + esc(k.kunci) + ' — kosongkan bila tidak diganti' : 'sgt_…') + '">'+
+      '<label>Kapasitas paket Supabase</label><select id="bdBatas">'+
+        [[500,'Free — 500 MB'],[8192,'Pro — 8 GB'],[16384,'Pro + tambahan — 16 GB'],[102400,'Team/Enterprise — 100 GB']].map(function(o){
+          return '<option value="' + o[0] + '"' + (Number(k.batasMb) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+      '</select>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+
+        '<button class="btn btn-sekunder btn-kecil" onclick="bdUji()">🔍 Uji koneksi</button>'+
+        '<button class="btn btn-utama btn-kecil" onclick="bdSimpan()">💾 Simpan koneksi</button></div>'+
+      '<div id="bdHasilUji" style="margin-top:10px"></div>'+
+      '<div class="meta" style="margin-top:8px;line-height:1.6">⚠️ Jangan pernah memasukkan <b>service_role</b> / secret key. '+
+        'Aplikasi menolaknya — kunci itu melewati seluruh pengamanan dan membuka data semua klien.</div>'+
+    '</div>'+
+
+    '<div class="kartu" style="margin-top:12px"><b style="font-size:14px">2 · Pindahkan data dari Google Sheets</b>'+
+      '<div class="meta" style="margin:4px 0 8px;line-height:1.6">Menyalin seluruh isi 41 sheet ke Supabase. Spreadsheet tidak diubah atau dihapus, '+
+        'dan proses aman diulang — data yang sudah terkirim hanya diperbarui, tidak digandakan.</div>'+
+      (mg ? '<div style="font-size:12.5px;margin-bottom:8px">' + (mg.selesai
+          ? '✅ Migrasi terakhir selesai ' + esc(mg.selesaiPada || '') + ' oleh ' + esc(mg.oleh || '')
+          : '⏸ Migrasi terhenti di sheet ke-' + (mg.idx + 1) + (mg.galat ? '<br><span style="color:var(--merah)">' + esc(mg.galat) + '</span>' : '')) + '</div>' : '') +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button class="btn btn-utama btn-kecil" onclick="bdMigrasi(true)">▶ Mulai migrasi</button>'+
+        (mg && !mg.selesai ? '<button class="btn btn-sekunder btn-kecil" onclick="bdMigrasi(false)">⏯ Lanjutkan</button>' : '') +
+        '<button class="btn btn-sekunder btn-kecil" onclick="bdVerifikasi()">☑ Verifikasi</button></div>'+
+      (k.lengkap ? '' : '<div style="margin-top:8px;padding:9px 12px;border-radius:8px;background:#FFF4E5;font-size:12.5px;line-height:1.5">'+
+        '⚠️ Koneksi belum disimpan. Tekan <b>💾 Simpan koneksi</b> di bagian 1 — atau langsung <b>Mulai migrasi</b>, '+
+        'aplikasi akan menyimpannya lebih dulu.</div>') +
+      '<div id="bdMigrasi" style="margin-top:10px"></div>'+
+    '</div>'+
+
+    '<div class="kartu" style="margin-top:12px"><b style="font-size:14px">3 · Pilih basis data yang dipakai</b>'+
+      '<label style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:normal;font-size:13px;margin-top:10px;cursor:pointer">'+
+        '<input type="radio" name="bdMode" value="sheets" ' + (aktifSb ? '' : 'checked') + ' style="width:18px;height:18px;margin-top:2px">'+
+        '<span><b>📗 Google Sheets</b><br><span class="meta">Tanpa biaya. Cocok hingga ±50.000 baris per sheet.</span></span></label>'+
+      '<label style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:normal;font-size:13px;margin-top:10px;cursor:pointer">'+
+        '<input type="radio" name="bdMode" value="supabase" ' + (aktifSb ? 'checked' : '') + ' style="width:18px;height:18px;margin-top:2px">'+
+        '<span><b>🐘 Supabase (PostgreSQL)</b><br><span class="meta">Tanpa batas baris, kueri cepat untuk data besar. Wajib migrasi & verifikasi lebih dulu.</span></span></label>'+
+      '<label style="display:flex;gap:8px;align-items:center;text-transform:none;letter-spacing:normal;font-size:12.5px;margin-top:12px;cursor:pointer">'+
+        '<input type="checkbox" id="bdPaksa" style="width:16px;height:16px"> Saya paham, beralih tanpa memindahkan data (mulai dari kosong)</label>'+
+      '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#FFF4E5;font-size:12px;line-height:1.6">'+
+        'Setelah beralih, data baru hanya tersimpan di basis data yang dipilih. Bila kelak kembali ke Google Sheets, '+
+        'data yang dicatat selama memakai Supabase <b>tidak</b> ikut — cadangkan dulu lewat menu Cadangkan Data.</div>'+
+      '<button class="btn btn-utama btn-blok" style="margin-top:12px" onclick="bdTerapkanMode()">Terapkan</button>'+
+      '<div id="bdModeKonfirm"></div>'+
+    '</div>'+
+    '<div class="meta" style="margin-top:12px;line-height:1.6;text-align:center">Panduan langkah demi langkah: '+
+      '<b>4-MIGRASI-SUPABASE/PANDUAN-SETUP-SUPABASE.md</b></div>';
+}
+
+/* Peringatan seketika saat kunci rahasia ditempel — sebelum dikirim ke mana pun. */
+function bdCekJenisKunci(inp){
+  var v = String(inp.value || '').trim(), rahasia = /^sb_secret_/.test(v);
+  if(!rahasia && /^eyJ/.test(v)){
+    try{ var b = v.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'); while(b.length % 4) b += '=';
+         rahasia = /service_role/.test(JSON.parse(atob(b)).role || ''); }catch(e){}
+  }
+  var el = document.getElementById('bdPeringatanKunci');
+  if(!el){ el = document.createElement('div'); el.id = 'bdPeringatanKunci'; inp.parentNode.insertBefore(el, inp.nextSibling); }
+  el.innerHTML = rahasia ? '<div style="margin-top:6px;padding:9px 12px;border-radius:8px;background:#FBEAE7;color:var(--merah);font-size:12.5px;line-height:1.5">'+
+    '⛔ Ini <b>secret key / service_role</b> — jangan dipakai di aplikasi. Di Supabase: <b>Project Settings → API Keys</b>, salin '+
+    '<b>Publishable key</b> (diawali <code>sb_publishable_</code>), atau di tab <b>Legacy</b> salin <b>anon public</b>.</div>' : '';
+}
+
+function bdNilaiForm(){
+  return {
+    url: (document.getElementById('bdUrl') || {}).value || '',
+    anon: ((document.getElementById('bdAnon') || {}).value || '').trim(),
+    kunci: ((document.getElementById('bdKunci') || {}).value || '').trim(),
+    batasMb: (document.getElementById('bdBatas') || {}).value
+  };
+}
+
+function bdUji(){
+  var el = document.getElementById('bdHasilUji'); if(!el) return;
+  el.innerHTML = '<div class="kosong">Menguji…</div>';
+  callApi('ujiKoneksiDb', bdNilaiForm()).then(function(r){
+    el.innerHTML = r.langkah.map(function(x){
+      return '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--garis);font-size:12.5px;line-height:1.5">'+
+        '<span>' + (x.ok ? '✅' : '❌') + '</span><span><b>' + esc(x.nama) + '</b>' + (x.ms ? ' <span class="meta">' + x.ms + ' ms</span>' : '') +
+        '<br>' + esc(x.pesan) + '</span></div>';
+    }).join('') + (r.ok ? '<div style="margin-top:8px;color:var(--hijau-700);font-weight:700;font-size:13px">Semua pemeriksaan lolos — tekan 💾 Simpan koneksi untuk melanjutkan.</div>' : '');
+  }).catch(function(e){ el.innerHTML = '<div style="color:var(--merah);font-size:12.5px">' + esc(e.message) + '</div>'; });
+}
+
+/* Aksi yang memerlukan koneksi tersimpan. Bila belum, tawarkan menyimpan
+   isian formulir lalu lanjutkan — jangan diam saja. */
+function bdPastikanTersimpan(teksAksi, lanjut){
+  var k = BD_KONFIG || {};
+  if(k.lengkap) return lanjut();
+  var v = bdNilaiForm();
+  var adaIsian = v.url && (v.anon || k.anon) && (v.kunci || k.kunci);
+  var wadah = document.getElementById('bdMigrasi') ? 'bdMigrasi' : 'bdHasilUji';
+  if(!adaIsian){
+    /* Pesan ditampilkan di tempat tombol diklik — toast saja mudah terlewat. */
+    var el = document.getElementById(wadah);
+    if(el){
+      el.innerHTML = '<div style="padding:12px 14px;border-radius:10px;margin:10px 0;background:#FBEAE7;border-left:3px solid var(--merah);font-size:13px;line-height:1.55">'+
+        '⛔ Koneksi belum disimpan dan isian di bagian 1 belum lengkap.<br>Isi <b>URL proyek</b>, <b>anon key</b>, dan <b>kunci tenant</b>, '+
+        'tekan <b>🔍 Uji koneksi</b>, lalu <b>💾 Simpan koneksi</b>.'+
+        '<div style="margin-top:8px"><button class="btn btn-sekunder btn-kecil" onclick="var u=document.getElementById(\'bdUrl\');u.scrollIntoView({block:\'center\',behavior:\'smooth\'});u.focus()">⬆ Ke isian koneksi</button></div></div>';
+      el.scrollIntoView({ block:'center', behavior:'smooth' });
+    }
+    return;
+  }
+  konfirmasiDiTempat(wadah, {
+    pesan: '<b>Koneksi Supabase belum disimpan.</b><br>Simpan isian di bagian 1 sekarang, lalu ' + esc(teksAksi) + '?',
+    teksYa: '💾 Simpan & lanjutkan',
+    onYa: function(){ bdSimpan(lanjut, true); }
+  });
+}
+
+function bdSimpan(lanjut, tetapSimpan){
+  var v = bdNilaiForm();
+  var hasil = document.getElementById('bdHasilUji');
+  if(!v.url){
+    if(hasil) hasil.innerHTML = '<div style="color:var(--merah);font-size:12.5px;margin-top:6px">⛔ URL proyek wajib diisi.</div>';
+    return toast('URL proyek wajib diisi.', true);
+  }
+  tampilLoader(true, 'Menyimpan koneksi…');
+  callApi('ujiKoneksiDb', v).then(function(u){
+    if(!u.ok && !tetapSimpan){
+      var g = u.langkah.filter(function(x){ return !x.ok; })[0];
+      tampilLoader(false);
+      konfirmasiDiTempat('bdHasilUji', {
+        pesan: '<b>Uji koneksi belum lolos.</b><br>' + esc(g ? g.nama + ' — ' + g.pesan : '') + '<br>Tetap simpan koneksi ini?',
+        teksYa: 'Tetap simpan', bahaya: true,
+        onYa: function(){ bdSimpan(lanjut, true); }
+      });
+      throw new Error('BATAL');
+    }
+    return callApi('simpanKoneksiDb', v);
+  }).then(function(k){
+    tampilLoader(false); BD_KONFIG = k; tampilBasisData(); toast('Koneksi Supabase tersimpan ✓');
+    if(typeof lanjut === 'function'){ lanjut(); return; }
+    var m = document.getElementById('bdMigrasi');
+    if(m) m.scrollIntoView({ block:'center', behavior:'smooth' });
+  }).catch(function(e){
+    tampilLoader(false);
+    if(e.message === 'BATAL') return;
+    toast(e.message, true);
+    if(hasil) hasil.innerHTML = '<div style="padding:10px 12px;border-radius:8px;margin-top:8px;background:#FBEAE7;color:var(--merah);font-size:12.5px;line-height:1.5">⛔ Gagal menyimpan: ' + esc(e.message) + '</div>';
+  });
+}
+
+function bdMigrasi(ulang, sudahDitanya){
+  if(!(BD_KONFIG || {}).lengkap){
+    return bdPastikanTersimpan('mulai memindahkan data', function(){ bdMigrasi(ulang, true); });
+  }
+  if(ulang && !sudahDitanya){
+    return konfirmasiDiTempat('bdMigrasi', {
+      pesan: '<b>Salin seluruh data Google Sheets ke Supabase sekarang?</b><br>Spreadsheet tidak diubah. '+
+             'Proses dapat memakan beberapa menit — biarkan halaman ini terbuka.',
+      teksYa: '▶ Ya, mulai migrasi',
+      onYa: function(){ bdMigrasi(ulang, true); }
+    });
+  }
+  var el = document.getElementById('bdMigrasi'); if(!el) return;
+  var putaran = 0;
+  function gambar(r, teks){
+    el.innerHTML = '<div style="font-size:12.5px;margin-bottom:6px">' + teks + '</div>'+
+      '<div style="height:8px;border-radius:4px;background:var(--garis);overflow:hidden"><div style="height:100%;width:' + Math.max(3, r ? r.persen : 3) +
+      '%;background:var(--hijau-500);transition:width .3s"></div></div>' +
+      (r && r.rincian ? '<div class="meta" style="margin-top:6px">' + angka(r.totalTerkirim, 0) + ' baris terkirim</div>' : '');
+  }
+  gambar(null, 'Memulai…');
+  el.scrollIntoView({ block:'center', behavior:'smooth' });
+  function langkah(awal){
+    putaran++;
+    callApi('migrasiSupabase', { ulang: !!awal, batasMs: 25000 }).then(function(r){
+      if(r.galat){
+        gambar(r, '<span style="color:var(--merah)">⛔ Terhenti: ' + esc(r.galat) + '</span><br>Perbaiki penyebabnya lalu tekan <b>Lanjutkan</b> — data yang sudah terkirim tidak hilang.');
+        callApi('konfigDb', {}).then(function(k){ BD_KONFIG = k; });
+        return;
+      }
+      if(!r.selesai){
+        gambar(r, 'Memindahkan sheet ' + r.sheetKe + ' dari ' + r.jumlahSheet + ' — <b>' + esc(r.sheetSekarang || '') + '</b>');
+        setTimeout(function(){ langkah(false); }, 250);
+        return;
+      }
+      var catatan = r.rincian.filter(function(x){ return x.ganda || x.kunciKosong || x.idDibuat; });
+      gambar({ persen:100, totalTerkirim:r.totalTerkirim, rincian:r.rincian }, '✅ Migrasi selesai — ' + angka(r.totalTerkirim, 0) + ' baris dari ' + r.jumlahSheet + ' sheet.');
+      if(catatan.length){
+        el.innerHTML += '<div style="margin-top:8px;padding:10px 12px;border-radius:8px;background:#FFF4E5;font-size:12px;line-height:1.6"><b>Catatan data:</b><br>' +
+          catatan.map(function(x){
+            return esc(x.sheet) + ': ' + [x.ganda ? x.ganda + ' ID ganda (diambil yang terakhir)' : '',
+              x.idDibuat ? x.idDibuat + ' baris tanpa ID diberi ID baru' : '', x.kunciKosong ? x.kunciKosong + ' baris tanpa kunci dilewati' : '']
+              .filter(Boolean).join(', ');
+          }).join('<br>') + '</div>';
+      }
+      el.innerHTML += '<button class="btn btn-utama btn-kecil" style="margin-top:10px" onclick="bdVerifikasi()">☑ Lanjut verifikasi</button>';
+      callApi('konfigDb', {}).then(function(k){ BD_KONFIG = k; });
+    }).catch(function(e){
+      gambar(null, '<span style="color:var(--merah)">⛔ ' + esc(e.message) + '</span><br>Tekan <b>Lanjutkan</b> untuk mencoba lagi dari posisi terakhir.');
+    });
+  }
+  langkah(ulang);
+}
+
+function bdVerifikasi(){
+  if(!(BD_KONFIG || {}).lengkap) return bdPastikanTersimpan('memverifikasi data', bdVerifikasi);
+  var el = document.getElementById('bdMigrasi'); if(!el) return;
+  el.scrollIntoView({ block:'nearest', behavior:'smooth' });
+  el.innerHTML = '<div class="kosong">Membandingkan jumlah baris tiap tabel…</div>';
+  callApi('verifikasiMigrasi', {}).then(function(r){
+    var tak = r.rincian.filter(function(x){ return !x.cocok; });
+    el.innerHTML = '<div style="padding:10px 12px;border-radius:8px;font-size:13px;font-weight:700;background:' +
+        (r.cocok ? 'var(--hijau-50);color:var(--hijau-700)' : '#FBEAE7;color:var(--merah)') + '">' +
+        (r.cocok ? '✅ Seluruh ' + r.rincian.length + ' tabel cocok — aman beralih ke Supabase.' : '⛔ ' + tak.length + ' tabel belum lengkap.') + '</div>'+
+      '<div style="max-height:260px;overflow:auto;margin-top:8px"><table style="width:100%;font-size:12px;border-collapse:collapse">'+
+        '<tr style="text-align:left;color:var(--abu)"><th style="padding:4px">Sheet</th><th style="text-align:right">Sheets</th><th style="text-align:right">Supabase</th><th></th></tr>'+
+        r.rincian.filter(function(x){ return x.sheets || x.supabase; }).map(function(x){
+          return '<tr style="border-top:1px solid var(--garis)"><td style="padding:4px">' + esc(x.sheet) + '</td><td style="text-align:right">' + angka(x.diharapkan, 0) +
+            '</td><td style="text-align:right">' + (x.supabase == null ? '—' : angka(x.supabase, 0)) + '</td><td style="text-align:center">' + (x.cocok ? '✅' : '❌') + '</td></tr>';
+        }).join('') + '</table></div>'+
+      '<div class="meta" style="margin-top:6px;line-height:1.5">Supabase boleh berisi lebih banyak (data baru masuk setelah migrasi); yang tidak boleh adalah lebih sedikit.</div>';
+  }).catch(function(e){ el.innerHTML = '<div style="color:var(--merah);font-size:12.5px">' + esc(e.message) + '</div>'; });
+}
+
+function bdTerapkanMode(){
+  var pilih = (document.querySelector('input[name="bdMode"]:checked') || {}).value;
+  if(!pilih) return;
+  var paksa = (document.getElementById('bdPaksa') || {}).checked;
+  var k = BD_KONFIG || {};
+  if(pilih === 'supabase' && !k.lengkap){
+    return bdPastikanTersimpan('beralih ke Supabase', bdTerapkanMode);
+  }
+  var kini = (k.mode === 'supabase' && k.lengkap) ? 'supabase' : 'sheets';
+  if(pilih === kini) return toast('Basis data itu sudah dipakai.');
+  konfirmasiDiTempat('bdModeKonfirm', {
+    pesan: pilih === 'supabase'
+      ? '<b>Beralih ke Supabase?</b><br>Mulai sekarang semua pengguna membaca dan menyimpan data di Supabase.'
+      : '<b>Kembali ke Google Sheets?</b><br>Data yang dicatat selama memakai Supabase <b>tidak</b> ikut kembali ke spreadsheet. Pastikan sudah dicadangkan.',
+    teksYa: pilih === 'supabase' ? '🐘 Ya, beralih' : '📗 Ya, kembali ke Sheets',
+    bahaya: pilih !== 'supabase',
+    onYa: function(){ bdJalankanMode(pilih, paksa); }
+  });
+}
+
+function bdJalankanMode(pilih, paksa){
+  var wadah = document.getElementById('bdModeKonfirm');
+  tampilLoader(true, 'Mengganti basis data…');
+  callApi('aturModeDb', { mode: pilih, paksa: paksa }).then(function(r){
+    tampilLoader(false);
+    toast('Basis data kini: ' + (r.mode === 'supabase' ? 'Supabase' : 'Google Sheets') + ' ✓');
+    tutupLembar();
+    muatData(true);
+  }).catch(function(e){
+    tampilLoader(false); toast(e.message, true);
+    if(wadah) wadah.innerHTML = '<div style="padding:10px 12px;border-radius:8px;margin-top:10px;background:#FBEAE7;color:var(--merah);font-size:12.5px;line-height:1.5">⛔ ' + esc(e.message) + '</div>';
+  });
 }
 
 /* ---- Pemuat lazy pustaka berat (dulu blocking di <head>) ---- */
@@ -16129,7 +17527,8 @@ function bukaStatistikData(){
     el.innerHTML =
       '<div class="kpi-grid" style="grid-template-columns:repeat(2,1fr);margin:12px 0">'+
         kpiKotak('Terpakai', s.persenTerpakai+'%', warna)+
-        kpiKotak('Total Sel', angka(s.totalSel,0), '#1565C0')+
+        (s.mode==='supabase' ? kpiKotak('Ukuran Basis Data', angka(s.ukuranMb,1)+' MB', '#1565C0')
+                             : kpiKotak('Total Sel', angka(s.totalSel,0), '#1565C0'))+
       '</div>'+
       '<div style="height:10px;border-radius:5px;background:var(--garis);overflow:hidden;margin-bottom:10px">'+
         '<div style="height:100%;width:'+Math.min(100,s.persenTerpakai)+'%;background:'+warna+'"></div>'+
@@ -16137,7 +17536,9 @@ function bukaStatistikData(){
       '<div style="padding:10px 12px;border-radius:8px;background:'+
         (s.persenTerpakai>70?'#FBEAE7':'var(--hijau-50)')+';font-size:12.5px;line-height:1.6;margin-bottom:12px">'+
         (s.persenTerpakai>70?'⚠️ ':'✅ ')+esc(s.saran)+
-        '<div class="meta" style="margin-top:4px">Batas Google Spreadsheet: 10 juta sel per berkas.</div>'+
+        '<div class="meta" style="margin-top:4px">'+(s.mode==='supabase'
+          ? '🐘 Supabase · kapasitas paket '+angka(s.batasMb,0)+' MB · '+angka(s.totalBaris,0)+' baris'
+          : 'Batas Google Spreadsheet: 10 juta sel per berkas.')+'</div>'+
       '</div>'+
       '<div class="kartu"><b style="font-size:14px">Sepuluh Sheet Terbesar</b><div style="margin-top:8px">'+
         s.sheet.slice(0,10).map(function(x){
